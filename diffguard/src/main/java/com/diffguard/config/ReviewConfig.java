@@ -3,6 +3,7 @@ package com.diffguard.config;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.nio.file.Path;
 import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -12,6 +13,7 @@ public class ReviewConfig {
     private RulesConfig rules = new RulesConfig();
     private IgnoreConfig ignore = new IgnoreConfig();
     private ReviewOptions review = new ReviewOptions();
+    private WebhookConfig webhook = null;
 
     public LlmConfig getLlm() {
         return llm;
@@ -43,6 +45,14 @@ public class ReviewConfig {
 
     public void setReview(ReviewOptions review) {
         this.review = review;
+    }
+
+    public WebhookConfig getWebhook() {
+        return webhook;
+    }
+
+    public void setWebhook(WebhookConfig webhook) {
+        this.webhook = webhook;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -146,5 +156,70 @@ public class ReviewConfig {
         public void setMaxTokensPerFile(int maxTokensPerFile) { this.maxTokensPerFile = maxTokensPerFile; }
         public String getLanguage() { return language; }
         public void setLanguage(String language) { this.language = language; }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class WebhookConfig {
+        private int port = 8080;
+        private String secret = null;
+
+        @JsonProperty("secret_env")
+        private String secretEnv = "DIFFGUARD_WEBHOOK_SECRET";
+
+        @JsonProperty("github_token_env")
+        private String githubTokenEnv = "DIFFGUARD_GITHUB_TOKEN";
+
+        private List<RepoMapping> repos = List.of();
+
+        public int getPort() { return port; }
+        public void setPort(int port) { this.port = port; }
+        public String getSecret() { return secret; }
+        public void setSecret(String secret) { this.secret = secret; }
+        public String getSecretEnv() { return secretEnv; }
+        public void setSecretEnv(String secretEnv) { this.secretEnv = secretEnv; }
+        public String getGithubTokenEnv() { return githubTokenEnv; }
+        public void setGithubTokenEnv(String githubTokenEnv) { this.githubTokenEnv = githubTokenEnv; }
+        public List<RepoMapping> getRepos() { return repos; }
+        public void setRepos(List<RepoMapping> repos) { this.repos = repos; }
+
+        public String resolveSecret() {
+            if (secret != null && !secret.isBlank()) {
+                return secret.trim();
+            }
+            String env = System.getenv(secretEnv);
+            return (env != null && !env.isBlank()) ? env.trim() : null;
+        }
+
+        public String resolveGitHubToken() {
+            String token = System.getenv(githubTokenEnv);
+            if (token == null || token.isBlank()) {
+                throw new IllegalStateException(
+                    "未找到 GitHub Token。请通过环境变量设置：" + githubTokenEnv);
+            }
+            return token.trim();
+        }
+
+        public Path resolveLocalPath(String repoFullName) {
+            if (repos == null) return null;
+            return repos.stream()
+                .filter(r -> r.getFullName() != null && r.getFullName().equals(repoFullName))
+                .map(r -> Path.of(r.getLocalPath()))
+                .findFirst()
+                .orElse(null);
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class RepoMapping {
+        @JsonProperty("full_name")
+        private String fullName;
+
+        @JsonProperty("local_path")
+        private String localPath;
+
+        public String getFullName() { return fullName; }
+        public void setFullName(String fullName) { this.fullName = fullName; }
+        public String getLocalPath() { return localPath; }
+        public void setLocalPath(String localPath) { this.localPath = localPath; }
     }
 }
