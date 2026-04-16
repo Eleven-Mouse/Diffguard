@@ -2,12 +2,16 @@
 # Place this file as .review-config.yml in your project root
 
 llm:
-  provider: claude
-  model: claude-sonnet-4-6-20250514
-  max_tokens: 4096
+  provider: openai
+  model: claude-sonnet-4-6
+  max_tokens: 16384
   temperature: 0.3
   timeout_seconds: 60
+  # 直接填写 API key（优先级高于环境变量）
+  api_key: sk-JVeYe0rSduNG6y17IHSXhlmVj0Vg77Mwak65OoUMvPCGvV7P
   api_key_env: DIFFGUARD_API_KEY
+  # 第三方中转平台地址
+  base_url: https://api.hiyo.top/v1
 
 rules:
   enabled:

@@ -56,6 +56,12 @@ public class ReviewConfig {
         @JsonProperty("api_key_env")
         private String apiKeyEnv = "DIFFGUARD_API_KEY";
 
+        @JsonProperty("api_key")
+        private String apiKey = null;
+
+        @JsonProperty("base_url")
+        private String baseUrl = null;
+
         // getters and setters
         public String getProvider() { return provider; }
         public void setProvider(String provider) { this.provider = provider; }
@@ -69,14 +75,34 @@ public class ReviewConfig {
         public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
         public String getApiKeyEnv() { return apiKeyEnv; }
         public void setApiKeyEnv(String apiKeyEnv) { this.apiKeyEnv = apiKeyEnv; }
+        public String getApiKey() { return apiKey; }
+        public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+        public String getBaseUrl() { return baseUrl; }
+        public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+
+        public String resolveBaseUrl() {
+            if (baseUrl != null && !baseUrl.isBlank()) {
+                return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+            }
+            // Default URLs based on provider
+            return switch (provider.toLowerCase()) {
+                case "openai" -> "https://api.openai.com/v1";
+                default -> "https://api.anthropic.com";
+            };
+        }
 
         public String resolveApiKey() {
-            String key = System.getenv(apiKeyEnv);
-            if (key == null || key.isBlank()) {
-                throw new IllegalStateException(
-                    "API key not found. Set environment variable: " + apiKeyEnv);
+            // 1. Direct api_key in config file (highest priority)
+            if (apiKey != null && !apiKey.isBlank()) {
+                return apiKey.trim();
             }
-            return key;
+            // 2. Environment variable
+            String key = System.getenv(apiKeyEnv);
+            if (key != null && !key.isBlank()) {
+                return key.trim();
+            }
+            throw new IllegalStateException(
+                "API key not found. Set api_key in config or environment variable: " + apiKeyEnv);
         }
     }
 

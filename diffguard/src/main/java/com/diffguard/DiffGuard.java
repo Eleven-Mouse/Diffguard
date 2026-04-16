@@ -1,27 +1,23 @@
 package com.diffguard;
 
-import com.diffguard.cache.ReviewCache;
 import com.diffguard.config.ConfigLoader;
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.diff.DiffCollector;
 import com.diffguard.hook.GitHookInstaller;
 import com.diffguard.llm.LlmClient;
 import com.diffguard.model.DiffFileEntry;
-import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.ConsoleFormatter;
+import com.diffguard.output.ProgressDisplay;
 import com.diffguard.prompt.PromptBuilder;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
-/*
-这是代码第一次测试 lllllllllllllllllll
- */
+
 @Command(
         name = "diffguard",
         mixinStandardHelpOptions = true,
@@ -41,64 +37,41 @@ public class DiffGuard implements Callable<Integer> {
     ) {
         Path projectDir = Path.of("").toAbsolutePath();
 
+        ProgressDisplay.printBanner();
+
         // Load config
         ReviewConfig config = configPath != null
                 ? ConfigLoader.load(configPath.getParent())
                 : ConfigLoader.load(projectDir);
 
         // Collect diff
+        ProgressDisplay.printCollectingDiffs();
+
         List<DiffFileEntry> diffEntries;
         if (staged) {
             diffEntries = DiffCollector.collectStagedDiff(projectDir, config);
         } else if (fromRef != null && toRef != null) {
             diffEntries = DiffCollector.collectDiffBetweenRefs(projectDir, fromRef, toRef, config);
         } else {
-            System.err.println("Error: Specify --staged or --from/--to refs");
+            System.err.println("  Error: Specify --staged or --from/--to refs");
             return 1;
         }
 
         if (diffEntries.isEmpty()) {
-            System.out.println("No changes to review.");
+            ProgressDisplay.printNoChanges();
             return 0;
         }
 
-        System.out.println("Reviewing " + diffEntries.size() + " file(s)...");
+        int totalLines = diffEntries.stream().mapToInt(DiffFileEntry::getLineCount).sum();
+        ProgressDisplay.printDiffCollected(diffEntries.size(), totalLines);
 
-        // Build prompts (with splitting for large diffs)
+        // Build prompts (all files merged into minimal batches)
         PromptBuilder promptBuilder = new PromptBuilder(config);
         List<PromptBuilder.PromptContent> prompts = promptBuilder.buildPrompts(diffEntries);
 
-        // Check cache
-        ReviewCache cache = noCache ? null : new ReviewCache();
-        ReviewResult result = new ReviewResult();
-
-        if (cache != null) {
-            List<PromptBuilder.PromptContent> uncached = new ArrayList<>();
-            for (int i = 0; i < diffEntries.size(); i++) {
-                DiffFileEntry entry = diffEntries.get(i);
-                String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent());
-                List<ReviewIssue> cached = cache.get(cacheKey);
-                if (cached != null) {
-                    cached.forEach(result::addIssue);
-                    result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
-                } else {
-                    uncached.add(prompts.get(i));
-                }
-            }
-
-            if (!uncached.isEmpty()) {
-                LlmClient llmClient = new LlmClient(config);
-                ReviewResult freshResult = llmClient.review(uncached);
-                for (ReviewIssue issue : freshResult.getIssues()) {
-                    result.addIssue(issue);
-                }
-                result.setTotalTokensUsed(result.getTotalTokensUsed() + freshResult.getTotalTokensUsed());
-                result.setReviewDurationMs(freshResult.getReviewDurationMs());
-            }
-        } else {
-            LlmClient llmClient = new LlmClient(config);
-            result = llmClient.review(prompts);
-        }
+        // Review
+        LlmClient llmClient = new LlmClient(config);
+        ReviewResult result = llmClient.review(prompts);
 
         // Output
         ConsoleFormatter.printReport(result);
@@ -120,7 +93,6 @@ public class DiffGuard implements Callable<Integer> {
 
         try {
             if (!preCommit && !prePush) {
-                // Default: install both
                 GitHookInstaller.installPreCommit(projectDir);
                 GitHookInstaller.installPrePush(projectDir);
             } else {

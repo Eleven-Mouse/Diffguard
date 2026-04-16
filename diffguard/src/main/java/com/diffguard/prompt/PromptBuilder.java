@@ -19,6 +19,9 @@ public class PromptBuilder {
     private static final Encoding ENCODING = Encodings.newDefaultEncodingRegistry()
             .getEncoding(EncodingType.CL100K_BASE);
 
+    /** Max tokens for the combined diff content in a single request */
+    private static final int MAX_COMBINED_TOKENS = 12000;
+
     private final String systemPrompt;
     private final String userPromptTemplate;
     private final ReviewConfig config;
@@ -30,7 +33,7 @@ public class PromptBuilder {
     }
 
     /**
-     * Build a complete prompt for a single file diff.
+     * Build a single prompt for one file.
      */
     public PromptContent buildPrompt(DiffFileEntry diffEntry) {
         String rulesSection = buildRulesSection();
@@ -46,55 +49,53 @@ public class PromptBuilder {
     }
 
     /**
-     * Split a large diff into multiple prompts if it exceeds token limit.
+     * Merge all file diffs into as few prompts as possible.
+     * Instead of one API call per file, we combine multiple files into one call
+     * to avoid rate limits and reduce total latency.
      */
     public List<PromptContent> buildPrompts(List<DiffFileEntry> entries) {
-        int maxTokensPerFile = config.getReview().getMaxTokensPerFile();
-
-        return entries.stream()
-                .flatMap(entry -> {
-                    if (entry.exceedsTokenLimit(maxTokensPerFile)) {
-                        return splitLargeDiff(entry).stream();
-                    } else {
-                        return List.of(buildPrompt(entry)).stream();
-                    }
-                })
-                .toList();
-    }
-
-    /**
-     * Split a large diff by hunk boundaries (double newlines in diff output).
-     */
-    private List<PromptContent> splitLargeDiff(DiffFileEntry entry) {
-        int maxTokens = config.getReview().getMaxTokensPerFile();
-        String content = entry.getContent();
-
-        // Split by hunk separator: "@@ ... @@"
-        String[] hunks = content.split("(?=@@)");
-        List<PromptContent> results = new ArrayList<>();
-        StringBuilder currentChunk = new StringBuilder();
-
-        for (String hunk : hunks) {
-            String testContent = currentChunk.toString() + hunk;
-            if (ENCODING.countTokens(testContent) > maxTokens && currentChunk.length() > 0) {
-                DiffFileEntry chunkEntry = new DiffFileEntry(
-                        entry.getFilePath(), currentChunk.toString(),
-                        ENCODING.countTokens(currentChunk.toString()));
-                results.add(buildPrompt(chunkEntry));
-                currentChunk = new StringBuilder(hunk);
-            } else {
-                currentChunk.append(hunk);
-            }
+        if (entries.isEmpty()) {
+            return List.of();
         }
 
-        if (currentChunk.length() > 0) {
-            DiffFileEntry chunkEntry = new DiffFileEntry(
-                    entry.getFilePath(), currentChunk.toString(),
-                    ENCODING.countTokens(currentChunk.toString()));
-            results.add(buildPrompt(chunkEntry));
+        List<PromptContent> results = new ArrayList<>();
+        StringBuilder combinedDiff = new StringBuilder();
+        int currentTokens = 0;
+
+        for (DiffFileEntry entry : entries) {
+            String fileSection = "\n\n--- File: " + entry.getFilePath() + " ---\n" + entry.getContent();
+            int fileTokens = ENCODING.countTokens(fileSection);
+
+            // If adding this file would exceed limit, flush current batch first
+            if (currentTokens + fileTokens > MAX_COMBINED_TOKENS && combinedDiff.length() > 0) {
+                results.add(buildCombinedPrompt(combinedDiff.toString()));
+                combinedDiff = new StringBuilder();
+                currentTokens = 0;
+            }
+
+            combinedDiff.append(fileSection);
+            currentTokens += fileTokens;
+        }
+
+        // Flush remaining
+        if (combinedDiff.length() > 0) {
+            results.add(buildCombinedPrompt(combinedDiff.toString()));
         }
 
         return results;
+    }
+
+    private PromptContent buildCombinedPrompt(String allDiffs) {
+        String rulesSection = buildRulesSection();
+        String language = config.getReview().getLanguage();
+
+        String userPrompt = userPromptTemplate
+                .replace("{{LANGUAGE}}", language)
+                .replace("{{RULES}}", rulesSection)
+                .replace("{{FILE_PATH}}", "(multiple files)")
+                .replace("{{DIFF_CONTENT}}", allDiffs);
+
+        return new PromptContent(systemPrompt, userPrompt);
     }
 
     private String buildRulesSection() {
