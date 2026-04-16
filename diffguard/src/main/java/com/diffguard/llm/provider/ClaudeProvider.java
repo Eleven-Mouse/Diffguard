@@ -66,8 +66,10 @@ public class ClaudeProvider implements LlmProvider {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            log.error("Claude API 错误：status={}, body={}", response.statusCode(), response.body());
-            throw new LlmApiException(response.statusCode(), "Claude API 错误（" + response.statusCode() + "）：" + response.body());
+            String errorBody = response.body();
+            log.error("Claude API 错误：status={}, body={}", response.statusCode(), truncate(errorBody, 500));
+            log.debug("Claude API 错误完整响应：{}", errorBody);
+            throw new LlmApiException(response.statusCode(), "Claude API 错误（" + response.statusCode() + "）：" + truncate(errorBody, 200));
         }
 
         return extractContent(response.body());
@@ -99,5 +101,10 @@ public class ClaudeProvider implements LlmProvider {
             if (thinkingFallback != null) return thinkingFallback;
         }
         return "";
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null) return "null";
+        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...(truncated)";
     }
 }

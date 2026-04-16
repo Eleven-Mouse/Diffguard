@@ -93,35 +93,36 @@ class ReviewResultTest {
     class RawReport {
 
         @Test
-        @DisplayName("包含 '未发现严重问题' → false")
-        void noCriticalIssues() {
-            ReviewResult result = new ReviewResult();
-            result.setRawReport("# 代码审查报告\n\n## 严重问题\n未发现严重问题\n\n## 建议\n无");
-            assertFalse(result.hasCriticalIssues());
-        }
-
-        @Test
-        @DisplayName("包含编号的严重问题条目 → true")
-        void withCriticalIssues() {
+        @DisplayName("raw report 无结构化 issues → 不阻断（hasCriticalIssues=false）")
+        void rawReportNoAutoBlock() {
             ReviewResult result = new ReviewResult();
             result.setRawReport("# 代码审查报告\n\n## 严重问题\n1. [src/Main.java:42] SQL注入风险\n\n## 建议\n修复SQL拼接");
-            assertTrue(result.hasCriticalIssues());
+            assertFalse(result.hasCriticalIssues());
         }
 
         @Test
-        @DisplayName("空报告 → false")
-        void emptyReport() {
+        @DisplayName("raw report 无结构化 issues → isUncertainResult=true")
+        void rawReportIsUncertain() {
+            ReviewResult result = new ReviewResult();
+            result.setRawReport("# 代码审查报告\n\n## 严重问题\n一些文本");
+            assertTrue(result.isUncertainResult());
+        }
+
+        @Test
+        @DisplayName("空报告 → isUncertainResult=false（非 raw report）")
+        void emptyReportNotUncertain() {
             ReviewResult result = new ReviewResult();
             result.setRawReport("");
-            assertFalse(result.hasCriticalIssues());
+            assertFalse(result.isUncertainResult());
         }
 
         @Test
-        @DisplayName("无严重问题章节 → false")
-        void noCriticalSection() {
+        @DisplayName("结构化 issues + raw report → isUncertainResult=false")
+        void structuredWithRawReportNotUncertain() {
             ReviewResult result = new ReviewResult();
-            result.setRawReport("# 审查报告\n\n## 亮点\n代码结构清晰\n\n## 建议\n无");
-            assertFalse(result.hasCriticalIssues());
+            result.addIssue(makeIssue(Severity.WARNING, "A.java", 1));
+            result.setRawReport("# 审查报告");
+            assertFalse(result.isUncertainResult());
         }
 
         @Test

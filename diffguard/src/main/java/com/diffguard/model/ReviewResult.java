@@ -59,7 +59,7 @@ public class ReviewResult {
      * 判定优先级：
      * 1. JSON 响应中 has_critical: true 的显式标记
      * 2. 结构化 issues 中存在 CRITICAL 级别
-     * 3. 原始文本报告的启发式解析（不可靠，仅作为 fallback）
+     * 3. 原始文本报告模式 → 不自动阻断，由用户自行判断
      */
     public boolean hasCriticalIssues() {
         // 1. JSON 响应中的显式标记（最可靠）
@@ -70,62 +70,18 @@ public class ReviewResult {
         if (!issues.isEmpty()) {
             return issues.stream().anyMatch(i -> i.getSeverity().shouldBlockCommit());
         }
-        // 3. 原始文本 fallback（不可靠，仅当无结构化数据时使用）
-        if (isRawReport()) {
-            return hasCriticalIssuesInRawReport();
-        }
+        // 3. 原始文本模式：LLM 未输出有效 JSON，无法可靠判定，
+        //    默认不阻断提交，避免误报阻止正常开发流程
         return false;
     }
 
     /**
-     * 通过检查严重问题部分是否包含编号的问题条目
-     * 而非"未发现严重问题"占位符，来检测原始文本报告中的严重问题。
-     * 支持多种中文标题变体，以应对 LLM 输出的不确定性。
+     * 原始文本报告是否需要用户手动确认。
+     * 当 LLM 输出非 JSON 格式时，系统无法自动判定是否存在严重问题，
+     * 应提示用户自行审阅报告内容。
      */
-    private boolean hasCriticalIssuesInRawReport() {
-        if (rawReport == null) return false;
-
-        // 尝试多种可能的关键词变体
-        String[] startMarkers = {"严重问题", "严重的问题", "Critical Issues", "Critical"};
-        String[] endMarkers = {"建议", "测试建议", "历史问题", "亮点", "总体评价", "Suggestions", "Summary"};
-
-        String criticalSection = null;
-        for (String start : startMarkers) {
-            for (String end : endMarkers) {
-                criticalSection = extractSection(rawReport, start, end);
-                if (criticalSection != null) break;
-            }
-            if (criticalSection != null) break;
-        }
-        if (criticalSection == null) return false;
-
-        // "未发现严重问题"类占位符变体
-        String[] noIssuePhrases = {"未发现严重问题", "未发现严重", "无严重问题", "没有严重问题", "No critical issues"};
-        for (String phrase : noIssuePhrases) {
-            if (criticalSection.contains(phrase)) {
-                return false;
-            }
-        }
-
-        // 检测编号问题条目：如 "1. [ISSUE]"、"1. [文件:行号]" 等
-        return criticalSection.contains("[ISSUE]")
-                || criticalSection.matches("(?s).*\\d+\\.\\s+\\[.*:.*\\].*")
-                || criticalSection.matches("(?s).*\\d+\\.\\s+\\S+.*");
-    }
-
-    /**
-     * 提取原始报告中两个章节标题之间的内容。
-     */
-    private String extractSection(String text, String startMarker, String endMarker) {
-        int start = text.indexOf(startMarker);
-        if (start < 0) return null;
-        start = text.indexOf('\n', start);
-        if (start < 0) return null;
-
-        int end = text.indexOf(endMarker, start);
-        if (end < 0) return text.substring(start);
-
-        return text.substring(start, end);
+    public boolean isUncertainResult() {
+        return isRawReport() && issues.isEmpty();
     }
 
     public int getTotalFilesReviewed() {

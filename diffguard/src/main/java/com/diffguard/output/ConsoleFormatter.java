@@ -68,8 +68,10 @@ public class ConsoleFormatter {
                 result.getTotalTokensUsed(),
                 result.getTotalFilesReviewed()) + RESET);
 
-        // 提交阻止状态
-        if (result.hasCriticalIssues()) {
+        if (result.isUncertainResult()) {
+            System.out.println(YELLOW + BOLD + "  ⚠ AI 未返回结构化结果，无法自动判定是否存在严重问题。" + RESET);
+            System.out.println(YELLOW + "  请人工审阅上方报告内容。如发现问题，使用 --force 可跳过审查。" + RESET);
+        } else if (result.hasCriticalIssues()) {
             System.out.println(RED + BOLD + "  ✗ 发现严重问题 - 提交已中止" + RESET);
             System.out.println(GRAY + "  使用 --force 参数可跳过审查" + RESET);
         } else {

@@ -78,8 +78,10 @@ public class OpenAiProvider implements LlmProvider {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            log.error("OpenAI API 错误：status={}, body={}", response.statusCode(), response.body());
-            throw new LlmApiException(response.statusCode(), "OpenAI API 错误（" + response.statusCode() + "）：" + response.body());
+            String errorBody = response.body();
+            log.error("OpenAI API 错误：status={}, body={}", response.statusCode(), truncate(errorBody, 500));
+            log.debug("OpenAI API 错误完整响应：{}", errorBody);
+            throw new LlmApiException(response.statusCode(), "OpenAI API 错误（" + response.statusCode() + "）：" + truncate(errorBody, 200));
         }
 
         return extractContent(response.body());
@@ -115,5 +117,10 @@ public class OpenAiProvider implements LlmProvider {
         }
         log.warn("API 响应中无有效 choices，响应内容：{}", responseBody);
         return "";
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null) return "null";
+        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...(truncated)";
     }
 }
