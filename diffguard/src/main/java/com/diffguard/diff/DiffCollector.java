@@ -1,10 +1,9 @@
 package com.diffguard.diff;
 
 import com.diffguard.config.ReviewConfig;
+import com.diffguard.exception.DiffCollectionException;
 import com.diffguard.model.DiffFileEntry;
-import com.knuddels.jtokkit.Encodings;
-import com.knuddels.jtokkit.api.Encoding;
-import com.knuddels.jtokkit.api.EncodingType;
+import com.diffguard.util.TokenEstimator;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.diff.DiffEntry;
@@ -23,13 +22,11 @@ import java.util.List;
 
 public class DiffCollector {
 
-    private static final Encoding ENCODING = Encodings.newDefaultEncodingRegistry()
-            .getEncoding(EncodingType.CL100K_BASE);
-
     /**
      * 收集暂存区差异（索引 vs HEAD），等同于 "git diff --cached"。
      */
-    public static List<DiffFileEntry> collectStagedDiff(Path projectDir, ReviewConfig config) {
+    public static List<DiffFileEntry> collectStagedDiff(Path projectDir, ReviewConfig config)
+            throws DiffCollectionException {
         try (Repository repository = new FileRepositoryBuilder()
                 .findGitDir(projectDir.toFile())
                 .build();
@@ -42,8 +39,7 @@ public class DiffCollector {
             return processDiffEntries(diffs, repository, config);
 
         } catch (IOException | GitAPIException e) {
-            System.err.println("收集差异失败：" + e.getMessage());
-            return List.of();
+            throw new DiffCollectionException("收集差异失败：" + e.getMessage(), e);
         }
     }
 
@@ -51,7 +47,8 @@ public class DiffCollector {
      * 收集两个引用之间的差异（用于 pre-push 钩子）。
      */
     public static List<DiffFileEntry> collectDiffBetweenRefs(
-            Path projectDir, String fromRef, String toRef, ReviewConfig config) {
+            Path projectDir, String fromRef, String toRef, ReviewConfig config)
+            throws DiffCollectionException {
         try (Repository repository = new FileRepositoryBuilder()
                 .findGitDir(projectDir.toFile())
                 .build()) {
@@ -60,8 +57,7 @@ public class DiffCollector {
             ObjectId toId = repository.resolve(toRef);
 
             if (fromId == null || toId == null) {
-                System.err.println("无法解析引用：" + fromRef + ".." + toRef);
-                return List.of();
+                throw new DiffCollectionException("无法解析引用：" + fromRef + ".." + toRef);
             }
 
             CanonicalTreeParser oldTree = prepareTreeParser(repository, fromId);
@@ -77,8 +73,7 @@ public class DiffCollector {
             }
 
         } catch (IOException | GitAPIException e) {
-            System.err.println("收集引用间差异失败：" + e.getMessage());
-            return List.of();
+            throw new DiffCollectionException("收集引用间差异失败：" + e.getMessage(), e);
         }
     }
 
@@ -109,7 +104,8 @@ public class DiffCollector {
 
             String diffContent = formatDiff(repository, diff);
             if (diffContent != null && !diffContent.isBlank()) {
-                int tokenCount = ENCODING.countTokens(diffContent);
+                String provider = config.getLlm().getProvider();
+                int tokenCount = TokenEstimator.estimate(diffContent, provider);
                 if (tokenCount > maxTokens) {
                     System.err.println("  文件 " + filePath + " 超出 token 限制（"
                             + tokenCount + " > " + maxTokens + "），已跳过。");
@@ -152,12 +148,37 @@ public class DiffCollector {
     }
 
     private static boolean matchGlob(String path, String pattern) {
-        String regex = pattern
-                .replace(".", "\\.")
-                .replace("**/", "(.*/)?")
-                .replace("**", ".*")
-                .replace("*", "[^/]*")
-                .replace("?", ".");
-        return path.matches(regex);
+        StringBuilder regex = new StringBuilder("^");
+        int i = 0;
+        while (i < pattern.length()) {
+            char c = pattern.charAt(i);
+            if (c == '*') {
+                if (i + 1 < pattern.length() && pattern.charAt(i + 1) == '*') {
+                    // **/ matches any directory prefix, ** matches anything
+                    if (i + 2 < pattern.length() && pattern.charAt(i + 2) == '/') {
+                        regex.append("(.*/)?");
+                        i += 3;
+                    } else {
+                        regex.append(".*");
+                        i += 2;
+                    }
+                } else {
+                    regex.append("[^/]*");
+                    i++;
+                }
+            } else if (c == '?') {
+                regex.append("[^/]");
+                i++;
+            } else if ("\\[]{}()+^$|.".indexOf(c) >= 0) {
+                // Escape all regex metacharacters
+                regex.append('\\').append(c);
+                i++;
+            } else {
+                regex.append(c);
+                i++;
+            }
+        }
+        regex.append('$');
+        return path.matches(regex.toString());
     }
 }

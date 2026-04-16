@@ -2,9 +2,7 @@ package com.diffguard.prompt;
 
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.model.DiffFileEntry;
-import com.knuddels.jtokkit.Encodings;
-import com.knuddels.jtokkit.api.Encoding;
-import com.knuddels.jtokkit.api.EncodingType;
+import com.diffguard.util.TokenEstimator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,9 +17,6 @@ import java.util.stream.Collectors;
 public class PromptBuilder {
 
     private static final Logger log = LoggerFactory.getLogger(PromptBuilder.class);
-
-    private static final Encoding ENCODING = Encodings.newDefaultEncodingRegistry()
-            .getEncoding(EncodingType.CL100K_BASE);
 
     /** 单次请求中合并差异内容的最大Token数 */
     private static final int MAX_COMBINED_TOKENS = 6000;
@@ -64,7 +59,7 @@ public class PromptBuilder {
 
         for (DiffFileEntry entry : entries) {
             String fileSection = "\n\n--- 文件：" + entry.getFilePath() + " ---\n" + entry.getContent();
-            int fileTokens = ENCODING.countTokens(fileSection);
+            int fileTokens = TokenEstimator.estimate(fileSection, config.getLlm().getProvider());
 
             // 如果添加此文件会超过限制，先刷新当前批次
             if (currentTokens + fileTokens > MAX_COMBINED_TOKENS && combinedDiff.length() > 0) {
@@ -153,7 +148,7 @@ public class PromptBuilder {
         }
 
         public int estimateTokens() {
-            return ENCODING.countTokens(systemPrompt) + ENCODING.countTokens(userPrompt);
+            return TokenEstimator.count(systemPrompt) + TokenEstimator.count(userPrompt);
         }
     }
 }

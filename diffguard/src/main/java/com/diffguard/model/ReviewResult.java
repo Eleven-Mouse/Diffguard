@@ -13,6 +13,9 @@ public class ReviewResult {
     /** LLM的原始文本报告（当输出非JSON时使用） */
     private String rawReport;
 
+    /** LLM JSON 响应中显式标记是否存在严重问题，null 表示未从 JSON 中获取 */
+    private Boolean hasCriticalFlag = null;
+
     public void addIssue(ReviewIssue issue) {
         issues.add(issue);
     }
@@ -35,6 +38,14 @@ public class ReviewResult {
         this.rawReport = rawReport;
     }
 
+    public void setHasCriticalFlag(boolean flag) {
+        this.hasCriticalFlag = flag;
+    }
+
+    public Boolean getHasCriticalFlag() {
+        return hasCriticalFlag;
+    }
+
     /**
      * 检查结果是否为原始文本报告模式（非JSON的LLM输出）。
      */
@@ -44,15 +55,26 @@ public class ReviewResult {
 
     /**
      * 检查是否存在应阻止提交的严重问题。
-     * 对于结构化问题，检查严重级别。
-     * 对于原始报告，检查"严重问题"部分是否包含实际问题
-     *（即不仅仅是"未发现严重问题"）。
+     *
+     * 判定优先级：
+     * 1. JSON 响应中 has_critical: true 的显式标记
+     * 2. 结构化 issues 中存在 CRITICAL 级别
+     * 3. 原始文本报告的启发式解析（不可靠，仅作为 fallback）
      */
     public boolean hasCriticalIssues() {
+        // 1. JSON 响应中的显式标记（最可靠）
+        if (Boolean.TRUE.equals(hasCriticalFlag)) {
+            return true;
+        }
+        // 2. 结构化 issues 的严重级别
+        if (!issues.isEmpty()) {
+            return issues.stream().anyMatch(i -> i.getSeverity().shouldBlockCommit());
+        }
+        // 3. 原始文本 fallback（不可靠，仅当无结构化数据时使用）
         if (isRawReport()) {
             return hasCriticalIssuesInRawReport();
         }
-        return issues.stream().anyMatch(i -> i.getSeverity().shouldBlockCommit());
+        return false;
     }
 
     /**

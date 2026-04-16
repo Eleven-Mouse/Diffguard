@@ -7,9 +7,7 @@ com\diffguard\config\ConfigLoader.class
 com\diffguard\DiffGuard.class
 com\diffguard\output\ConsoleFormatter.class
 com\diffguard\diff\DiffCollector.class
-com\diffguard\llm\LlmClient$2.class
 com\diffguard\model\ReviewResult.class
-com\diffguard\llm\LlmClient$1.class
 com\diffguard\output\ProgressDisplay.class
 com\diffguard\llm\LlmClient.class
 com\diffguard\cache\ReviewCache.class

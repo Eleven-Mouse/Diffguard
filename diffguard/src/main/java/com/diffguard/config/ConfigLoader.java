@@ -1,5 +1,6 @@
 package com.diffguard.config;
 
+import com.diffguard.exception.ConfigException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -15,14 +16,18 @@ public class ConfigLoader {
     private static final ObjectMapper MAPPER = new ObjectMapper(new YAMLFactory())
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-    public static ReviewConfig load(Path projectDir) {
+    /**
+     * 三层配置加载：项目级 → 用户主目录 → 内置默认值。
+     * 解析失败时抛出 ConfigException 而非静默降级。
+     */
+    public static ReviewConfig load(Path projectDir) throws ConfigException {
         // 1. 尝试项目级配置
         File projectConfig = projectDir.resolve(CONFIG_FILENAME).toFile();
         if (projectConfig.exists()) {
             try {
                 return MAPPER.readValue(projectConfig, ReviewConfig.class);
             } catch (IOException e) {
-                System.err.println("解析项目配置失败：" + e.getMessage());
+                throw new ConfigException("解析项目配置失败：" + e.getMessage(), e);
             }
         }
 
@@ -32,7 +37,7 @@ public class ConfigLoader {
             try {
                 return MAPPER.readValue(homeConfig, ReviewConfig.class);
             } catch (IOException e) {
-                System.err.println("解析用户主目录配置失败：" + e.getMessage());
+                throw new ConfigException("解析用户主目录配置失败：" + e.getMessage(), e);
             }
         }
 
@@ -43,15 +48,15 @@ public class ConfigLoader {
     /**
      * 从指定路径直接加载配置文件（支持 --config 参数）。
      */
-    public static ReviewConfig loadFromFile(Path configPath) {
+    public static ReviewConfig loadFromFile(Path configPath) throws ConfigException {
         File configFile = configPath.toFile();
         if (!configFile.exists()) {
-            throw new IllegalArgumentException("配置文件不存在：" + configPath);
+            throw new ConfigException("配置文件不存在：" + configPath);
         }
         try {
             return MAPPER.readValue(configFile, ReviewConfig.class);
         } catch (IOException e) {
-            throw new IllegalArgumentException("解析配置文件失败：" + e.getMessage(), e);
+            throw new ConfigException("解析配置文件失败：" + e.getMessage(), e);
         }
     }
 
@@ -61,7 +66,7 @@ public class ConfigLoader {
                 return MAPPER.readValue(is, ReviewConfig.class);
             }
         } catch (IOException e) {
-            System.err.println("加载默认配置失败：" + e.getMessage());
+            // 内置默认配置不应失败，回退到空配置
         }
         return new ReviewConfig();
     }

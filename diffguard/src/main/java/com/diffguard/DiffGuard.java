@@ -1,17 +1,18 @@
 package com.diffguard;
 
-import com.diffguard.cache.ReviewCache;
 import com.diffguard.config.ConfigLoader;
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.diff.DiffCollector;
+import com.diffguard.exception.ConfigException;
+import com.diffguard.exception.DiffCollectionException;
+import com.diffguard.exception.DiffGuardException;
+import com.diffguard.exception.LlmApiException;
 import com.diffguard.hook.GitHookInstaller;
-import com.diffguard.llm.LlmClient;
 import com.diffguard.model.DiffFileEntry;
-import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.ConsoleFormatter;
 import com.diffguard.output.ProgressDisplay;
-import com.diffguard.prompt.PromptBuilder;
+import com.diffguard.service.ReviewService;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -19,7 +20,6 @@ import picocli.CommandLine.Option;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.Callable;
@@ -45,27 +45,35 @@ public class DiffGuard implements Callable<Integer> {
 
         ProgressDisplay.printBanner();
 
-        // 加载配置
+        // 1. 加载配置
         ReviewConfig config;
         try {
             config = configPath != null
                     ? ConfigLoader.loadFromFile(configPath)
                     : ConfigLoader.load(projectDir);
+        } catch (ConfigException e) {
+            System.err.println("  配置加载失败：" + e.getMessage());
+            return 1;
         } catch (IllegalArgumentException e) {
             System.err.println("  配置加载失败：" + e.getMessage());
             return 1;
         }
 
-        // 收集差异
+        // 2. 收集差异
         ProgressDisplay.printCollectingDiffs();
 
         List<DiffFileEntry> diffEntries;
-        if (staged) {
-            diffEntries = DiffCollector.collectStagedDiff(projectDir, config);
-        } else if (fromRef != null && toRef != null) {
-            diffEntries = DiffCollector.collectDiffBetweenRefs(projectDir, fromRef, toRef, config);
-        } else {
-            System.err.println("  错误：请指定 --staged 或 --from/--to 引用");
+        try {
+            if (staged) {
+                diffEntries = DiffCollector.collectStagedDiff(projectDir, config);
+            } else if (fromRef != null && toRef != null) {
+                diffEntries = DiffCollector.collectDiffBetweenRefs(projectDir, fromRef, toRef, config);
+            } else {
+                System.err.println("  错误：请指定 --staged 或 --from/--to 引用");
+                return 1;
+            }
+        } catch (DiffCollectionException e) {
+            System.err.println("  差异收集失败：" + e.getMessage());
             return 1;
         }
 
@@ -77,72 +85,25 @@ public class DiffGuard implements Callable<Integer> {
         int totalLines = diffEntries.stream().mapToInt(DiffFileEntry::getLineCount).sum();
         ProgressDisplay.printDiffCollected(diffEntries.size(), totalLines);
 
-        // 缓存处理：分离已缓存和未缓存的文件
-        ReviewCache cache = noCache ? null : new ReviewCache();
-        List<DiffFileEntry> uncachedEntries = new ArrayList<>();
-        ReviewResult result = new ReviewResult();
-
-        for (DiffFileEntry entry : diffEntries) {
-            if (cache != null) {
-                String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent());
-                List<ReviewIssue> cached = cache.get(cacheKey);
-                if (cached != null) {
-                    for (ReviewIssue issue : cached) {
-                        result.addIssue(issue);
-                    }
-                    result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
-                    continue;
-                }
-            }
-            uncachedEntries.add(entry);
+        // 3. 执行审查（委托给 ReviewService）
+        ReviewService reviewService = new ReviewService(config, projectDir, noCache);
+        ReviewResult result;
+        try {
+            result = reviewService.review(diffEntries);
+        } catch (LlmApiException e) {
+            // LLM 调用失败，fail-closed：阻止提交
+            System.err.println("  AI 审查失败：" + e.getMessage());
+            System.err.println("  为确保代码安全，提交已中止。使用 --force 可跳过。");
+            return 1;
+        } catch (DiffGuardException e) {
+            System.err.println("  审查过程出错：" + e.getMessage());
+            return 1;
         }
 
-        // 构建提示词（仅未缓存的文件）
-        if (!uncachedEntries.isEmpty()) {
-            PromptBuilder promptBuilder = new PromptBuilder(config);
-            List<PromptBuilder.PromptContent> prompts = promptBuilder.buildPrompts(uncachedEntries);
-
-            // 审查
-            LlmClient llmClient = new LlmClient(config);
-            try {
-                ReviewResult freshResult = llmClient.review(prompts);
-
-                // 合并结果
-                for (ReviewIssue issue : freshResult.getIssues()) {
-                    result.addIssue(issue);
-                }
-                if (freshResult.getRawReport() != null) {
-                    result.setRawReport(freshResult.getRawReport());
-                }
-                result.setTotalTokensUsed(result.getTotalTokensUsed() + freshResult.getTotalTokensUsed());
-                result.setTotalFilesReviewed(result.getTotalFilesReviewed() + freshResult.getTotalFilesReviewed());
-                result.setReviewDurationMs(freshResult.getReviewDurationMs());
-
-                // 写入缓存：仅当未使用合并模式时按文件缓存
-                if (cache != null && uncachedEntries.size() == 1) {
-                    DiffFileEntry entry = uncachedEntries.get(0);
-                    String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent());
-                    cache.put(cacheKey, freshResult.getIssues());
-                }
-            } catch (Exception e) {
-                // LLM 调用失败，fail-closed：阻止提交
-                String errorMsg = e.getMessage();
-                if (errorMsg == null || errorMsg.isBlank()) {
-                    errorMsg = e.getClass().getSimpleName();
-                    if (e.getCause() != null && e.getCause().getMessage() != null) {
-                        errorMsg += ": " + e.getCause().getMessage();
-                    }
-                }
-                System.err.println("  AI 审查失败：" + errorMsg);
-                System.err.println("  为确保代码安全，提交已中止。使用 --force 可跳过。");
-                return 1;
-            }
-        }
-
-        // 输出结果
+        // 4. 输出结果
         ConsoleFormatter.printReport(result);
 
-        // 退出码：发现严重问题且未强制跳过时返回1
+        // 5. 退出码：发现严重问题且未强制跳过时返回1
         if (result.hasCriticalIssues() && !force) {
             return 1;
         }

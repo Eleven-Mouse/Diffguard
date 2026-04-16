@@ -1,6 +1,11 @@
 package com.diffguard.llm;
 
 import com.diffguard.config.ReviewConfig;
+import com.diffguard.exception.LlmApiException;
+import com.diffguard.llm.provider.ClaudeProvider;
+import com.diffguard.llm.provider.LlmProvider;
+import com.diffguard.llm.provider.OpenAiProvider;
+import com.diffguard.llm.provider.TokenTracker;
 import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.ProgressDisplay;
@@ -12,16 +17,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 public class LlmClient {
 
@@ -33,22 +32,26 @@ public class LlmClient {
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MS = 15_000;
 
-    /** 需要禁用扩展思考的 OpenAI 模型 */
-    private static final Set<String> THINKING_MODELS = Set.of("o1", "o1-mini", "o3", "o3-mini", "o3-pro");
-
-    private final ReviewConfig config;
+    private final LlmProvider provider;
     private final HttpClient httpClient;
     private int totalTokensUsed = 0;
 
     public LlmClient(ReviewConfig config) {
-        this.config = config;
         this.httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(config.getLlm().getTimeoutSeconds()))
                 .build();
+
+        TokenTracker tracker = tokens -> totalTokensUsed += tokens;
+        String providerName = config.getLlm().getProvider().toLowerCase();
+        this.provider = switch (providerName) {
+            case "claude" -> new ClaudeProvider(config.getLlm(), httpClient, tracker);
+            case "openai" -> new OpenAiProvider(config.getLlm(), httpClient, tracker);
+            default -> throw new IllegalArgumentException("不支持的提供商：" + providerName);
+        };
     }
 
-    public ReviewResult review(List<PromptBuilder.PromptContent> prompts) throws Exception {
+    public ReviewResult review(List<PromptBuilder.PromptContent> prompts) throws LlmApiException {
         ReviewResult result = new ReviewResult();
         long startTime = System.currentTimeMillis();
 
@@ -71,6 +74,11 @@ public class LlmClient {
                 for (ReviewIssue issue : response.getIssues()) {
                     result.addIssue(issue);
                 }
+                // 传播 hasCritical 标志：JSON 显式标记 或 存在 CRITICAL 级别 issue
+                if (Boolean.TRUE.equals(response.getHasCritical())
+                        || response.getIssues().stream().anyMatch(issue -> issue.getSeverity().shouldBlockCommit())) {
+                    result.setHasCriticalFlag(true);
+                }
             }
             result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
         }
@@ -87,9 +95,8 @@ public class LlmClient {
         return result;
     }
 
-    private LlmResponse callLlmWithRetry(PromptBuilder.PromptContent prompt)
-            throws IOException, InterruptedException {
-        Exception lastException = null;
+    private LlmResponse callLlmWithRetry(PromptBuilder.PromptContent prompt) throws LlmApiException {
+        LlmApiException lastException = null;
 
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -103,187 +110,45 @@ public class LlmClient {
                 animator.start();
 
                 try {
-                    return callLlm(prompt);
+                    String responseBody = provider.call(prompt.getSystemPrompt(), prompt.getUserPrompt());
+                    return LlmResponse.fromContent(responseBody);
                 } finally {
                     animator.interrupt();
                     animator.join(300);
                     ProgressDisplay.clearWaiting();
                 }
-            } catch (IOException e) {
+            } catch (LlmApiException e) {
                 lastException = e;
-                if (isRateLimitError(e.getMessage()) && attempt < MAX_RETRIES) {
+                if (e.isRateLimitError() && attempt < MAX_RETRIES) {
                     ProgressDisplay.printRateLimitRetry(attempt, MAX_RETRIES, (int) (RETRY_DELAY_MS / 1000));
-                    Thread.sleep(RETRY_DELAY_MS);
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
                 } else {
                     throw e;
                 }
+            } catch (IOException | InterruptedException e) {
+                throw new LlmApiException("LLM 调用失败：" + e.getMessage(), e);
             }
         }
-        throw new IOException("所有重试已耗尽", lastException);
-    }
-
-    private boolean isRateLimitError(String message) {
-        return message != null && (message.contains("429") || message.contains("rate") || message.contains("请求数限制"));
-    }
-
-    private LlmResponse callLlm(PromptBuilder.PromptContent prompt) throws IOException, InterruptedException {
-        String provider = config.getLlm().getProvider().toLowerCase();
-        String responseBody = switch (provider) {
-            case "claude" -> callClaude(prompt);
-            case "openai" -> callOpenAI(prompt);
-            default -> throw new IllegalArgumentException("不支持的提供商：" + provider);
-        };
-        return LlmResponse.fromContent(responseBody);
-    }
-
-    private String callClaude(PromptBuilder.PromptContent prompt) throws IOException, InterruptedException {
-        String apiKey = config.getLlm().resolveApiKey();
-        String baseUrl = config.getLlm().resolveBaseUrl();
-
-        Map<String, Object> body = Map.of(
-                "model", config.getLlm().getModel(),
-                "max_tokens", config.getLlm().getMaxTokens(),
-                "temperature", config.getLlm().getTemperature(),
-                "system", prompt.getSystemPrompt(),
-                "messages", List.of(
-                        Map.of("role", "user", "content", prompt.getUserPrompt())
-                )
-        );
-
-        String jsonBody = MAPPER.writeValueAsString(body);
-        log.debug("Claude API 请求：model={}, base_url={}", config.getLlm().getModel(), baseUrl);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/v1/messages"))
-                .header("Content-Type", "application/json")
-                .header("x-api-key", apiKey)
-                .header("anthropic-version", "2023-06-01")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .timeout(Duration.ofSeconds(config.getLlm().getTimeoutSeconds()))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            log.error("Claude API 错误：status={}, body={}", response.statusCode(), response.body());
-            throw new IOException("Claude API 错误（" + response.statusCode() + "）：" + response.body());
-        }
-
-        return extractContentFromClaudeResponse(response.body());
-    }
-
-    private String callOpenAI(PromptBuilder.PromptContent prompt) throws IOException, InterruptedException {
-        String apiKey = config.getLlm().resolveApiKey();
-        String baseUrl = config.getLlm().resolveBaseUrl();
-        String maskedKey = apiKey.length() > 8
-                ? apiKey.substring(0, 4) + "..." + apiKey.substring(apiKey.length() - 4)
-                : "****";
-        log.debug("OpenAI 请求：url={}/chat/completions, key={}, model={}", baseUrl, maskedKey, config.getLlm().getModel());
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", config.getLlm().getModel());
-        body.put("max_tokens", config.getLlm().getMaxTokens());
-        body.put("temperature", config.getLlm().getTemperature());
-        body.put("messages", List.of(
-                Map.of("role", "system", "content", prompt.getSystemPrompt()),
-                Map.of("role", "user", "content", prompt.getUserPrompt())
-        ));
-
-        // 仅对扩展思考模型禁用思考功能，避免标准模型返回 400 错误
-        String model = config.getLlm().getModel().toLowerCase();
-        if (THINKING_MODELS.stream().anyMatch(model::startsWith)) {
-            body.put("thinking", Map.of("type", "disabled"));
-        }
-
-        String jsonBody = MAPPER.writeValueAsString(body);
-        log.debug("OpenAI API 请求：model={}, base_url={}", config.getLlm().getModel(), baseUrl);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/chat/completions"))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .timeout(Duration.ofSeconds(config.getLlm().getTimeoutSeconds()))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            log.error("OpenAI API 错误：status={}, body={}", response.statusCode(), response.body());
-            throw new IOException("OpenAI API 错误（" + response.statusCode() + "）：" + response.body());
-        }
-
-        return extractContentFromOpenAIResponse(response.body());
-    }
-
-    @SuppressWarnings("unchecked")
-    private String extractContentFromClaudeResponse(String responseBody) throws IOException {
-        Map<String, Object> response = MAPPER.readValue(responseBody, new TypeReference<>() {});
-
-        if (response.containsKey("usage")) {
-            Map<String, Object> usage = (Map<String, Object>) response.get("usage");
-            totalTokensUsed += ((Number) usage.getOrDefault("input_tokens", 0)).intValue();
-            totalTokensUsed += ((Number) usage.getOrDefault("output_tokens", 0)).intValue();
-        }
-
-        List<Map<String, Object>> content = (List<Map<String, Object>>) response.get("content");
-        if (content != null && !content.isEmpty()) {
-            String thinkingFallback = null;
-            for (Map<String, Object> block : content) {
-                if ("text".equals(block.get("type"))) {
-                    String text = (String) block.get("text");
-                    return text != null ? text : "";
-                }
-                if ("thinking".equals(block.get("type")) && thinkingFallback == null) {
-                    thinkingFallback = (String) block.get("thinking");
-                }
-            }
-            if (thinkingFallback != null) return thinkingFallback;
-        }
-        return "";
-    }
-
-    @SuppressWarnings("unchecked")
-    private String extractContentFromOpenAIResponse(String responseBody) throws IOException {
-        Map<String, Object> response = MAPPER.readValue(responseBody, new TypeReference<>() {});
-
-        if (response.containsKey("usage")) {
-            Map<String, Object> usage = (Map<String, Object>) response.get("usage");
-            totalTokensUsed += ((Number) usage.getOrDefault("prompt_tokens", 0)).intValue();
-            totalTokensUsed += ((Number) usage.getOrDefault("completion_tokens", 0)).intValue();
-        }
-
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-        if (choices != null && !choices.isEmpty()) {
-            Map<String, Object> firstChoice = choices.get(0);
-            Map<String, Object> message = (Map<String, Object>) firstChoice.get("message");
-            if (message == null) {
-                log.warn("API 响应中 choices[0].message 为 null，响应内容：{}", responseBody);
-                return "";
-            }
-            String content = (String) message.get("content");
-            if (content == null || content.isBlank()) {
-                Object reasoning = message.get("reasoning_content");
-                if (reasoning instanceof String r && !r.isBlank()) {
-                    return r;
-                }
-            }
-            return content != null ? content : "";
-        }
-        log.warn("API 响应中无有效 choices，响应内容：{}", responseBody);
-        return "";
+        throw new LlmApiException("所有重试已耗尽", lastException);
     }
 
     /**
-     * 表示LLM的响应，可以是结构化的JSON问题列表，也可以是原始文本报告。
+     * 表示LLM的响应，优先解析为结构化JSON，回退到原始文本。
      */
     static class LlmResponse {
         private final List<ReviewIssue> issues;
         private final String rawText;
+        private final Boolean hasCritical;
 
-        private LlmResponse(List<ReviewIssue> issues, String rawText) {
+        private LlmResponse(List<ReviewIssue> issues, String rawText, Boolean hasCritical) {
             this.issues = issues;
             this.rawText = rawText;
+            this.hasCritical = hasCritical;
         }
 
         boolean isRawText() {
@@ -298,27 +163,64 @@ public class LlmClient {
             return rawText;
         }
 
+        Boolean getHasCritical() {
+            return hasCritical;
+        }
+
         static LlmResponse fromContent(String content) {
             if (content == null || content.isBlank()) {
-                return new LlmResponse(List.of(), null);
+                return new LlmResponse(List.of(), null, false);
             }
 
-            // 先尝试JSON解析（向后兼容）
+            // 1. 优先尝试 JSON 对象格式（包含 has_critical 明确标志）
             try {
-                String json = extractJsonArrayStatic(content);
+                String jsonObj = extractJsonObject(content);
+                if (jsonObj != null) {
+                    Map<String, Object> parsed = MAPPER.readValue(jsonObj, new TypeReference<Map<String, Object>>() {});
+                    boolean critical = false;
+                    Object criticalFlag = parsed.get("has_critical");
+                    if (criticalFlag instanceof Boolean) {
+                        critical = (Boolean) criticalFlag;
+                    }
+                    List<ReviewIssue> issues = List.of();
+                    Object issuesObj = parsed.get("issues");
+                    if (issuesObj != null) {
+                        String issuesJson = MAPPER.writeValueAsString(issuesObj);
+                        issues = MAPPER.readValue(issuesJson, new TypeReference<List<ReviewIssue>>() {});
+                    }
+                    return new LlmResponse(issues, null, critical);
+                }
+            } catch (Exception e) {
+                log.debug("LLM 输出非 JSON 对象格式，尝试 JSON 数组");
+            }
+
+            // 2. 尝试 JSON 数组格式（向后兼容旧 prompt 输出）
+            try {
+                String json = extractJsonArray(content);
                 if (json != null) {
                     List<ReviewIssue> issues = MAPPER.readValue(json, new TypeReference<List<ReviewIssue>>() {});
-                    return new LlmResponse(issues, null);
+                    return new LlmResponse(issues, null, null);
                 }
             } catch (Exception e) {
                 log.debug("LLM 输出非 JSON 格式，作为原始文本处理");
             }
 
-            // 原始文本报告
-            return new LlmResponse(List.of(), content);
+            // 3. 原始文本 fallback（不可靠，仅作为最后手段）
+            log.warn("LLM 未输出有效 JSON，降级为原始文本模式。commit 阻断判定可能不准确。");
+            return new LlmResponse(List.of(), content, null);
         }
 
-        private static String extractJsonArrayStatic(String content) {
+        private static String extractJsonObject(String content) {
+            if (content == null) return null;
+            int start = content.indexOf('{');
+            int end = content.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+                return content.substring(start, end + 1);
+            }
+            return null;
+        }
+
+        private static String extractJsonArray(String content) {
             if (content == null) return null;
             int start = content.indexOf('[');
             int end = content.lastIndexOf(']');
