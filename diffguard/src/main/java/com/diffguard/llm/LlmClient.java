@@ -43,6 +43,7 @@ public class LlmClient {
     public LlmClient(ReviewConfig config) {
         this.config = config;
         this.httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(config.getLlm().getTimeoutSeconds()))
                 .build();
     }
@@ -174,6 +175,10 @@ public class LlmClient {
     private String callOpenAI(PromptBuilder.PromptContent prompt) throws IOException, InterruptedException {
         String apiKey = config.getLlm().resolveApiKey();
         String baseUrl = config.getLlm().resolveBaseUrl();
+        String maskedKey = apiKey.length() > 8
+                ? apiKey.substring(0, 4) + "..." + apiKey.substring(apiKey.length() - 4)
+                : "****";
+        log.info("OpenAI 请求：url={}/chat/completions, key={}, model={}", baseUrl, maskedKey, config.getLlm().getModel());
 
         Map<String, Object> body = new HashMap<>();
         body.put("model", config.getLlm().getModel());
@@ -250,7 +255,12 @@ public class LlmClient {
 
         List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
         if (choices != null && !choices.isEmpty()) {
-            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+            Map<String, Object> firstChoice = choices.get(0);
+            Map<String, Object> message = (Map<String, Object>) firstChoice.get("message");
+            if (message == null) {
+                log.warn("API 响应中 choices[0].message 为 null，响应内容：{}", responseBody);
+                return "";
+            }
             String content = (String) message.get("content");
             if (content == null || content.isBlank()) {
                 Object reasoning = message.get("reasoning_content");
@@ -260,6 +270,7 @@ public class LlmClient {
             }
             return content != null ? content : "";
         }
+        log.warn("API 响应中无有效 choices，响应内容：{}", responseBody);
         return "";
     }
 

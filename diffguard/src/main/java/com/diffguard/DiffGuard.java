@@ -126,7 +126,14 @@ public class DiffGuard implements Callable<Integer> {
                 }
             } catch (Exception e) {
                 // LLM 调用失败，fail-closed：阻止提交
-                System.err.println("  AI 审查失败：" + e.getMessage());
+                String errorMsg = e.getMessage();
+                if (errorMsg == null || errorMsg.isBlank()) {
+                    errorMsg = e.getClass().getSimpleName();
+                    if (e.getCause() != null && e.getCause().getMessage() != null) {
+                        errorMsg += ": " + e.getCause().getMessage();
+                    }
+                }
+                System.err.println("  AI 审查失败：" + errorMsg);
                 System.err.println("  为确保代码安全，提交已中止。使用 --force 可跳过。");
                 return 1;
             }

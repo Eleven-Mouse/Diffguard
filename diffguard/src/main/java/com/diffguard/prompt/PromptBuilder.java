@@ -24,7 +24,7 @@ public class PromptBuilder {
             .getEncoding(EncodingType.CL100K_BASE);
 
     /** 单次请求中合并差异内容的最大Token数 */
-    private static final int MAX_COMBINED_TOKENS = 12000;
+    private static final int MAX_COMBINED_TOKENS = 6000;
 
     private final String systemPrompt;
     private final String userPromptTemplate;

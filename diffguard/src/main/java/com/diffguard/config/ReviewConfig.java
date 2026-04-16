@@ -92,17 +92,17 @@ public class ReviewConfig {
         }
 
         public String resolveApiKey() {
-            // 1. 环境变量（最高优先级，避免密钥泄露到配置文件）
+            // 1. 配置文件中直接填写的 api_key（优先）
+            if (apiKey != null && !apiKey.isBlank()) {
+                return apiKey.trim();
+            }
+            // 2. 环境变量（后备）
             String envKey = System.getenv(apiKeyEnv);
             if (envKey != null && !envKey.isBlank()) {
                 return envKey.trim();
             }
-            // 2. 配置文件中的 api_key（不推荐，存在泄露风险）
-            if (apiKey != null && !apiKey.isBlank()) {
-                return apiKey.trim();
-            }
             throw new IllegalStateException(
-                "未找到API密钥。请通过环境变量设置：" + apiKeyEnv + "，或在配置文件中设置 api_key");
+                "未找到API密钥。请在配置文件中设置 api_key，或通过环境变量设置：" + apiKeyEnv);
         }
     }
 

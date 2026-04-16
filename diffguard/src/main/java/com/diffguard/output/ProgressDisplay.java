@@ -36,9 +36,9 @@ public class ProgressDisplay {
     public static void printBanner() {
         System.out.println();
         System.out.println(CYAN + BOLD + "  ╔════════════════════════════════════════════════════════╗" + RESET);
-        System.out.println(CYAN + BOLD + "  ║    (\\_/)                  DiffGuard                   ║" + RESET);
+        System.out.println(CYAN + BOLD + "  ║    (\\_/)                 DiffGuard                    ║" + RESET);
         System.out.println(CYAN + BOLD + "  ║   ( -.-)               AI coding review                ║" + RESET);
-        System.out.println(CYAN + BOLD + "  ║   /|☕|~                 " + VERSION + "               ║" + RESET);
+        System.out.println(CYAN + BOLD + "  ║   /|☕|~                " + VERSION + "                ║" + RESET);
         System.out.println(CYAN + BOLD + "  ║                                                        ║" + RESET);
         System.out.println(CYAN + BOLD + "  ╚════════════════════════════════════════════════════════╝" + RESET);
         System.out.println();
