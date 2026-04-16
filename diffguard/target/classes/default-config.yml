@@ -1,0 +1,35 @@
+# DiffGuard Configuration
+# Place this file as .review-config.yml in your project root
+
+llm:
+  provider: claude
+  model: claude-sonnet-4-6-20250514
+  max_tokens: 4096
+  temperature: 0.3
+  timeout_seconds: 60
+  api_key_env: DIFFGUARD_API_KEY
+
+rules:
+  enabled:
+    - security
+    - bug-risk
+    - code-style
+    - performance
+  severity_threshold: info
+
+ignore:
+  files:
+    - "**/*.generated.java"
+    - "**/target/**"
+    - "**/node_modules/**"
+    - "**/*.min.js"
+    - "**/*.min.css"
+    - "**/package-lock.json"
+    - "**/pom.xml"
+  patterns:
+    - ".*import statement.*"
+
+review:
+  max_diff_files: 20
+  max_tokens_per_file: 4000
+  language: zh
