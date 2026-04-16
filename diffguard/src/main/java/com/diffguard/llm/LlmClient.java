@@ -178,7 +178,7 @@ public class LlmClient {
         String maskedKey = apiKey.length() > 8
                 ? apiKey.substring(0, 4) + "..." + apiKey.substring(apiKey.length() - 4)
                 : "****";
-        log.info("OpenAI 请求：url={}/chat/completions, key={}, model={}", baseUrl, maskedKey, config.getLlm().getModel());
+        log.debug("OpenAI 请求：url={}/chat/completions, key={}, model={}", baseUrl, maskedKey, config.getLlm().getModel());
 
         Map<String, Object> body = new HashMap<>();
         body.put("model", config.getLlm().getModel());
