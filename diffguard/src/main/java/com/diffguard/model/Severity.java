@@ -1,22 +1,16 @@
 package com.diffguard.model;
 
 public enum Severity {
-    CRITICAL("\u001B[31m", "CRITICAL", "🔴"),
-    WARNING("\u001B[33m", "WARNING", "🟡"),
-    INFO("\u001B[34m", "INFO", "🔵");
+    CRITICAL("严重", "🔴"),
+    WARNING("警告", "🟡"),
+    INFO("提示", "🔵");
 
-    private final String ansiColor;
     private final String label;
     private final String icon;
 
-    Severity(String ansiColor, String label, String icon) {
-        this.ansiColor = ansiColor;
+    Severity(String label, String icon) {
         this.label = label;
         this.icon = icon;
-    }
-
-    public String getAnsiColor() {
-        return ansiColor;
     }
 
     public String getLabel() {

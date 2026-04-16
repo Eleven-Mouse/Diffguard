@@ -25,7 +25,7 @@ public class DiffFileEntry {
         this.filePath = filePath;
         this.content = content;
         this.tokenCount = tokenCount;
-        this.lineCount = content.split("\n").length;
+        this.lineCount = content.isEmpty() ? 0 : countLines(content);
     }
 
     /**
@@ -64,5 +64,15 @@ public class DiffFileEntry {
      */
     public boolean exceedsTokenLimit(int maxTokens) {
         return tokenCount > maxTokens;
+    }
+
+    private static int countLines(String text) {
+        int count = 1;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                count++;
+            }
+        }
+        return count;
     }
 }

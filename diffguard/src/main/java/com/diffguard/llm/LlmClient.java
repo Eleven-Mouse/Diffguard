@@ -8,6 +8,8 @@ import com.diffguard.prompt.PromptBuilder;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
@@ -16,16 +18,23 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class LlmClient {
+
+    private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MS = 15_000;
+
+    /** 需要禁用扩展思考的 OpenAI 模型 */
+    private static final Set<String> THINKING_MODELS = Set.of("o1", "o1-mini", "o3", "o3-mini", "o3-pro");
 
     private final ReviewConfig config;
     private final HttpClient httpClient;
@@ -38,42 +47,51 @@ public class LlmClient {
                 .build();
     }
 
-    public ReviewResult review(List<PromptBuilder.PromptContent> prompts) {
+    public ReviewResult review(List<PromptBuilder.PromptContent> prompts) throws Exception {
         ReviewResult result = new ReviewResult();
         long startTime = System.currentTimeMillis();
 
         ProgressDisplay.printReviewStart(prompts.size());
+
+        StringBuilder rawReportBuilder = new StringBuilder();
 
         for (int i = 0; i < prompts.size(); i++) {
             if (prompts.size() > 1) {
                 ProgressDisplay.printBatchProgress(i + 1, prompts.size());
             }
 
-            try {
-                List<ReviewIssue> issues = callLlmWithRetry(prompts.get(i));
-                for (ReviewIssue issue : issues) {
+            LlmResponse response = callLlmWithRetry(prompts.get(i));
+            if (response.isRawText()) {
+                if (rawReportBuilder.length() > 0) {
+                    rawReportBuilder.append("\n\n");
+                }
+                rawReportBuilder.append(response.getRawText());
+            } else {
+                for (ReviewIssue issue : response.getIssues()) {
                     result.addIssue(issue);
                 }
-                result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
-            } catch (Exception e) {
-                System.err.println("  " + e.getMessage());
             }
+            result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
+        }
+
+        if (rawReportBuilder.length() > 0) {
+            result.setRawReport(rawReportBuilder.toString());
         }
 
         result.setTotalTokensUsed(totalTokensUsed);
         result.setReviewDurationMs(System.currentTimeMillis() - startTime);
 
-        ProgressDisplay.printReviewComplete(result.getIssues().size());
+        int totalIssues = result.isRawReport() ? 0 : result.getIssues().size();
+        ProgressDisplay.printReviewComplete(totalIssues);
         return result;
     }
 
-    private List<ReviewIssue> callLlmWithRetry(PromptBuilder.PromptContent prompt)
+    private LlmResponse callLlmWithRetry(PromptBuilder.PromptContent prompt)
             throws IOException, InterruptedException {
         Exception lastException = null;
 
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
-                // Start waiting animation
                 Thread animator = new Thread(() -> {
                     while (!Thread.currentThread().isInterrupted()) {
                         ProgressDisplay.printWaiting();
@@ -100,21 +118,21 @@ public class LlmClient {
                 }
             }
         }
-        throw new IOException("All retries exhausted", lastException);
+        throw new IOException("所有重试已耗尽", lastException);
     }
 
     private boolean isRateLimitError(String message) {
         return message != null && (message.contains("429") || message.contains("rate") || message.contains("请求数限制"));
     }
 
-    private List<ReviewIssue> callLlm(PromptBuilder.PromptContent prompt) throws IOException, InterruptedException {
+    private LlmResponse callLlm(PromptBuilder.PromptContent prompt) throws IOException, InterruptedException {
         String provider = config.getLlm().getProvider().toLowerCase();
         String responseBody = switch (provider) {
             case "claude" -> callClaude(prompt);
             case "openai" -> callOpenAI(prompt);
-            default -> throw new IllegalArgumentException("Unsupported provider: " + provider);
+            default -> throw new IllegalArgumentException("不支持的提供商：" + provider);
         };
-        return parseIssues(responseBody);
+        return LlmResponse.fromContent(responseBody);
     }
 
     private String callClaude(PromptBuilder.PromptContent prompt) throws IOException, InterruptedException {
@@ -132,6 +150,7 @@ public class LlmClient {
         );
 
         String jsonBody = MAPPER.writeValueAsString(body);
+        log.debug("Claude API 请求：model={}, base_url={}", config.getLlm().getModel(), baseUrl);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/v1/messages"))
@@ -145,7 +164,8 @@ public class LlmClient {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            throw new IOException("Claude API error (" + response.statusCode() + "): " + response.body());
+            log.error("Claude API 错误：status={}, body={}", response.statusCode(), response.body());
+            throw new IOException("Claude API 错误（" + response.statusCode() + "）：" + response.body());
         }
 
         return extractContentFromClaudeResponse(response.body());
@@ -155,25 +175,23 @@ public class LlmClient {
         String apiKey = config.getLlm().resolveApiKey();
         String baseUrl = config.getLlm().resolveBaseUrl();
 
-        // DEBUG: show what we're sending
-        String keyPreview = apiKey != null
-                ? apiKey.substring(0, Math.min(8, apiKey.length())) + "..."
-                : "NULL";
-        System.out.println("  [DEBUG] URL: " + baseUrl + "/chat/completions");
-        System.out.println("  [DEBUG] API key: " + keyPreview);
-        System.out.println("  [DEBUG] Model: " + config.getLlm().getModel());
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", config.getLlm().getModel());
+        body.put("max_tokens", config.getLlm().getMaxTokens());
+        body.put("temperature", config.getLlm().getTemperature());
+        body.put("messages", List.of(
+                Map.of("role", "system", "content", prompt.getSystemPrompt()),
+                Map.of("role", "user", "content", prompt.getUserPrompt())
+        ));
 
-        Map<String, Object> body = Map.of(
-                "model", config.getLlm().getModel(),
-                "max_tokens", config.getLlm().getMaxTokens(),
-                "temperature", config.getLlm().getTemperature(),
-                "messages", List.of(
-                        Map.of("role", "system", "content", prompt.getSystemPrompt()),
-                        Map.of("role", "user", "content", prompt.getUserPrompt())
-                )
-        );
+        // 仅对扩展思考模型禁用思考功能，避免标准模型返回 400 错误
+        String model = config.getLlm().getModel().toLowerCase();
+        if (THINKING_MODELS.stream().anyMatch(model::startsWith)) {
+            body.put("thinking", Map.of("type", "disabled"));
+        }
 
         String jsonBody = MAPPER.writeValueAsString(body);
+        log.debug("OpenAI API 请求：model={}, base_url={}", config.getLlm().getModel(), baseUrl);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/chat/completions"))
@@ -186,14 +204,9 @@ public class LlmClient {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            throw new IOException("OpenAI API error (" + response.statusCode() + "): " + response.body());
+            log.error("OpenAI API 错误：status={}, body={}", response.statusCode(), response.body());
+            throw new IOException("OpenAI API 错误（" + response.statusCode() + "）：" + response.body());
         }
-
-        // DEBUG: print raw response to diagnose parsing issues
-        System.out.println("  [DEBUG] API response (first 2000 chars):");
-        String rawBody = response.body();
-        System.out.println("  " + rawBody.substring(0, Math.min(rawBody.length(), 2000)));
-        System.out.println();
 
         return extractContentFromOpenAIResponse(response.body());
     }
@@ -239,7 +252,6 @@ public class LlmClient {
         if (choices != null && !choices.isEmpty()) {
             Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
             String content = (String) message.get("content");
-            // If content is empty, fall back to reasoning_content (extended thinking format)
             if (content == null || content.isBlank()) {
                 Object reasoning = message.get("reasoning_content");
                 if (reasoning instanceof String r && !r.isBlank()) {
@@ -251,33 +263,58 @@ public class LlmClient {
         return "";
     }
 
-    private List<ReviewIssue> parseIssues(String content) {
-        if (content == null || content.isBlank()) return List.of();
+    /**
+     * 表示LLM的响应，可以是结构化的JSON问题列表，也可以是原始文本报告。
+     */
+    static class LlmResponse {
+        private final List<ReviewIssue> issues;
+        private final String rawText;
 
-        try {
-            String json = extractJsonArray(content);
-            if (json != null) {
-                return MAPPER.readValue(json, new TypeReference<List<ReviewIssue>>() {});
+        private LlmResponse(List<ReviewIssue> issues, String rawText) {
+            this.issues = issues;
+            this.rawText = rawText;
+        }
+
+        boolean isRawText() {
+            return rawText != null;
+        }
+
+        List<ReviewIssue> getIssues() {
+            return issues;
+        }
+
+        String getRawText() {
+            return rawText;
+        }
+
+        static LlmResponse fromContent(String content) {
+            if (content == null || content.isBlank()) {
+                return new LlmResponse(List.of(), null);
             }
-        } catch (Exception e) {
-            System.err.println("Failed to parse LLM response: " + e.getMessage());
+
+            // 先尝试JSON解析（向后兼容）
+            try {
+                String json = extractJsonArrayStatic(content);
+                if (json != null) {
+                    List<ReviewIssue> issues = MAPPER.readValue(json, new TypeReference<List<ReviewIssue>>() {});
+                    return new LlmResponse(issues, null);
+                }
+            } catch (Exception e) {
+                log.debug("LLM 输出非 JSON 格式，作为原始文本处理");
+            }
+
+            // 原始文本报告
+            return new LlmResponse(List.of(), content);
         }
 
-        List<ReviewIssue> issues = new ArrayList<>();
-        ReviewIssue issue = new ReviewIssue();
-        issue.setType("Review Summary");
-        issue.setMessage(content);
-        issues.add(issue);
-        return issues;
-    }
-
-    private String extractJsonArray(String content) {
-        if (content == null) return null;
-        int start = content.indexOf('[');
-        int end = content.lastIndexOf(']');
-        if (start >= 0 && end > start) {
-            return content.substring(start, end + 1);
+        private static String extractJsonArrayStatic(String content) {
+            if (content == null) return null;
+            int start = content.indexOf('[');
+            int end = content.lastIndexOf(']');
+            if (start >= 0 && end > start) {
+                return content.substring(start, end + 1);
+            }
+            return null;
         }
-        return null;
     }
 }

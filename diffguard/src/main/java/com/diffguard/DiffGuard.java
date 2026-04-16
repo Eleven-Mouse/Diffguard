@@ -1,11 +1,13 @@
 package com.diffguard;
 
+import com.diffguard.cache.ReviewCache;
 import com.diffguard.config.ConfigLoader;
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.diff.DiffCollector;
 import com.diffguard.hook.GitHookInstaller;
 import com.diffguard.llm.LlmClient;
 import com.diffguard.model.DiffFileEntry;
+import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.ConsoleFormatter;
 import com.diffguard.output.ProgressDisplay;
@@ -14,37 +16,47 @@ import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.Callable;
 
 @Command(
         name = "diffguard",
         mixinStandardHelpOptions = true,
-        version = "DiffGuard 1.0.0",
-        description = "AI-powered Code Review CLI tool integrated with Git Hooks"
+        versionProvider = DiffGuard.VersionProvider.class,
+        description = "基于AI的代码审查命令行工具，集成Git钩子"
 )
 public class DiffGuard implements Callable<Integer> {
 
-    @Command(name = "review", description = "Review code changes using AI")
+    @Command(name = "review", description = "使用AI审查代码变更")
     public int review(
-            @Option(names = "--staged", description = "Review staged changes (git diff --cached)") boolean staged,
-            @Option(names = "--from", description = "Source ref for diff comparison") String fromRef,
-            @Option(names = "--to", description = "Target ref for diff comparison") String toRef,
-            @Option(names = "--force", description = "Skip review (bypass critical issues)") boolean force,
-            @Option(names = "--config", description = "Path to config file") Path configPath,
-            @Option(names = "--no-cache", description = "Disable result cache") boolean noCache
+            @Option(names = "--staged", description = "审查暂存区的变更（git diff --cached）") boolean staged,
+            @Option(names = "--from", description = "用于差异对比的源引用") String fromRef,
+            @Option(names = "--to", description = "用于差异对比的目标引用") String toRef,
+            @Option(names = "--force", description = "跳过审查（忽略严重问题）") boolean force,
+            @Option(names = "--config", description = "配置文件路径") Path configPath,
+            @Option(names = "--no-cache", description = "禁用结果缓存") boolean noCache
     ) {
         Path projectDir = Path.of("").toAbsolutePath();
 
         ProgressDisplay.printBanner();
 
-        // Load config
-        ReviewConfig config = configPath != null
-                ? ConfigLoader.load(configPath.getParent())
-                : ConfigLoader.load(projectDir);
+        // 加载配置
+        ReviewConfig config;
+        try {
+            config = configPath != null
+                    ? ConfigLoader.loadFromFile(configPath)
+                    : ConfigLoader.load(projectDir);
+        } catch (IllegalArgumentException e) {
+            System.err.println("  配置加载失败：" + e.getMessage());
+            return 1;
+        }
 
-        // Collect diff
+        // 收集差异
         ProgressDisplay.printCollectingDiffs();
 
         List<DiffFileEntry> diffEntries;
@@ -53,7 +65,7 @@ public class DiffGuard implements Callable<Integer> {
         } else if (fromRef != null && toRef != null) {
             diffEntries = DiffCollector.collectDiffBetweenRefs(projectDir, fromRef, toRef, config);
         } else {
-            System.err.println("  Error: Specify --staged or --from/--to refs");
+            System.err.println("  错误：请指定 --staged 或 --from/--to 引用");
             return 1;
         }
 
@@ -65,18 +77,65 @@ public class DiffGuard implements Callable<Integer> {
         int totalLines = diffEntries.stream().mapToInt(DiffFileEntry::getLineCount).sum();
         ProgressDisplay.printDiffCollected(diffEntries.size(), totalLines);
 
-        // Build prompts (all files merged into minimal batches)
-        PromptBuilder promptBuilder = new PromptBuilder(config);
-        List<PromptBuilder.PromptContent> prompts = promptBuilder.buildPrompts(diffEntries);
+        // 缓存处理：分离已缓存和未缓存的文件
+        ReviewCache cache = noCache ? null : new ReviewCache();
+        List<DiffFileEntry> uncachedEntries = new ArrayList<>();
+        ReviewResult result = new ReviewResult();
 
-        // Review
-        LlmClient llmClient = new LlmClient(config);
-        ReviewResult result = llmClient.review(prompts);
+        for (DiffFileEntry entry : diffEntries) {
+            if (cache != null) {
+                String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent());
+                List<ReviewIssue> cached = cache.get(cacheKey);
+                if (cached != null) {
+                    for (ReviewIssue issue : cached) {
+                        result.addIssue(issue);
+                    }
+                    result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
+                    continue;
+                }
+            }
+            uncachedEntries.add(entry);
+        }
 
-        // Output
+        // 构建提示词（仅未缓存的文件）
+        if (!uncachedEntries.isEmpty()) {
+            PromptBuilder promptBuilder = new PromptBuilder(config);
+            List<PromptBuilder.PromptContent> prompts = promptBuilder.buildPrompts(uncachedEntries);
+
+            // 审查
+            LlmClient llmClient = new LlmClient(config);
+            try {
+                ReviewResult freshResult = llmClient.review(prompts);
+
+                // 合并结果
+                for (ReviewIssue issue : freshResult.getIssues()) {
+                    result.addIssue(issue);
+                }
+                if (freshResult.getRawReport() != null) {
+                    result.setRawReport(freshResult.getRawReport());
+                }
+                result.setTotalTokensUsed(result.getTotalTokensUsed() + freshResult.getTotalTokensUsed());
+                result.setTotalFilesReviewed(result.getTotalFilesReviewed() + freshResult.getTotalFilesReviewed());
+                result.setReviewDurationMs(freshResult.getReviewDurationMs());
+
+                // 写入缓存：仅当未使用合并模式时按文件缓存
+                if (cache != null && uncachedEntries.size() == 1) {
+                    DiffFileEntry entry = uncachedEntries.get(0);
+                    String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent());
+                    cache.put(cacheKey, freshResult.getIssues());
+                }
+            } catch (Exception e) {
+                // LLM 调用失败，fail-closed：阻止提交
+                System.err.println("  AI 审查失败：" + e.getMessage());
+                System.err.println("  为确保代码安全，提交已中止。使用 --force 可跳过。");
+                return 1;
+            }
+        }
+
+        // 输出结果
         ConsoleFormatter.printReport(result);
 
-        // Exit code: 1 if critical issues found and not forced
+        // 退出码：发现严重问题且未强制跳过时返回1
         if (result.hasCriticalIssues() && !force) {
             return 1;
         }
@@ -84,10 +143,10 @@ public class DiffGuard implements Callable<Integer> {
         return 0;
     }
 
-    @Command(name = "install", description = "Install DiffGuard git hooks")
+    @Command(name = "install", description = "安装 DiffGuard Git钩子")
     public int install(
-            @Option(names = {"--pre-commit"}, description = "Install pre-commit hook") boolean preCommit,
-            @Option(names = {"--pre-push"}, description = "Install pre-push hook") boolean prePush
+            @Option(names = {"--pre-commit"}, description = "安装 pre-commit 钩子") boolean preCommit,
+            @Option(names = {"--pre-push"}, description = "安装 pre-push 钩子") boolean prePush
     ) {
         Path projectDir = Path.of("").toAbsolutePath();
 
@@ -101,18 +160,18 @@ public class DiffGuard implements Callable<Integer> {
             }
             return 0;
         } catch (Exception e) {
-            System.err.println("Failed to install hooks: " + e.getMessage());
+            System.err.println("安装钩子失败：" + e.getMessage());
             return 1;
         }
     }
 
-    @Command(name = "uninstall", description = "Remove DiffGuard git hooks")
+    @Command(name = "uninstall", description = "移除 DiffGuard Git钩子")
     public int uninstall() {
         try {
             GitHookInstaller.uninstall(Path.of("").toAbsolutePath());
             return 0;
         } catch (Exception e) {
-            System.err.println("Failed to uninstall hooks: " + e.getMessage());
+            System.err.println("卸载钩子失败：" + e.getMessage());
             return 1;
         }
     }
@@ -126,5 +185,22 @@ public class DiffGuard implements Callable<Integer> {
     public static void main(String[] args) {
         int exitCode = new CommandLine(new DiffGuard()).execute(args);
         System.exit(exitCode);
+    }
+
+    /**
+     * 从 version.properties 读取版本号（由 Maven 资源过滤注入）。
+     */
+    static class VersionProvider implements CommandLine.IVersionProvider {
+        @Override
+        public String[] getVersion() {
+            try (InputStream is = getClass().getResourceAsStream("/version.properties")) {
+                if (is != null) {
+                    Properties props = new Properties();
+                    props.load(is);
+                    return new String[]{"DiffGuard " + props.getProperty("version", "unknown")};
+                }
+            } catch (IOException ignored) {}
+            return new String[]{"DiffGuard unknown"};
+        }
     }
 }

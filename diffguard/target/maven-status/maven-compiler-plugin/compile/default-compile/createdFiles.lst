@@ -14,7 +14,6 @@ com\diffguard\output\ProgressDisplay.class
 com\diffguard\llm\LlmClient.class
 com\diffguard\cache\ReviewCache.class
 com\diffguard\hook\GitHookInstaller.class
-com\diffguard\llm\LlmClient$3.class
 com\diffguard\model\Severity.class
 com\diffguard\output\ConsoleFormatter$1.class
 com\diffguard\prompt\PromptBuilder.class

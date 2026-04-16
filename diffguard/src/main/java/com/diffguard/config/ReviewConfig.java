@@ -62,7 +62,7 @@ public class ReviewConfig {
         @JsonProperty("base_url")
         private String baseUrl = null;
 
-        // getters and setters
+        // getter 和 setter 方法
         public String getProvider() { return provider; }
         public void setProvider(String provider) { this.provider = provider; }
         public String getModel() { return model; }
@@ -84,7 +84,7 @@ public class ReviewConfig {
             if (baseUrl != null && !baseUrl.isBlank()) {
                 return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
             }
-            // Default URLs based on provider
+            // 根据提供商返回默认URL
             return switch (provider.toLowerCase()) {
                 case "openai" -> "https://api.openai.com/v1";
                 default -> "https://api.anthropic.com";
@@ -92,17 +92,17 @@ public class ReviewConfig {
         }
 
         public String resolveApiKey() {
-            // 1. Direct api_key in config file (highest priority)
+            // 1. 环境变量（最高优先级，避免密钥泄露到配置文件）
+            String envKey = System.getenv(apiKeyEnv);
+            if (envKey != null && !envKey.isBlank()) {
+                return envKey.trim();
+            }
+            // 2. 配置文件中的 api_key（不推荐，存在泄露风险）
             if (apiKey != null && !apiKey.isBlank()) {
                 return apiKey.trim();
             }
-            // 2. Environment variable
-            String key = System.getenv(apiKeyEnv);
-            if (key != null && !key.isBlank()) {
-                return key.trim();
-            }
             throw new IllegalStateException(
-                "API key not found. Set api_key in config or environment variable: " + apiKeyEnv);
+                "未找到API密钥。请通过环境变量设置：" + apiKeyEnv + "，或在配置文件中设置 api_key");
         }
     }
 

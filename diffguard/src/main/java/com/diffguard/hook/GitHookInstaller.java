@@ -1,5 +1,8 @@
 package com.diffguard.hook;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,48 +12,50 @@ import java.util.Set;
 
 public class GitHookInstaller {
 
+    private static final Logger log = LoggerFactory.getLogger(GitHookInstaller.class);
+
     private static final String PRE_COMMIT_HOOK = """
             #!/bin/sh
-            # DiffGuard - AI Code Review pre-commit hook
-            echo "🔍 DiffGuard: Running AI code review..."
+            # DiffGuard - AI 代码审查 pre-commit 钩子
+            echo "🔍 DiffGuard：正在运行AI代码审查..."
             java -jar "$(dirname "$0")/diffguard.jar" review --staged
             exit_code=$?
             if [ $exit_code -ne 0 ]; then
-                echo "❌ DiffGuard: Critical issues found. Commit aborted."
-                echo "   Use --no-verify to bypass (not recommended)."
+                echo "❌ DiffGuard：发现严重问题，提交已中止。"
+                echo "   使用 --no-verify 可跳过审查（不推荐）。"
                 exit 1
             fi
-            echo "✅ DiffGuard: Review passed."
+            echo "✅ DiffGuard：审查通过。"
             exit 0
             """;
 
     private static final String PRE_PUSH_HOOK = """
             #!/bin/sh
-            # DiffGuard - AI Code Review pre-push hook
+            # DiffGuard - AI 代码审查 pre-push 钩子
             remote="$1"
             url="$2"
 
             while read local_ref local_sha remote_ref remote_sha; do
-                echo "🔍 DiffGuard: Reviewing changes for push to $remote..."
+                echo "🔍 DiffGuard：正在审查推送到 $remote 的变更..."
                 java -jar "$(dirname "$0")/diffguard.jar" review --from "$local_sha" --to "$remote_sha"
                 exit_code=$?
                 if [ $exit_code -ne 0 ]; then
-                    echo "❌ DiffGuard: Critical issues found. Push aborted."
+                    echo "❌ DiffGuard：发现严重问题，推送已中止。"
                     exit 1
                 fi
             done
 
-            echo "✅ DiffGuard: Review passed."
+            echo "✅ DiffGuard：审查通过。"
             exit 0
             """;
 
     /**
-     * Install a pre-commit hook in the given git repository.
+     * 在指定的Git仓库中安装 pre-commit 钩子。
      */
     public static void installPreCommit(Path projectDir) throws IOException {
         Path gitDir = findGitDir(projectDir);
         if (gitDir == null) {
-            throw new IOException("Not a git repository: " + projectDir);
+            throw new IOException("不是Git仓库：" + projectDir);
         }
 
         Path hooksDir = gitDir.resolve("hooks");
@@ -58,43 +63,43 @@ public class GitHookInstaller {
 
         Path hookFile = hooksDir.resolve("pre-commit");
         if (Files.exists(hookFile)) {
-            // Backup existing hook
+            // 备份现有钩子
             Path backup = hooksDir.resolve("pre-commit.diffguard-backup");
             Files.copy(hookFile, backup);
-            System.out.println("Existing pre-commit hook backed up to: " + backup);
+            log.info("已将现有 pre-commit 钩子备份到：{}", backup);
         }
 
         Files.writeString(hookFile, PRE_COMMIT_HOOK, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         makeExecutable(hookFile);
-        System.out.println("✅ pre-commit hook installed: " + hookFile);
+        log.info("pre-commit 钩子已安装：{}", hookFile);
     }
 
     /**
-     * Install a pre-push hook in the given git repository.
+     * 在指定的Git仓库中安装 pre-push 钩子。
      */
     public static void installPrePush(Path projectDir) throws IOException {
         Path gitDir = findGitDir(projectDir);
         if (gitDir == null) {
-            throw new IOException("Not a git repository: " + projectDir);
+            throw new IOException("不是Git仓库：" + projectDir);
         }
 
-        Path hooksDir = gitDir.resolve("Hooks");
+        Path hooksDir = gitDir.resolve("hooks");
         Files.createDirectories(hooksDir);
 
         Path hookFile = hooksDir.resolve("pre-push");
         if (Files.exists(hookFile)) {
             Path backup = hooksDir.resolve("pre-push.diffguard-backup");
             Files.copy(hookFile, backup);
-            System.out.println("Existing pre-push hook backed up to: " + backup);
+            log.info("已将现有 pre-push 钩子备份到：{}", backup);
         }
 
         Files.writeString(hookFile, PRE_PUSH_HOOK, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         makeExecutable(hookFile);
-        System.out.println("✅ pre-push hook installed: " + hookFile);
+        log.info("pre-push 钩子已安装：{}", hookFile);
     }
 
     /**
-     * Remove DiffGuard hooks.
+     * 移除 DiffGuard 钩子。
      */
     public static void uninstall(Path projectDir) throws IOException {
         Path gitDir = findGitDir(projectDir);
@@ -107,14 +112,14 @@ public class GitHookInstaller {
                 String content = Files.readString(hook);
                 if (content.contains("DiffGuard")) {
                     Files.delete(hook);
-                    System.out.println("Removed " + hookName + " hook");
+                    log.info("已移除 {} 钩子", hookName);
 
-                    // Restore backup if exists
+                    // 如果存在备份则恢复
                     Path backup = hooksDir.resolve(hookName + ".diffguard-backup");
                     if (Files.exists(backup)) {
                         Files.copy(backup, hook);
                         Files.delete(backup);
-                        System.out.println("Restored previous " + hookName + " hook");
+                        log.info("已恢复之前的 {} 钩子", hookName);
                     }
                 }
             }
@@ -127,9 +132,9 @@ public class GitHookInstaller {
             if (Files.isDirectory(current.resolve(".git"))) {
                 return current.resolve(".git");
             }
-            // Check if this is a bare repo or worktree
+            // 检查是否为裸仓库或工作树
             if (Files.isRegularFile(current.resolve(".git"))) {
-                // Git worktree - read .git file to find actual git dir
+                // Git工作树 - 读取 .git 文件以找到实际的Git目录
                 try {
                     String content = Files.readString(current.resolve(".git"));
                     if (content.startsWith("gitdir: ")) {
@@ -149,7 +154,7 @@ public class GitHookInstaller {
             perms.add(PosixFilePermission.GROUP_EXECUTE);
             Files.setPosixFilePermissions(file, perms);
         } catch (UnsupportedOperationException e) {
-            // Windows - try setting executable via File API
+            // Windows系统 - 尝试通过 File API 设置可执行权限
             file.toFile().setExecutable(true);
         }
     }

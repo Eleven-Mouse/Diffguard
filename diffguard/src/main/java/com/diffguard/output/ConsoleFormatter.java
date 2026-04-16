@@ -4,26 +4,28 @@ import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.model.Severity;
 
+import static com.diffguard.output.AnsiColors.*;
+
 public class ConsoleFormatter {
 
-    private static final String RESET = "\u001B[0m";
-    private static final String BOLD = "\u001B[1m";
-    private static final String RED = "\u001B[31m";
-    private static final String YELLOW = "\u001B[33m";
-    private static final String BLUE = "\u001B[34m";
-    private static final String GREEN = "\u001B[32m";
-    private static final String GRAY = "\u001B[90m";
     private static final String DOUBLE_LINE = "═".repeat(60);
 
     public static void printReport(ReviewResult result) {
         System.out.println();
+
+        if (result.isRawReport()) {
+            printRawReport(result);
+            return;
+        }
+
+        // 结构化报告格式
         System.out.println(BOLD + DOUBLE_LINE + RESET);
-        System.out.println(BOLD + "  Code Review Report - " + result.getSummary() + RESET);
+        System.out.println(BOLD + "  代码审查报告 - " + result.getSummary() + RESET);
         System.out.println(BOLD + DOUBLE_LINE + RESET);
         System.out.println();
 
         if (result.getIssues().isEmpty()) {
-            System.out.println(GREEN + BOLD + "  ✓ No issues found. Code looks good!" + RESET);
+            System.out.println(GREEN + BOLD + "  ✓ 未发现问题，代码看起来不错！" + RESET);
             System.out.println();
             return;
         }
@@ -34,22 +36,45 @@ public class ConsoleFormatter {
 
         System.out.println(BOLD + DOUBLE_LINE + RESET);
 
-        // Summary line
+        // 总结行
         if (result.hasCriticalIssues()) {
             int critical = result.getIssuesBySeverity(Severity.CRITICAL).size();
-            System.out.println(RED + BOLD + "  ✗ " + critical + " critical issue(s) found - commit aborted" + RESET);
-            System.out.println(GRAY + "  Run with --force to bypass review" + RESET);
+            System.out.println(RED + BOLD + "  ✗ 发现 " + critical + " 个严重问题 - 提交已中止" + RESET);
+            System.out.println(GRAY + "  使用 --force 参数可跳过审查" + RESET);
         } else {
-            System.out.println(GREEN + BOLD + "  ✓ No critical issues - commit allowed" + RESET);
+            System.out.println(GREEN + BOLD + "  ✓ 无严重问题 - 允许提交" + RESET);
         }
 
-        // Stats
+        // 统计信息
         System.out.println(GRAY + String.format(
-                "  Duration: %dms | Tokens: %d | Files: %d",
+                "  耗时：%dms | Token数：%d | 文件数：%d",
                 result.getReviewDurationMs(),
                 result.getTotalTokensUsed(),
                 result.getTotalFilesReviewed()) + RESET);
         System.out.println(BOLD + DOUBLE_LINE + RESET);
+        System.out.println();
+    }
+
+    /**
+     * 直接打印LLM输出的原始文本报告。
+     */
+    private static void printRawReport(ReviewResult result) {
+        System.out.println(result.getRawReport());
+
+        System.out.println();
+        System.out.println(GRAY + String.format(
+                "  耗时：%dms | Token数：%d | 文件数：%d",
+                result.getReviewDurationMs(),
+                result.getTotalTokensUsed(),
+                result.getTotalFilesReviewed()) + RESET);
+
+        // 提交阻止状态
+        if (result.hasCriticalIssues()) {
+            System.out.println(RED + BOLD + "  ✗ 发现严重问题 - 提交已中止" + RESET);
+            System.out.println(GRAY + "  使用 --force 参数可跳过审查" + RESET);
+        } else {
+            System.out.println(GREEN + BOLD + "  ✓ 无严重问题 - 允许提交" + RESET);
+        }
         System.out.println();
     }
 
@@ -65,11 +90,11 @@ public class ConsoleFormatter {
                 color, BOLD, severity.getIcon() + " " + severity.getLabel(), RESET,
                 issue.getFile(), issue.getLine());
 
-        System.out.printf("    %sType:%s %s%n", GRAY, RESET, issue.getType());
-        System.out.printf("    %sMessage:%s %s%n", GRAY, RESET, issue.getMessage());
+        System.out.printf("    %s类型：%s %s%n", GRAY, RESET, issue.getType());
+        System.out.printf("    %s信息：%s %s%n", GRAY, RESET, issue.getMessage());
 
         if (issue.getSuggestion() != null && !issue.getSuggestion().isBlank()) {
-            System.out.printf("    %sSuggestion:%s %s%n", GRAY, RESET, issue.getSuggestion());
+            System.out.printf("    %s建议：%s %s%n", GRAY, RESET, issue.getSuggestion());
         }
 
         System.out.println();

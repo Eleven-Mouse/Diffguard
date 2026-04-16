@@ -27,11 +27,9 @@ public class DiffCollector {
             .getEncoding(EncodingType.CL100K_BASE);
 
     /**
-     * Collect staged diff (index vs HEAD), equivalent to "git diff --cached".
+     * 收集暂存区差异（索引 vs HEAD），等同于 "git diff --cached"。
      */
     public static List<DiffFileEntry> collectStagedDiff(Path projectDir, ReviewConfig config) {
-        List<DiffFileEntry> entries = new ArrayList<>();
-
         try (Repository repository = new FileRepositoryBuilder()
                 .findGitDir(projectDir.toFile())
                 .build();
@@ -41,43 +39,19 @@ public class DiffCollector {
                     .setCached(true)
                     .call();
 
-            int fileCount = 0;
-            for (DiffEntry diff : diffs) {
-                if (diff.getChangeType() == DiffEntry.ChangeType.DELETE) {
-                    continue;
-                }
-
-                String filePath = diff.getNewPath();
-                if (shouldIgnore(filePath, config)) {
-                    continue;
-                }
-
-                if (++fileCount > config.getReview().getMaxDiffFiles()) {
-                    System.err.println("Max diff files reached (" + config.getReview().getMaxDiffFiles() + "), skipping remaining.");
-                    break;
-                }
-
-                String diffContent = formatDiff(repository, diff);
-                if (diffContent != null && !diffContent.isBlank()) {
-                    int tokenCount = ENCODING.countTokens(diffContent);
-                    entries.add(new DiffFileEntry(filePath, diffContent, tokenCount));
-                }
-            }
+            return processDiffEntries(diffs, repository, config);
 
         } catch (IOException | GitAPIException e) {
-            System.err.println("Failed to collect diff: " + e.getMessage());
+            System.err.println("收集差异失败：" + e.getMessage());
+            return List.of();
         }
-
-        return entries;
     }
 
     /**
-     * Collect diff between two refs (for pre-push hook).
+     * 收集两个引用之间的差异（用于 pre-push 钩子）。
      */
     public static List<DiffFileEntry> collectDiffBetweenRefs(
             Path projectDir, String fromRef, String toRef, ReviewConfig config) {
-        List<DiffFileEntry> entries = new ArrayList<>();
-
         try (Repository repository = new FileRepositoryBuilder()
                 .findGitDir(projectDir.toFile())
                 .build()) {
@@ -86,8 +60,8 @@ public class DiffCollector {
             ObjectId toId = repository.resolve(toRef);
 
             if (fromId == null || toId == null) {
-                System.err.println("Cannot resolve refs: " + fromRef + ".." + toRef);
-                return entries;
+                System.err.println("无法解析引用：" + fromRef + ".." + toRef);
+                return List.of();
             }
 
             CanonicalTreeParser oldTree = prepareTreeParser(repository, fromId);
@@ -99,25 +73,50 @@ public class DiffCollector {
                         .setNewTree(newTree)
                         .call();
 
-                int fileCount = 0;
-                for (DiffEntry diff : diffs) {
-                    if (diff.getChangeType() == DiffEntry.ChangeType.DELETE) continue;
-
-                    String filePath = diff.getNewPath();
-                    if (shouldIgnore(filePath, config)) continue;
-
-                    if (++fileCount > config.getReview().getMaxDiffFiles()) break;
-
-                    String diffContent = formatDiff(repository, diff);
-                    if (diffContent != null && !diffContent.isBlank()) {
-                        int tokenCount = ENCODING.countTokens(diffContent);
-                        entries.add(new DiffFileEntry(filePath, diffContent, tokenCount));
-                    }
-                }
+                return processDiffEntries(diffs, repository, config);
             }
 
         } catch (IOException | GitAPIException e) {
-            System.err.println("Failed to collect diff between refs: " + e.getMessage());
+            System.err.println("收集引用间差异失败：" + e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 通用的 diff 条目处理逻辑：过滤、格式化、token 限制检查。
+     */
+    private static List<DiffFileEntry> processDiffEntries(
+            List<DiffEntry> diffs, Repository repository, ReviewConfig config) throws IOException {
+        List<DiffFileEntry> entries = new ArrayList<>();
+        int maxFiles = config.getReview().getMaxDiffFiles();
+        int maxTokens = config.getReview().getMaxTokensPerFile();
+        int fileCount = 0;
+
+        for (DiffEntry diff : diffs) {
+            if (diff.getChangeType() == DiffEntry.ChangeType.DELETE) {
+                continue;
+            }
+
+            String filePath = diff.getNewPath();
+            if (shouldIgnore(filePath, config)) {
+                continue;
+            }
+
+            if (++fileCount > maxFiles) {
+                System.err.println("已达到最大差异文件数量（" + maxFiles + "），跳过剩余文件。");
+                break;
+            }
+
+            String diffContent = formatDiff(repository, diff);
+            if (diffContent != null && !diffContent.isBlank()) {
+                int tokenCount = ENCODING.countTokens(diffContent);
+                if (tokenCount > maxTokens) {
+                    System.err.println("  文件 " + filePath + " 超出 token 限制（"
+                            + tokenCount + " > " + maxTokens + "），已跳过。");
+                    continue;
+                }
+                entries.add(new DiffFileEntry(filePath, diffContent, tokenCount));
+            }
         }
 
         return entries;

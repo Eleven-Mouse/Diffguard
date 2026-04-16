@@ -1,0 +1,15 @@
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Build
+diffguard/target/
+diffguard/dependency-reduced-pom.xml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (may contain API keys)
+.review-config.yml
