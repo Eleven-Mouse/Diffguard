@@ -57,7 +57,7 @@ public class ProgressDisplay {
      */
     public static void printDiffCollected(int fileCount, int totalLines) {
         System.out.println("  " + GREEN + "✓" + RESET + " 发现 " + BOLD + fileCount + RESET + " 个文件变更，" + BOLD + totalLines + RESET + " 行");
-        System.out.println();
+        System.out.println();;;;;;;;;gfdg fbfdb
     }
 
     /**
