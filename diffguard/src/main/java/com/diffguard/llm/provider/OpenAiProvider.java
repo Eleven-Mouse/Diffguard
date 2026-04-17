@@ -2,9 +2,9 @@ package com.diffguard.llm.provider;
 
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.LlmApiException;
+import com.diffguard.util.JacksonMapper;
+import com.diffguard.util.StringUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,8 +25,6 @@ import java.util.Set;
 public class OpenAiProvider implements LlmProvider {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiProvider.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     /** 需要禁用扩展思考的模型 */
     private static final Set<String> THINKING_MODELS = Set.of("o1", "o1-mini", "o3", "o3-mini", "o3-pro");
@@ -102,9 +100,8 @@ public class OpenAiProvider implements LlmProvider {
             body.put("thinking", Map.of("type", "disabled"));
         }
 
-        String jsonBody = MAPPER.writeValueAsString(body);
-        log.info("OpenAI API 请求：model={}, base_url={}, response_format={}, 请求体长度={}", config.getModel(), baseUrl, withResponseFormat, jsonBody.length());
-        log.debug("OpenAI API 完整请求体：{}", jsonBody);
+        String jsonBody = JacksonMapper.MAPPER.writeValueAsString(body);
+        log.debug("OpenAI API 请求：model={}, base_url={}, response_format={}, 请求体长度={}", config.getModel(), baseUrl, withResponseFormat, jsonBody.length());
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/chat/completions"))
@@ -118,18 +115,18 @@ public class OpenAiProvider implements LlmProvider {
 
         if (response.statusCode() != 200) {
             String errorBody = response.body();
-            log.error("OpenAI API 错误：status={}, body={}", response.statusCode(), truncate(errorBody, 500));
+            log.error("OpenAI API 错误：status={}, body={}", response.statusCode(), StringUtils.truncate(errorBody, 500));
             log.debug("OpenAI API 错误完整响应：{}", errorBody);
-            throw new LlmApiException(response.statusCode(), "OpenAI API 错误（" + response.statusCode() + "）：" + truncate(errorBody, 200));
+            throw new LlmApiException(response.statusCode(), "OpenAI API 错误（" + response.statusCode() + "）：" + StringUtils.truncate(errorBody, 200));
         }
 
-        log.info("OpenAI API 响应状态：200，响应体长度={}，前500字符：{}", response.body().length(), truncate(response.body(), 500));
+        log.debug("OpenAI API 响应状态：200，响应体长度={}", response.body().length());
         return extractContent(response.body());
     }
 
     @SuppressWarnings("unchecked")
     private String extractContent(String responseBody) throws IOException, LlmApiException {
-        Map<String, Object> response = MAPPER.readValue(responseBody, new TypeReference<>() {});
+        Map<String, Object> response = JacksonMapper.MAPPER.readValue(responseBody, new TypeReference<>() {});
 
         // 检测代理返回的伪装为 HTTP 200 的错误响应
         // 常见格式：{"code":500,"msg":"...","success":false} 或 {"error":{"message":"...","code":...}}
@@ -137,14 +134,14 @@ public class OpenAiProvider implements LlmProvider {
         if (successFlag instanceof Boolean && !(Boolean) successFlag) {
             String msg = String.valueOf(response.getOrDefault("msg", response.getOrDefault("message", "未知错误")));
             String code = String.valueOf(response.getOrDefault("code", "unknown"));
-            log.error("API 返回业务错误（HTTP 200 包装）：code={}, msg={}, body={}", code, msg, truncate(responseBody, 500));
-            throw new LlmApiException(500, "API 业务错误（" + code + "）：" + truncate(msg, 200));
+            log.error("API 返回业务错误（HTTP 200 包装）：code={}, msg={}, body={}", code, msg, StringUtils.truncate(responseBody, 500));
+            throw new LlmApiException(500, "API 业务错误（" + code + "）：" + StringUtils.truncate(msg, 200));
         }
         if (response.containsKey("error") && !response.containsKey("choices")) {
             Object errorObj = response.get("error");
             String errorMsg = errorObj instanceof Map ? String.valueOf(((Map<String, Object>) errorObj).getOrDefault("message", errorObj)) : String.valueOf(errorObj);
-            log.error("API 响应包含 error 字段且无 choices：{}", truncate(responseBody, 500));
-            throw new LlmApiException(500, "API 错误：" + truncate(errorMsg, 200));
+            log.error("API 响应包含 error 字段且无 choices：{}", StringUtils.truncate(responseBody, 500));
+            throw new LlmApiException(500, "API 错误：" + StringUtils.truncate(errorMsg, 200));
         }
 
         if (response.containsKey("usage") && tokenTracker != null) {
@@ -173,10 +170,5 @@ public class OpenAiProvider implements LlmProvider {
         }
         log.warn("API 响应中无有效 choices，响应内容：{}", responseBody);
         return "";
-    }
-
-    private static String truncate(String s, int maxLen) {
-        if (s == null) return "null";
-        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...(truncated)";
     }
 }

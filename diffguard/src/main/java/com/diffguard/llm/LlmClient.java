@@ -10,9 +10,8 @@ import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.ProgressDisplay;
 import com.diffguard.prompt.PromptBuilder;
+import com.diffguard.util.JacksonMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,16 +22,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class LlmClient {
+public class LlmClient implements AutoCloseable {
 
 
     private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
-
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MS = 15_000;
@@ -45,7 +40,10 @@ public class LlmClient {
     private final LlmProvider provider;
     private final HttpClient httpClient;
     private final Semaphore concurrencyLimiter = new Semaphore(MAX_CONCURRENCY);
-    private int totalTokensUsed = 0;
+    private final AtomicInteger totalTokensUsed = new AtomicInteger(0);
+
+    /** 共享线程池，复用而非每次 review() 创建新实例 */
+    private final ExecutorService executor;
 
     public LlmClient(ReviewConfig config) {
         this.httpClient = HttpClient.newBuilder()
@@ -53,13 +51,27 @@ public class LlmClient {
                 .connectTimeout(Duration.ofSeconds(config.getLlm().getTimeoutSeconds()))
                 .build();
 
-        TokenTracker tracker = tokens -> totalTokensUsed += tokens;
+        TokenTracker tracker = tokens -> totalTokensUsed.addAndGet(tokens);
         String providerName = config.getLlm().getProvider().toLowerCase();
         this.provider = switch (providerName) {
             case "claude" -> new ClaudeProvider(config.getLlm(), httpClient, tracker);
             case "openai" -> new OpenAiProvider(config.getLlm(), httpClient, tracker);
             default -> throw new IllegalArgumentException("不支持的提供商：" + providerName);
         };
+
+        this.executor = Executors.newFixedThreadPool(MAX_CONCURRENCY);
+    }
+
+    /**
+     * 包内可见构造方法，用于测试注入 mock LlmProvider。
+     */
+    LlmClient(LlmProvider provider, ReviewConfig config) {
+        this.httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(config.getLlm().getTimeoutSeconds()))
+                .build();
+        this.provider = provider;
+        this.executor = Executors.newFixedThreadPool(MAX_CONCURRENCY);
     }
 
     public ReviewResult review(List<PromptBuilder.PromptContent> prompts) throws LlmApiException {
@@ -76,47 +88,56 @@ public class LlmClient {
             }
         } else {
             // 多批次：并行调用，按顺序合并结果保证稳定性
-            ExecutorService executor = Executors.newFixedThreadPool(
-                    Math.min(prompts.size(), MAX_CONCURRENCY));
-            try {
-                List<Future<LlmResponse>> futures = new ArrayList<>();
-                for (int i = 0; i < prompts.size(); i++) {
-                    final int idx = i;
-                    futures.add(executor.submit(() -> {
-                        concurrencyLimiter.acquire();
-                        try {
-                            ProgressDisplay.printBatchProgress(idx + 1, prompts.size());
-                            return callLlmWithRetry(prompts.get(idx));
-                        } finally {
-                            concurrencyLimiter.release();
-                        }
-                    }));
-                }
-
-                for (Future<LlmResponse> future : futures) {
+            List<Future<LlmResponse>> futures = new ArrayList<>();
+            for (int i = 0; i < prompts.size(); i++) {
+                final int idx = i;
+                futures.add(executor.submit(() -> {
+                    concurrencyLimiter.acquire();
                     try {
-                        LlmResponse response = future.get();
-                        mergeResponse(response, result);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw new LlmApiException("并行审查被中断", e);
-                    } catch (ExecutionException e) {
-                        Throwable cause = e.getCause();
-                        if (cause instanceof LlmApiException lae) throw lae;
-                        throw new LlmApiException("并行审查失败：" + cause.getMessage(), cause);
+                        ProgressDisplay.printBatchProgress(idx + 1, prompts.size());
+                        return callLlmWithRetry(prompts.get(idx));
+                    } finally {
+                        concurrencyLimiter.release();
                     }
+                }));
+            }
+
+            for (Future<LlmResponse> future : futures) {
+                try {
+                    LlmResponse response = future.get();
+                    mergeResponse(response, result);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    // 取消未完成的任务，避免浪费 LLM API 调用
+                    cancelRemainingFutures(futures);
+                    throw new LlmApiException("并行审查被中断", e);
+                } catch (ExecutionException e) {
+                    // 取消未完成的任务
+                    cancelRemainingFutures(futures);
+                    Throwable cause = e.getCause();
+                    if (cause instanceof LlmApiException lae) throw lae;
+                    throw new LlmApiException("并行审查失败：" + cause.getMessage(), cause);
                 }
-            } finally {
-                executor.shutdown();
             }
         }
 
-        result.setTotalTokensUsed(totalTokensUsed);
+        result.setTotalTokensUsed(totalTokensUsed.get());
         result.setReviewDurationMs(System.currentTimeMillis() - startTime);
 
         int totalIssues = result.isRawReport() ? 0 : result.getIssues().size();
         ProgressDisplay.printReviewComplete(totalIssues);
         return result;
+    }
+
+    /**
+     * 取消所有尚未完成的 Future 任务，避免浪费 LLM API 调用。
+     */
+    private void cancelRemainingFutures(List<Future<LlmResponse>> futures) {
+        for (Future<LlmResponse> f : futures) {
+            if (!f.isDone()) {
+                f.cancel(true);
+            }
+        }
     }
 
     /**
@@ -231,6 +252,19 @@ public class LlmClient {
         throw new LlmApiException("所有重试已耗尽", lastException);
     }
 
+    @Override
+    public void close() {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
     /**
      * 表示LLM的响应，优先解析为结构化JSON，回退到原始文本。
      */
@@ -274,7 +308,7 @@ public class LlmClient {
             try {
                 String jsonObj = extractJsonObject(cleaned);
                 if (jsonObj != null) {
-                    Map<String, Object> parsed = MAPPER.readValue(jsonObj, new TypeReference<Map<String, Object>>() {});
+                    Map<String, Object> parsed = JacksonMapper.MAPPER.readValue(jsonObj, new TypeReference<Map<String, Object>>() {});
                     boolean critical = false;
                     Object criticalFlag = parsed.get("has_critical");
                     if (criticalFlag instanceof Boolean) {
@@ -283,8 +317,8 @@ public class LlmClient {
                     List<ReviewIssue> issues = List.of();
                     Object issuesObj = parsed.get("issues");
                     if (issuesObj != null) {
-                        String issuesJson = MAPPER.writeValueAsString(issuesObj);
-                        issues = MAPPER.readValue(issuesJson, new TypeReference<List<ReviewIssue>>() {});
+                        String issuesJson = JacksonMapper.MAPPER.writeValueAsString(issuesObj);
+                        issues = JacksonMapper.MAPPER.readValue(issuesJson, new TypeReference<List<ReviewIssue>>() {});
                     }
                     return new LlmResponse(issues, null, critical);
                 }
@@ -296,7 +330,7 @@ public class LlmClient {
             try {
                 String json = extractJsonArray(cleaned);
                 if (json != null) {
-                    List<ReviewIssue> issues = MAPPER.readValue(json, new TypeReference<List<ReviewIssue>>() {});
+                    List<ReviewIssue> issues = JacksonMapper.MAPPER.readValue(json, new TypeReference<List<ReviewIssue>>() {});
                     return new LlmResponse(issues, null, null);
                 }
             } catch (Exception e) {

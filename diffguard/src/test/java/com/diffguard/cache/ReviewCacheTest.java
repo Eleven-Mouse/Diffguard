@@ -30,7 +30,7 @@ class ReviewCacheTest {
 
     @BeforeEach
     void setUp() {
-        cache = new ReviewCache(tempDir, true);
+        cache = ReviewCache.withCustomCacheDir(tempDir, tempDir);
     }
 
     @AfterEach

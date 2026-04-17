@@ -2,9 +2,9 @@ package com.diffguard.llm.provider;
 
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.LlmApiException;
+import com.diffguard.util.JacksonMapper;
+import com.diffguard.util.StringUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,8 +23,6 @@ import java.util.Map;
 public class ClaudeProvider implements LlmProvider {
 
     private static final Logger log = LoggerFactory.getLogger(ClaudeProvider.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private final ReviewConfig.LlmConfig config;
     private final HttpClient httpClient;
@@ -51,7 +49,7 @@ public class ClaudeProvider implements LlmProvider {
                 )
         );
 
-        String jsonBody = MAPPER.writeValueAsString(body);
+        String jsonBody = JacksonMapper.MAPPER.writeValueAsString(body);
         log.debug("Claude API 请求：model={}, base_url={}", config.getModel(), baseUrl);
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -67,9 +65,9 @@ public class ClaudeProvider implements LlmProvider {
 
         if (response.statusCode() != 200) {
             String errorBody = response.body();
-            log.error("Claude API 错误：status={}, body={}", response.statusCode(), truncate(errorBody, 500));
+            log.error("Claude API 错误：status={}, body={}", response.statusCode(), StringUtils.truncate(errorBody, 500));
             log.debug("Claude API 错误完整响应：{}", errorBody);
-            throw new LlmApiException(response.statusCode(), "Claude API 错误（" + response.statusCode() + "）：" + truncate(errorBody, 200));
+            throw new LlmApiException(response.statusCode(), "Claude API 错误（" + response.statusCode() + "）：" + StringUtils.truncate(errorBody, 200));
         }
 
         return extractContent(response.body());
@@ -77,21 +75,21 @@ public class ClaudeProvider implements LlmProvider {
 
     @SuppressWarnings("unchecked")
     private String extractContent(String responseBody) throws IOException, LlmApiException {
-        Map<String, Object> response = MAPPER.readValue(responseBody, new TypeReference<>() {});
+        Map<String, Object> response = JacksonMapper.MAPPER.readValue(responseBody, new TypeReference<>() {});
 
         // 检测代理返回的伪装为 HTTP 200 的错误响应
         Object successFlag = response.get("success");
         if (successFlag instanceof Boolean && !(Boolean) successFlag) {
             String msg = String.valueOf(response.getOrDefault("msg", response.getOrDefault("message", "未知错误")));
             String code = String.valueOf(response.getOrDefault("code", "unknown"));
-            log.error("API 返回业务错误（HTTP 200 包装）：code={}, msg={}, body={}", code, msg, truncate(responseBody, 500));
-            throw new LlmApiException(500, "API 业务错误（" + code + "）：" + truncate(msg, 200));
+            log.error("API 返回业务错误（HTTP 200 包装）：code={}, msg={}, body={}", code, msg, StringUtils.truncate(responseBody, 500));
+            throw new LlmApiException(500, "API 业务错误（" + code + "）：" + StringUtils.truncate(msg, 200));
         }
         if (response.containsKey("error") && !response.containsKey("content")) {
             Object errorObj = response.get("error");
             String errorMsg = errorObj instanceof Map ? String.valueOf(((Map<String, Object>) errorObj).getOrDefault("message", errorObj)) : String.valueOf(errorObj);
-            log.error("API 响应包含 error 字段且无 content：{}", truncate(responseBody, 500));
-            throw new LlmApiException(500, "API 错误：" + truncate(errorMsg, 200));
+            log.error("API 响应包含 error 字段且无 content：{}", StringUtils.truncate(responseBody, 500));
+            throw new LlmApiException(500, "API 错误：" + StringUtils.truncate(errorMsg, 200));
         }
 
         if (response.containsKey("usage") && tokenTracker != null) {
@@ -116,10 +114,5 @@ public class ClaudeProvider implements LlmProvider {
             if (thinkingFallback != null) return thinkingFallback;
         }
         return "";
-    }
-
-    private static String truncate(String s, int maxLen) {
-        if (s == null) return "null";
-        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...(truncated)";
     }
 }

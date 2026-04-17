@@ -1,9 +1,8 @@
 package com.diffguard.cache;
 
 import com.diffguard.model.ReviewIssue;
+import com.diffguard.util.JacksonMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.slf4j.Logger;
@@ -31,8 +30,6 @@ import java.util.zip.GZIPOutputStream;
 public class ReviewCache {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewCache.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private static final long MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000L; // 24 hours
     private static final int MAX_CACHE_ENTRIES = 500;
@@ -43,32 +40,29 @@ public class ReviewCache {
     private final Cache<String, List<ReviewIssue>> memoryCache;
 
     /**
-     * 创建双层缓存。
+     * 创建双层缓存，使用项目 .git 目录下的 diffguard-cache 子目录。
      *
      * @param projectDir 项目根目录（用于定位 .git 目录）
      */
     public ReviewCache(Path projectDir) {
-        this.cacheDir = resolveCacheDir(projectDir);
-        ensureCacheDir();
-        cleanupDiskCache();
-        this.memoryCache = Caffeine.newBuilder()
-                .maximumSize(MAX_CACHE_ENTRIES)
-                .expireAfterWrite(24, TimeUnit.HOURS)
-                .build();
+        this(projectDir, resolveCacheDir(projectDir));
     }
 
     /**
-     * 仅供测试使用的构造方法，可指定自定义缓存目录。
+     * 使用指定缓存目录创建缓存（主要用于测试）。
+     *
+     * @param projectDir 项目根目录（语义占位）
+     * @param cacheDir   自定义缓存目录路径
+     * @return ReviewCache 实例
      */
-    public ReviewCache(Path projectDir, boolean testing) {
-        if (testing) {
-            this.cacheDir = projectDir;
-            ensureCacheDir();
-        } else {
-            this.cacheDir = resolveCacheDir(projectDir);
-            ensureCacheDir();
-            cleanupDiskCache();
-        }
+    public static ReviewCache withCustomCacheDir(Path projectDir, Path cacheDir) {
+        return new ReviewCache(projectDir, cacheDir);
+    }
+
+    private ReviewCache(Path projectDir, Path cacheDir) {
+        this.cacheDir = cacheDir;
+        ensureCacheDir();
+        cleanupDiskCache();
         this.memoryCache = Caffeine.newBuilder()
                 .maximumSize(MAX_CACHE_ENTRIES)
                 .expireAfterWrite(24, TimeUnit.HOURS)
@@ -124,7 +118,7 @@ public class ReviewCache {
                     memoryCache.invalidate(key);
                     return null;
                 }
-                List<ReviewIssue> issues = MAPPER.readValue(jsonFile.toFile(), new TypeReference<List<ReviewIssue>>() {});
+                List<ReviewIssue> issues = JacksonMapper.MAPPER.readValue(jsonFile.toFile(), new TypeReference<List<ReviewIssue>>() {});
                 memoryCache.put(key, issues);
                 return issues;
             }
@@ -146,7 +140,7 @@ public class ReviewCache {
         // 2. 磁盘持久化
         if (cacheDir == null) return;
         try {
-            byte[] jsonBytes = MAPPER.writeValueAsBytes(issues);
+            byte[] jsonBytes = JacksonMapper.MAPPER.writeValueAsBytes(issues);
             if (jsonBytes.length >= COMPRESSION_THRESHOLD) {
                 writeCompressed(cacheFile(key, ".json.gz"), jsonBytes);
                 // 清理可能存在的旧格式文件
@@ -183,7 +177,7 @@ public class ReviewCache {
     private List<ReviewIssue> readCompressed(Path file) throws IOException {
         try (InputStream fis = Files.newInputStream(file);
              InputStream gis = new GZIPInputStream(fis)) {
-            return MAPPER.readValue(gis, new TypeReference<List<ReviewIssue>>() {});
+            return JacksonMapper.MAPPER.readValue(gis, new TypeReference<List<ReviewIssue>>() {});
         }
     }
 
@@ -250,7 +244,7 @@ public class ReviewCache {
         }
     }
 
-    private static Path resolveCacheDir(Path projectDir) {
+    static Path resolveCacheDir(Path projectDir) {
         Path gitDir = projectDir.resolve(".git");
 
         // 处理 worktree：.git 是一个指向实际 gitdir 的文件

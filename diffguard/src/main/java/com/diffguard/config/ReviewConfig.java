@@ -55,6 +55,21 @@ public class ReviewConfig {
         this.webhook = webhook;
     }
 
+    /**
+     * 校验配置参数合法性。
+     *
+     * @throws IllegalArgumentException 配置不合法时抛出
+     */
+    public void validate() {
+        llm.validate();
+        if (review.maxDiffFiles <= 0) {
+            throw new IllegalArgumentException("review.max_diff_files 必须大于 0，当前值：" + review.maxDiffFiles);
+        }
+        if (review.maxTokensPerFile <= 0) {
+            throw new IllegalArgumentException("review.max_tokens_per_file 必须大于 0，当前值：" + review.maxTokensPerFile);
+        }
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class LlmConfig {
         private String provider = "claude";
@@ -109,6 +124,35 @@ public class ReviewConfig {
             }
             throw new IllegalStateException(
                 "未找到API密钥。请通过环境变量设置：" + apiKeyEnv);
+        }
+
+        /**
+         * 校验 LLM 配置参数合法性。
+         *
+         * @throws IllegalArgumentException 配置不合法时抛出
+         */
+        public void validate() {
+            if (provider == null || provider.isBlank()) {
+                throw new IllegalArgumentException("llm.provider 不能为空");
+            }
+            if (!provider.equalsIgnoreCase("claude") && !provider.equalsIgnoreCase("openai")) {
+                throw new IllegalArgumentException("不支持的 llm.provider：" + provider + "（支持 claude/openai）");
+            }
+            if (model == null || model.isBlank()) {
+                throw new IllegalArgumentException("llm.model 不能为空");
+            }
+            if (maxTokens <= 0) {
+                throw new IllegalArgumentException("llm.max_tokens 必须大于 0，当前值：" + maxTokens);
+            }
+            if (temperature < 0 || temperature > 2) {
+                throw new IllegalArgumentException("llm.temperature 必须在 0-2 范围内，当前值：" + temperature);
+            }
+            if (timeoutSeconds <= 0) {
+                throw new IllegalArgumentException("llm.timeout_seconds 必须大于 0，当前值：" + timeoutSeconds);
+            }
+            if (apiKeyEnv == null || apiKeyEnv.isBlank()) {
+                throw new IllegalArgumentException("llm.api_key_env 不能为空");
+            }
         }
     }
 

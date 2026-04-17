@@ -20,7 +20,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
  * Webhook 触发的代码审查编排器。
  * 接收 PR 信息后异步执行：git fetch → collectDiff → review → format → postComment
  */
-public class ReviewOrchestrator {
+public class ReviewOrchestrator implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewOrchestrator.class);
 
@@ -28,6 +28,7 @@ public class ReviewOrchestrator {
 
     private final ReviewConfig config;
     private final ExecutorService executor;
+    private final ScheduledExecutorService timeoutExecutor;
     private final GitHubApiClient githubClient;
 
     public ReviewOrchestrator(ReviewConfig config) {
@@ -38,6 +39,7 @@ public class ReviewOrchestrator {
                 new LinkedBlockingQueue<>(10), // 有界队列，最多积压 10 个任务
                 new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时由提交线程执行，避免丢弃
         );
+        this.timeoutExecutor = Executors.newSingleThreadScheduledExecutor();
         this.githubClient = new GitHubApiClient(config);
     }
 
@@ -56,17 +58,13 @@ public class ReviewOrchestrator {
         });
 
         // 超时监控：防止 LLM 调用挂起导致线程永久占用
-        executor.submit(() -> {
-            try {
-                future.get(TASK_TIMEOUT_SECONDS, SECONDS);
-            } catch (TimeoutException e) {
+        timeoutExecutor.schedule(() -> {
+            if (!future.isDone()) {
                 future.cancel(true);
                 log.warn("审查超时 {}/pull/{}，已取消（{}s）", pr.getRepoFullName(), pr.getPrNumber(), TASK_TIMEOUT_SECONDS);
                 postErrorComment(pr, new RuntimeException("审查超时（" + TASK_TIMEOUT_SECONDS + "s）"));
-            } catch (Exception ignored) {
-                // 其他异常已在主任务中处理
             }
-        });
+        }, TASK_TIMEOUT_SECONDS, SECONDS);
     }
 
     private void processInternal(GitHubPayloadParser.ParsedPullRequest pr) throws Exception {
@@ -133,6 +131,25 @@ public class ReviewOrchestrator {
             githubClient.postComment(pr.getRepoFullName(), pr.getPrNumber(), errorMd);
         } catch (Exception postError) {
             log.error("发布错误评论失败：{}", postError.getMessage());
+        }
+    }
+
+    @Override
+    public void close() {
+        executor.shutdown();
+        timeoutExecutor.shutdown();
+        try {
+            if (!executor.awaitTermination(10, SECONDS)) {
+                executor.shutdownNow();
+                log.warn("ReviewOrchestrator 线程池未在 10s 内优雅关闭，已强制终止");
+            }
+            if (!timeoutExecutor.awaitTermination(5, SECONDS)) {
+                timeoutExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            timeoutExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 }

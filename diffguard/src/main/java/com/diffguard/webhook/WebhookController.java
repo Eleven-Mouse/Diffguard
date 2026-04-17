@@ -69,4 +69,11 @@ public class WebhookController {
         ctx.status(200).result("Accepted");
         orchestrator.processAsync(pr);
     }
+
+    /**
+     * 关闭控制器及其内部的编排器线程池。
+     */
+    public void close() {
+        orchestrator.close();
+    }
 }

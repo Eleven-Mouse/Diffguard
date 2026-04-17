@@ -7,6 +7,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
@@ -41,42 +42,33 @@ public class SignatureVerifier {
             return false;
         }
 
-        String expectedHex = computeHmac(payload);
-        String providedHex = signature.substring("sha256=".length());
+        byte[] expected = computeHmacBytes(payload);
+        byte[] provided = hexToBytes(signature.substring("sha256=".length()));
 
-        return constantTimeEquals(expectedHex, providedHex);
+        // 使用 MessageDigest.isEqual 进行常量时间比较
+        return MessageDigest.isEqual(expected, provided);
     }
 
-    private String computeHmac(String payload) {
+    private byte[] computeHmacBytes(String payload) {
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
-            byte[] hash = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
-            return bytesToHex(hash);
+            return mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             throw new IllegalStateException("HMAC-SHA256 初始化失败", e);
         }
     }
 
     /**
-     * 常量时间字符串比较，防止时序攻击。
+     * 将十六进制字符串转换为字节数组。
      */
-    static boolean constantTimeEquals(String a, String b) {
-        if (a.length() != b.length()) {
-            return false;
+    private static byte[] hexToBytes(String hex) {
+        int len = hex.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                    + Character.digit(hex.charAt(i + 1), 16));
         }
-        int result = 0;
-        for (int i = 0; i < a.length(); i++) {
-            result |= a.charAt(i) ^ b.charAt(i);
-        }
-        return result == 0;
-    }
-
-    private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
+        return data;
     }
 }

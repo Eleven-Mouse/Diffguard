@@ -111,7 +111,7 @@ class ReviewConfigTest {
             assertEquals("claude", config.getProvider());
             assertEquals(4096, config.getMaxTokens());
             assertEquals(0.3, config.getTemperature(), 0.001);
-            assertEquals(60, config.getTimeoutSeconds());
+            assertEquals(300, config.getTimeoutSeconds());
             assertEquals("DIFFGUARD_API_KEY", config.getApiKeyEnv());
         }
 

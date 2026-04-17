@@ -21,7 +21,6 @@ class SignatureVerifierTest {
         void validSignaturePasses() {
             String secret = "my-webhook-secret";
             String payload = "{\"action\":\"opened\",\"number\":1}";
-            // 用已知值验证：先计算 HMAC，再用 Verifier 校验
             SignatureVerifier verifier = new SignatureVerifier(secret);
             String signature = computeSignature(secret, payload);
             assertTrue(verifier.verify(payload, "sha256=" + signature));
@@ -84,39 +83,6 @@ class SignatureVerifierTest {
         void blankSecretSkipsVerification() {
             SignatureVerifier verifier = new SignatureVerifier("   ");
             assertTrue(verifier.verify("payload", null));
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // 常量时间比较
-    // ------------------------------------------------------------------
-
-    @Nested
-    @DisplayName("常量时间比较")
-    class ConstantTimeComparison {
-
-        @Test
-        @DisplayName("相同字符串返回 true")
-        void equalStrings() {
-            assertTrue(SignatureVerifier.constantTimeEquals("abc", "abc"));
-        }
-
-        @Test
-        @DisplayName("不同字符串返回 false")
-        void differentStrings() {
-            assertFalse(SignatureVerifier.constantTimeEquals("abc", "abd"));
-        }
-
-        @Test
-        @DisplayName("不同长度返回 false")
-        void differentLengths() {
-            assertFalse(SignatureVerifier.constantTimeEquals("abc", "abcd"));
-        }
-
-        @Test
-        @DisplayName("空字符串相等返回 true")
-        void emptyStrings() {
-            assertTrue(SignatureVerifier.constantTimeEquals("", ""));
         }
     }
 
