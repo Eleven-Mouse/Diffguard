@@ -88,8 +88,24 @@ public class OpenAiProvider implements LlmProvider {
     }
 
     @SuppressWarnings("unchecked")
-    private String extractContent(String responseBody) throws IOException {
+    private String extractContent(String responseBody) throws IOException, LlmApiException {
         Map<String, Object> response = MAPPER.readValue(responseBody, new TypeReference<>() {});
+
+        // 检测代理返回的伪装为 HTTP 200 的错误响应
+        // 常见格式：{"code":500,"msg":"...","success":false} 或 {"error":{"message":"...","code":...}}
+        Object successFlag = response.get("success");
+        if (successFlag instanceof Boolean && !(Boolean) successFlag) {
+            String msg = String.valueOf(response.getOrDefault("msg", response.getOrDefault("message", "未知错误")));
+            String code = String.valueOf(response.getOrDefault("code", "unknown"));
+            log.error("API 返回业务错误（HTTP 200 包装）：code={}, msg={}, body={}", code, msg, truncate(responseBody, 500));
+            throw new LlmApiException(500, "API 业务错误（" + code + "）：" + truncate(msg, 200));
+        }
+        if (response.containsKey("error") && !response.containsKey("choices")) {
+            Object errorObj = response.get("error");
+            String errorMsg = errorObj instanceof Map ? String.valueOf(((Map<String, Object>) errorObj).getOrDefault("message", errorObj)) : String.valueOf(errorObj);
+            log.error("API 响应包含 error 字段且无 choices：{}", truncate(responseBody, 500));
+            throw new LlmApiException(500, "API 错误：" + truncate(errorMsg, 200));
+        }
 
         if (response.containsKey("usage") && tokenTracker != null) {
             Map<String, Object> usage = (Map<String, Object>) response.get("usage");
