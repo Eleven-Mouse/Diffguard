@@ -137,6 +137,26 @@ public class LlmClient {
         result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
     }
 
+    /** JSON 重试时的系统提示词 */
+    private static final String JSON_RETRY_SYSTEM_PROMPT =
+            "你是一个格式转换助手。你的唯一任务是将用户给出的代码审查内容转换为严格的 JSON 格式。"
+            + "你必须且仅输出一个合法的 JSON 对象，不得包含任何其他文本。";
+
+    /** JSON 重试时的用户提示词模板 */
+    private static final String JSON_RETRY_USER_TEMPLATE =
+            "以下是一次代码审查的原始回复内容，请将其转换为以下 JSON 格式：\n\n"
+            + "```json\n"
+            + "{\n"
+            + "  \"has_critical\": boolean,\n"
+            + "  \"summary\": \"总结\",\n"
+            + "  \"issues\": [{\"severity\": \"CRITICAL|WARNING|INFO\", \"file\": \"路径\", \"line\": 行号, \"type\": \"类型\", \"message\": \"描述\", \"suggestion\": \"建议\"}],\n"
+            + "  \"highlights\": [\"亮点\"],\n"
+            + "  \"test_suggestions\": [\"测试建议\"]\n"
+            + "}\n```\n\n"
+            + "如果原始内容中没有明确的问题，则 issues 为空数组，has_critical 为 false。\n"
+            + "请根据原始回复内容提取信息，不要编造问题。\n\n"
+            + "原始回复内容：\n%s";
+
     private LlmResponse callLlmWithRetry(PromptBuilder.PromptContent prompt) throws LlmApiException {
         LlmApiException lastException = null;
 
@@ -153,7 +173,26 @@ public class LlmClient {
 
                 try {
                     String responseBody = provider.call(prompt.getSystemPrompt(), prompt.getUserPrompt());
-                    return LlmResponse.fromContent(responseBody);
+                    LlmResponse response = LlmResponse.fromContent(responseBody);
+
+                    // 如果首次返回非 JSON，尝试用重试提示词让模型重新格式化
+                    if (response.isRawText() && response.getRawText() != null && !response.getRawText().isBlank()) {
+                        log.info("首次响应非 JSON，发起格式化重试...");
+                        try {
+                            String retryUserPrompt = String.format(JSON_RETRY_USER_TEMPLATE, response.getRawText());
+                            String retryResponse = provider.call(JSON_RETRY_SYSTEM_PROMPT, retryUserPrompt);
+                            LlmResponse retryResult = LlmResponse.fromContent(retryResponse);
+                            if (!retryResult.isRawText()) {
+                                log.info("格式化重试成功，获得有效 JSON 响应");
+                                return retryResult;
+                            }
+                            log.warn("格式化重试仍未返回有效 JSON，使用原始文本");
+                        } catch (Exception retryEx) {
+                            log.warn("格式化重试失败：{}，使用原始文本", retryEx.getMessage());
+                        }
+                    }
+
+                    return response;
                 } finally {
                     animator.interrupt();
                     animator.join(300);

@@ -41,6 +41,9 @@ public class OpenAiProvider implements LlmProvider {
         this.tokenTracker = tokenTracker;
     }
 
+    /** 降级模式下追加到用户消息末尾的 JSON 强化指令 */
+    private static final String JSON_ENFORCE_SUFFIX = "\n\n【绝对要求】你的回复必须且仅是一个合法的 JSON 对象，以 { 开头，以 } 结尾。禁止输出任何 JSON 之外的内容，包括问候语、解释、能力描述或思考过程。";
+
     @Override
     public String call(String systemPrompt, String userPrompt) throws LlmApiException, IOException, InterruptedException {
         String apiKey = config.resolveApiKey();
@@ -62,8 +65,13 @@ public class OpenAiProvider implements LlmProvider {
         } catch (LlmApiException e) {
             // 如果代理不支持 response_format（通常返回 400），降级重试
             if (e.getStatusCode() == 400) {
-                log.info("代理可能不支持 response_format 参数，降级为普通请求重试");
-                return doCall(apiKey, baseUrl, messages, false);
+                log.info("代理可能不支持 response_format 参数，降级为普通请求重试（追加 JSON 强化指令）");
+                // 降级时在用户消息末尾追加 JSON 强制指令，弥补 response_format 缺失
+                List<Map<String, String>> reinforcedMessages = List.of(
+                        Map.of("role", "system", "content", systemPrompt),
+                        Map.of("role", "user", "content", userPrompt + JSON_ENFORCE_SUFFIX)
+                );
+                return doCall(apiKey, baseUrl, reinforcedMessages, false);
             }
             throw e;
         }
