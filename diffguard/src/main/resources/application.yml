@@ -1,7 +1,16 @@
 # DiffGuard 配置文件
 # 将此文件放置在项目根目录下，命名为 .review-config.yml
 
-
+llm:
+  provider: openai
+  model: gpt-5
+  max_tokens: 16384
+  temperature: 0.3
+  timeout_seconds: 240
+  # API key 仅通过环境变量设置，禁止明文写入配置文件
+  api_key_env: DIFFGUARD_API_KEY
+  # 自定义 API 地址
+  # base_url: https://api.your-proxy.com/v1
 
 
 rules:
