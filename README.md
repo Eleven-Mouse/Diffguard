@@ -1,4 +1,5 @@
-﻿# DiffGuard
+﻿
+# DiffGuard
 
 AI 驱动的代码审查工具，在 Git 提交/推送时自动拦截代码变更，通过 LLM 进行智能分析，阻止包含严重问题的代码进入代码库。同时支持 GitHub Webhook 模式，在 Pull Request 时自动进行代码审查并发表评论。
 
@@ -209,52 +210,80 @@ review:
 ```
 diffguard/src/main/java/com/diffguard/
 ├── DiffGuard.java                 # 程序入口
+├── agent/                         # 结构化审查接口
+│   ├── StructuredReviewService.java  # LangChain4j AiServices 接口
+│   ├── pipeline/                  # 多阶段审查 Pipeline
+│   │   ├── MultiStageReviewService.java  # Pipeline 编排器
+│   │   ├── DiffSummaryAgent.java  # Stage 1: 变更摘要
+│   │   ├── SecurityReviewer.java  # Stage 2: 安全专项审查
+│   │   ├── LogicReviewer.java     # Stage 2: 逻辑专项审查
+│   │   ├── QualityReviewer.java   # Stage 2: 质量专项审查
+│   │   ├── AggregationAgent.java  # Stage 3: 聚合去重
+│   │   ├── TargetedReviewResult.java  # 专项审查结构化输出
+│   │   └── model/
+│   │       ├── DiffSummary.java   # 摘要输出模型
+│   │       └── AggregatedReview.java  # 聚合输出模型
 ├── cli/                           # CLI 命令（picocli）
 │   ├── DiffGuardMain.java         # 命令调度
 │   ├── ReviewCommand.java         # review 命令
 │   ├── InstallCommand.java        # install 命令
 │   ├── UninstallCommand.java      # uninstall 命令
-│   └── ServerCommand.java         # server 命令
+│   ├── ServerCommand.java         # server 命令
+│   └── VersionProvider.java       # 版本信息
 ├── config/                        # 配置加载
 │   ├── ConfigLoader.java          # 三级配置加载
 │   └── ReviewConfig.java          # 配置模型
-├── diff/                          # Diff 收集
+├── exception/                     # 自定义异常
+│   ├── DiffGuardException.java    # 基础异常
+│   ├── ConfigException.java       # 配置异常
+│   ├── DiffCollectionException.java  # Diff 采集异常
+│   ├── LlmApiException.java       # LLM API 异常（含状态码/可重试标记）
+│   └── WebhookException.java      # Webhook 异常
+├── git/                           # Diff 收集
 │   └── DiffCollector.java         # 基于 JGit 的 diff 采集
 ├── hook/                          # Git Hook 管理
 │   └── GitHookInstaller.java      # Hook 安装/卸载
-├── llm/                           # LLM 调用
-│   ├── LlmClient.java             # 调用编排（并行、重试、JSON 修复）
-│   ├── provider/
+├── llm/                           # LLM 调用层
+│   ├── LlmClient.java             # 调用编排（并行、重试、结构化输出）
+│   ├── LlmResponse.java           # 响应解析（JSON Object/Array/Text 三级 fallback）
+│   ├── provider/                  # LLM Provider 适配
 │   │   ├── LlmProvider.java       # Provider 接口
-│   │   ├── OpenAiProvider.java    # OpenAI / 兼容代理
-│   │   ├── ClaudeProvider.java    # Anthropic Claude
-│   │   └── TokenTracker.java      # Token 用量回调
+│   │   ├── LangChain4jOpenAiAdapter.java  # OpenAI 适配器（双模型策略）
+│   │   ├── LangChain4jClaudeAdapter.java   # Claude 适配器
+│   │   ├── TokenTracker.java      # Token 用量回调
+│   │   ├── LlmConstants.java      # 共享常量
+│   │   ├── ProxyResponseDetector.java  # 代理错误检测
+│   │   └── ProviderUtils.java     # 异常转换工具
+│   └── tools/                     # LLM Tool Use
+│       ├── FileAccessSandbox.java # 文件访问安全沙箱
+│       └── ReviewToolProvider.java  # @Tool 注解方法（readFile/listMethods/checkImports）
 ├── model/                         # 数据模型
 │   ├── Severity.java              # CRITICAL / WARNING / INFO
 │   ├── ReviewIssue.java           # 单个审查问题
 │   ├── ReviewResult.java          # 审查结果聚合
+│   ├── ReviewOutput.java          # 结构化输出 record
+│   ├── IssueRecord.java           # Issue record（LangChain4j 用）
 │   └── DiffFileEntry.java         # Diff 文件数据
 ├── output/                        # 输出格式化
 │   ├── ConsoleFormatter.java      # 终端 ANSI 彩色输出
 │   ├── MarkdownFormatter.java     # GitHub PR 评论格式
 │   ├── ProgressDisplay.java       # 进度显示/动画
+│   ├── StatsFormatter.java        # 统计信息格式化
 │   └── AnsiColors.java            # ANSI 颜色常量
 ├── prompt/                        # Prompt 模板
 │   └── PromptBuilder.java         # 模板引擎 + 批处理
-├── service/                       # 核心服务
-│   └── ReviewService.java         # 审查编排（缓存 + LLM + 结果合并）
+├── review/                        # 核心审查服务
+│   ├── ReviewService.java         # 审查编排（缓存 + LLM + 结果合并）
+│   ├── ReviewCache.java           # Caffeine + 磁盘两级缓存
+│   └── ReviewOrchestrator.java    # Webhook 异步审查流水线
 ├── webhook/                       # Webhook 服务器
 │   ├── WebhookServer.java         # Javalin HTTP 服务器
 │   ├── WebhookController.java     # 请求处理
 │   ├── SignatureVerifier.java     # HMAC-SHA256 签名验证
 │   ├── GitHubPayloadParser.java   # PR 事件解析
-│   ├── ReviewOrchestrator.java    # 异步审查流水线
 │   └── GitHubApiClient.java       # GitHub API 评论发布
-├── cache/                         # 缓存
-│   └── ReviewCache.java           # Caffeine + 磁盘两级缓存
 └── util/                          # 工具类
     ├── JacksonMapper.java         # 共享 ObjectMapper
-    ├── StringUtils.java           # 字符串工具
     └── TokenEstimator.java        # Token 计数（jtokkit）
 ```
 

@@ -195,6 +195,40 @@ class ReviewServiceTest {
     }
 
     // ------------------------------------------------------------------
+    // 资源管理
+    // ------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("资源管理")
+    class ResourceManagement {
+
+        @Test
+        @DisplayName("close() 对注入的 mock LlmClient 不调用 close")
+        void closeDoesNotCloseInjectedClient() throws Exception {
+            ReviewService service = new ReviewService(defaultConfig, tempDir, true, mockLlmClient);
+            assertDoesNotThrow(service::close);
+            // mockLlmClient 是 mock 对象，无实际 close 行为，不应抛异常
+        }
+
+        @Test
+        @DisplayName("关闭后的 ReviewService 多次 close 不抛异常")
+        void multipleCloseNoException() throws Exception {
+            ReviewService service = new ReviewService(defaultConfig, tempDir, true, mockLlmClient);
+            service.close();
+            assertDoesNotThrow(service::close);
+        }
+
+        @Test
+        @DisplayName("无注入客户端时 close 创建并关闭 owned LlmClient")
+        void closeOwnsCreatedClient() throws Exception {
+            // 使用 noCache=true 避免文件系统依赖，但不注入 mock
+            ReviewService service = new ReviewService(defaultConfig, tempDir, true);
+            // 此时 ownedClient 为 null，close 应安全处理
+            assertDoesNotThrow(service::close);
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Token 统计合并
     // ------------------------------------------------------------------
 

@@ -113,8 +113,9 @@ public class ReviewCommand implements Runnable {
             if (usePipeline) {
                 result = runPipelineReview(config, diffEntries, projectDir);
             } else {
-                ReviewService reviewService = new ReviewService(config, projectDir, noCache);
-                result = reviewService.review(diffEntries);
+                try (ReviewService reviewService = new ReviewService(config, projectDir, noCache)) {
+                    result = reviewService.review(diffEntries);
+                }
             }
         } catch (LlmApiException e) {
             // LLM 调用失败，fail-closed：阻止提交

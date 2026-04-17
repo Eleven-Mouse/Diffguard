@@ -45,6 +45,19 @@ public class ReviewOrchestrator implements AutoCloseable {
     }
 
     /**
+     * 包内可见构造方法，用于测试注入 mock。
+     */
+    ReviewOrchestrator(ReviewConfig config, GitHubApiClient githubClient) {
+        this.config = config;
+        this.executor = new ThreadPoolExecutor(
+                1, 4, 60L, SECONDS,
+                new LinkedBlockingQueue<>(10),
+                new ThreadPoolExecutor.CallerRunsPolicy());
+        this.timeoutExecutor = Executors.newSingleThreadScheduledExecutor();
+        this.githubClient = githubClient;
+    }
+
+    /**
      * 异步处理 PR 审查任务。
      * 立即返回，审查在线程池中执行，带超时保护。
      */
@@ -92,17 +105,18 @@ public class ReviewOrchestrator implements AutoCloseable {
             }
 
             // 5. 执行审查
-            ReviewService reviewService = new ReviewService(config, localPath, false);
-            ReviewResult result = reviewService.review(diffEntries);
+            try (ReviewService reviewService = new ReviewService(config, localPath, false)) {
+                ReviewResult result = reviewService.review(diffEntries);
 
-            // 6. 格式化为 Markdown
-            String markdown = MarkdownFormatter.format(result);
+                // 6. 格式化为 Markdown
+                String markdown = MarkdownFormatter.format(result);
 
-            // 7. 发布 PR 评论
-            githubClient.postComment(pr.getRepoFullName(), pr.getPrNumber(), markdown);
+                // 7. 发布 PR 评论
+                githubClient.postComment(pr.getRepoFullName(), pr.getPrNumber(), markdown);
 
-            log.info("审查完成：{}/pull/{} - {} 个问题",
-                    pr.getRepoFullName(), pr.getPrNumber(), result.getIssues().size());
+                log.info("审查完成：{}/pull/{} - {} 个问题",
+                        pr.getRepoFullName(), pr.getPrNumber(), result.getIssues().size());
+            }
         } finally {
             ProgressDisplay.setSilent(false);
         }

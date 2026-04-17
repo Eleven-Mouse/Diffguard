@@ -25,9 +25,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -43,7 +41,6 @@ public class LlmClient implements AutoCloseable {
     private static final int MAX_CONCURRENCY = 3;
 
     private final LlmProvider provider;
-    private final HttpClient httpClient;
     private final Semaphore concurrencyLimiter = new Semaphore(MAX_CONCURRENCY);
     private final AtomicInteger totalTokensUsed = new AtomicInteger(0);
 
@@ -57,11 +54,6 @@ public class LlmClient implements AutoCloseable {
     private static String jsonRetryUserTemplate;
 
     public LlmClient(ReviewConfig config) {
-        this.httpClient = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(config.getLlm().getTimeoutSeconds()))
-                .build();
-
         TokenTracker tracker = tokens -> totalTokensUsed.addAndGet(tokens);
         String providerName = config.getLlm().getProvider().toLowerCase();
         ChatModel chatModel;
@@ -108,10 +100,6 @@ public class LlmClient implements AutoCloseable {
     }
 
     LlmClient(LlmProvider provider, ReviewConfig config) {
-        this.httpClient = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(config.getLlm().getTimeoutSeconds()))
-                .build();
         this.provider = provider;
         this.structuredService = null;
         this.chatModelForAiServices = null;

@@ -24,6 +24,14 @@ public class WebhookController {
         this.orchestrator = new ReviewOrchestrator(config);
     }
 
+    /**
+     * 包内可见构造方法，用于测试注入。
+     */
+    WebhookController(SignatureVerifier signatureVerifier, ReviewOrchestrator orchestrator) {
+        this.signatureVerifier = signatureVerifier;
+        this.orchestrator = orchestrator;
+    }
+
     public void handleWebhook(Context ctx) {
         String payload = ctx.body();
         String signature = ctx.header("X-Hub-Signature-256");

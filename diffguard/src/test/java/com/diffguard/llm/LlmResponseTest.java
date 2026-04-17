@@ -159,11 +159,8 @@ class LlmResponseTest {
         }
 
         @Test
-        @DisplayName("含对象的 JSON Array：extractJsonObject 优先提取内层 {} 作为 Object 解析")
-        void arrayWithObjects_parsedAsObjectFirst() {
-            // 注意：[{...}, {...}] 中 extractJsonObject 会提取从第一个 { 到最后一个 } 的子串
-            // Jackson 2.17 默认忽略尾部 token，所以第一个 {} 被解析为 Map
-            // 这是当前实现的行为特征——Object 优先级高于 Array
+        @DisplayName("含对象的 JSON Array：正确走 Array 路径，解析所有元素")
+        void arrayWithObjects_parsedAsArray() {
             String json = """
                 [
                   {"severity": "WARNING", "file": "A.java", "line": 10, "type": "风格", "message": "命名不规范"},
@@ -174,9 +171,11 @@ class LlmResponseTest {
             LlmResponse resp = LlmResponse.fromContent(json);
 
             assertFalse(resp.isRawText());
-            // Object 路径解析了第一个 {}，其中无 has_critical → false，无 issues → 空列表
-            assertFalse(resp.getHasCritical());
-            assertTrue(resp.getIssues().isEmpty());
+            // extractJsonObject 找不到顶层 {}，回退到 extractJsonArray 正确解析整个数组
+            assertEquals(2, resp.getIssues().size());
+            assertEquals(Severity.WARNING, resp.getIssues().get(0).getSeverity());
+            assertEquals(Severity.INFO, resp.getIssues().get(1).getSeverity());
+            assertNull(resp.getHasCritical());
         }
     }
 

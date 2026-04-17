@@ -21,31 +21,38 @@ import java.util.stream.Collectors;
 /**
  * 代码审查核心业务逻辑。
  * 从 CLI 层解耦，支持独立测试。
+ * <p>
+ * 实现 {@link AutoCloseable} 以管理内部 {@link LlmClient} 的生命周期。
+ * 调用方应使用 try-with-resources 确保资源释放。
  */
-public class ReviewService {
+public class ReviewService implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewService.class);
 
     private final ReviewConfig config;
     private final Path projectDir;
     private final ReviewCache cache;
-    private final LlmClient llmClient; // nullable，用于测试注入
+    private final LlmClient injectedClient; // 外部注入（测试用），不由此实例关闭
+
+    private LlmClient ownedClient; // 本实例创建的客户端，需在 close() 中关闭
+    private boolean closed = false;
 
     public ReviewService(ReviewConfig config, Path projectDir, boolean noCache) {
         this.config = config;
         this.projectDir = projectDir;
         this.cache = noCache ? null : new ReviewCache(projectDir);
-        this.llmClient = null;
+        this.injectedClient = null;
     }
 
     /**
      * 包内可见构造方法，用于测试注入 mock LlmClient。
+     * 注入的客户端不会在 {@link #close()} 时被关闭。
      */
     ReviewService(ReviewConfig config, Path projectDir, boolean noCache, LlmClient llmClient) {
         this.config = config;
         this.projectDir = projectDir;
         this.cache = noCache ? null : new ReviewCache(projectDir);
-        this.llmClient = llmClient;
+        this.injectedClient = llmClient;
     }
 
     /**
@@ -83,21 +90,15 @@ public class ReviewService {
 
         // 2. 构建提示词并调用 LLM（仅未缓存的文件）
         if (!uncachedEntries.isEmpty()) {
+            if (closed) {
+                throw new IllegalStateException("ReviewService 已关闭");
+            }
             log.info("开始审查 {} 个文件（共 {} 个批次）",
                     uncachedEntries.size(), new PromptBuilder(config, projectDir).buildPrompts(uncachedEntries).size());
             PromptBuilder promptBuilder = new PromptBuilder(config, projectDir);
             List<PromptBuilder.PromptContent> prompts = promptBuilder.buildPrompts(uncachedEntries);
 
-            LlmClient client = this.llmClient != null ? this.llmClient : new LlmClient(config);
-
-            // 注册 Tool Use：让 LLM 可以读取 diff 之外的代码上下文
-            if (this.llmClient == null) {
-                java.util.Set<String> filePaths = uncachedEntries.stream()
-                        .map(DiffFileEntry::getFilePath)
-                        .collect(Collectors.toSet());
-                FileAccessSandbox sandbox = new FileAccessSandbox(projectDir, filePaths);
-                client.withTools(new ReviewToolProvider(sandbox));
-            }
+            LlmClient client = resolveClient(uncachedEntries);
 
             ReviewResult freshResult = client.review(prompts);
 
@@ -119,9 +120,41 @@ public class ReviewService {
             if (cache != null) {
                 cacheBatchResults(uncachedEntries, freshResult);
             }
+
+            log.info("审查完成：{} 个文件，{} 个缓存命中，耗时 {}ms，Token {}",
+                    result.getTotalFilesReviewed(), cacheHits,
+                    result.getReviewDurationMs(), result.getTotalTokensUsed());
         }
 
         return result;
+    }
+
+    /**
+     * 获取 LlmClient：优先使用注入的客户端，否则懒创建并复用。
+     */
+    private LlmClient resolveClient(List<DiffFileEntry> uncachedEntries) {
+        if (injectedClient != null) {
+            return injectedClient;
+        }
+        if (ownedClient == null) {
+            ownedClient = new LlmClient(config);
+            java.util.Set<String> filePaths = uncachedEntries.stream()
+                    .map(DiffFileEntry::getFilePath)
+                    .collect(Collectors.toSet());
+            FileAccessSandbox sandbox = new FileAccessSandbox(projectDir, filePaths);
+            ownedClient.withTools(new ReviewToolProvider(sandbox));
+        }
+        return ownedClient;
+    }
+
+    @Override
+    public void close() {
+        if (closed) return;
+        closed = true;
+        if (ownedClient != null) {
+            ownedClient.close();
+            ownedClient = null;
+        }
     }
 
     /**

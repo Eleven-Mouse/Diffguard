@@ -46,11 +46,7 @@ public class ConsoleFormatter {
         }
 
         // 统计信息
-        System.out.println(GRAY + String.format(
-                "  耗时：%dms | Token数：%d | 文件数：%d",
-                result.getReviewDurationMs(),
-                result.getTotalTokensUsed(),
-                result.getTotalFilesReviewed()) + RESET);
+        StatsFormatter.printStats(result);
         System.out.println(BOLD + DOUBLE_LINE + RESET);
         System.out.println();
     }
@@ -62,11 +58,7 @@ public class ConsoleFormatter {
         System.out.println(result.getRawReport());
 
         System.out.println();
-        System.out.println(GRAY + String.format(
-                "  耗时：%dms | Token数：%d | 文件数：%d",
-                result.getReviewDurationMs(),
-                result.getTotalTokensUsed(),
-                result.getTotalFilesReviewed()) + RESET);
+        StatsFormatter.printStats(result);
 
         if (result.isUncertainResult()) {
             System.out.println(YELLOW + BOLD + "  ⚠ AI 未返回结构化结果，无法自动判定是否存在严重问题。" + RESET);

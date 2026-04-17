@@ -47,7 +47,7 @@ public class LlmResponse {
 
     /**
      * 从 LLM 原始输出文本构造 LlmResponse。
-     * 优先尝试 JSON 对象解析，其次 JSON 数组，最后作为原始文本。
+     * 根据顶层字符判断结构类型：'{' 尝试 JSON 对象，'[' 尝试 JSON 数组，其余依次尝试。
      */
     public static LlmResponse fromContent(String content) {
         if (content == null || content.isBlank()) {
@@ -55,10 +55,46 @@ public class LlmResponse {
         }
 
         String cleaned = stripWrappers(content);
+        char firstSignificant = firstNonWhitespace(cleaned);
 
-        // 1. 优先尝试 JSON 对象格式（包含 has_critical 明确标志）
+        if (firstSignificant == '{') {
+            // 顶层是对象，优先 JSON Object
+            LlmResponse objResult = tryParseJsonObject(cleaned);
+            if (objResult != null) return objResult;
+            // 对象解析失败，尝试数组
+            LlmResponse arrResult = tryParseJsonArray(cleaned);
+            if (arrResult != null) return arrResult;
+        } else if (firstSignificant == '[') {
+            // 顶层是数组，优先 JSON Array
+            LlmResponse arrResult = tryParseJsonArray(cleaned);
+            if (arrResult != null) return arrResult;
+            // 数组解析失败，尝试对象（兜底）
+            LlmResponse objResult = tryParseJsonObject(cleaned);
+            if (objResult != null) return objResult;
+        } else {
+            // 无明确顶层结构，依次尝试
+            LlmResponse objResult = tryParseJsonObject(cleaned);
+            if (objResult != null) return objResult;
+            LlmResponse arrResult = tryParseJsonArray(cleaned);
+            if (arrResult != null) return arrResult;
+        }
+
+        // 原始文本 fallback
+        log.warn("LLM 未输出有效 JSON，降级为原始文本模式。commit 阻断判定可能不准确。");
+        log.warn("LLM 原始响应（前200字符）：{}", content.substring(0, Math.min(200, content.length())));
+        return new LlmResponse(List.of(), content, null);
+    }
+
+    private static char firstNonWhitespace(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (!Character.isWhitespace(s.charAt(i))) return s.charAt(i);
+        }
+        return '\0';
+    }
+
+    private static LlmResponse tryParseJsonObject(String content) {
         try {
-            String jsonObj = extractJsonObject(cleaned);
+            String jsonObj = extractJsonObject(content);
             if (jsonObj != null) {
                 Map<String, Object> parsed = JacksonMapper.MAPPER.readValue(jsonObj, new TypeReference<Map<String, Object>>() {});
                 boolean critical = false;
@@ -75,24 +111,22 @@ public class LlmResponse {
                 return new LlmResponse(issues, null, critical);
             }
         } catch (Exception e) {
-            log.debug("LLM 输出非 JSON 对象格式，尝试 JSON 数组");
+            log.debug("LLM 输出非 JSON 对象格式");
         }
+        return null;
+    }
 
-        // 2. 尝试 JSON 数组格式（向后兼容旧 prompt 输出）
+    private static LlmResponse tryParseJsonArray(String content) {
         try {
-            String json = extractJsonArray(cleaned);
+            String json = extractJsonArray(content);
             if (json != null) {
                 List<ReviewIssue> issues = JacksonMapper.MAPPER.readValue(json, new TypeReference<List<ReviewIssue>>() {});
                 return new LlmResponse(issues, null, null);
             }
         } catch (Exception e) {
-            log.debug("LLM 输出非 JSON 格式，作为原始文本处理");
+            log.debug("LLM 输出非 JSON 数组格式");
         }
-
-        // 3. 原始文本 fallback
-        log.warn("LLM 未输出有效 JSON，降级为原始文本模式。commit 阻断判定可能不准确。");
-        log.warn("LLM 原始响应（前200字符）：{}", content.substring(0, Math.min(200, content.length())));
-        return new LlmResponse(List.of(), content, null);
+        return null;
     }
 
     /**
@@ -112,8 +146,9 @@ public class LlmResponse {
     static String extractJsonObject(String content) {
         if (content == null) return null;
         int start = content.indexOf('{');
-        int end = content.lastIndexOf('}');
-        if (start >= 0 && end > start) {
+        if (start < 0) return null;
+        int end = findMatchingBrace(content, start, '{', '}');
+        if (end > start) {
             return content.substring(start, end + 1);
         }
         return null;
@@ -122,10 +157,39 @@ public class LlmResponse {
     static String extractJsonArray(String content) {
         if (content == null) return null;
         int start = content.indexOf('[');
-        int end = content.lastIndexOf(']');
-        if (start >= 0 && end > start) {
+        if (start < 0) return null;
+        int end = findMatchingBrace(content, start, '[', ']');
+        if (end > start) {
             return content.substring(start, end + 1);
         }
         return null;
+    }
+
+    private static int findMatchingBrace(String content, int openPos, char open, char close) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = openPos; i < content.length(); i++) {
+            char c = content.charAt(i);
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (c == '\\' && inString) {
+                escape = true;
+                continue;
+            }
+            if (c == '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) continue;
+            if (c == open) depth++;
+            else if (c == close) {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+        return -1;
     }
 }

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -68,6 +69,23 @@ public class MultiStageReviewService implements AutoCloseable {
     }
 
     /**
+     * 包内可见构造方法，用于测试注入 mock Agent。
+     */
+    MultiStageReviewService(
+            DiffSummaryAgent summaryAgent,
+            SecurityReviewer securityReviewer,
+            LogicReviewer logicReviewer,
+            QualityReviewer qualityReviewer,
+            AggregationAgent aggregationAgent) {
+        this.summaryAgent = summaryAgent;
+        this.securityReviewer = securityReviewer;
+        this.logicReviewer = logicReviewer;
+        this.qualityReviewer = qualityReviewer;
+        this.aggregationAgent = aggregationAgent;
+        this.parallelExecutor = Executors.newFixedThreadPool(3);
+    }
+
+    /**
      * 执行多阶段审查 Pipeline。
      *
      * @param diffEntries 差异文件列表
@@ -80,6 +98,7 @@ public class MultiStageReviewService implements AutoCloseable {
 
         // Stage 1: 总结变更
         log.info("[Pipeline] Stage 1: 分析变更摘要...");
+        long stage1Start = System.currentTimeMillis();
         DiffSummary summary;
         try {
             Result<DiffSummary> summaryResult = summaryAgent.summarize(allDiffs);
@@ -88,12 +107,14 @@ public class MultiStageReviewService implements AutoCloseable {
             log.warn("[Pipeline] Stage 1 失败，使用简化摘要：{}", e.getMessage());
             summary = new DiffSummary("代码变更审查", List.of(), List.of(), 3);
         }
+        log.info("[Pipeline] Stage 1 完成：耗时 {}ms", System.currentTimeMillis() - stage1Start);
 
         String summaryText = summary != null && summary.summary() != null
                 ? summary.summary() : "代码变更审查";
 
         // Stage 2: 并行专项审查
         log.info("[Pipeline] Stage 2: 并行专项审查（安全/逻辑/质量）...");
+        long stage2Start = System.currentTimeMillis();
         CompletableFuture<String> securityFuture = CompletableFuture.supplyAsync(
                 () -> safeReview(securityReviewer, summaryText, allDiffs), parallelExecutor);
         CompletableFuture<String> logicFuture = CompletableFuture.supplyAsync(
@@ -104,9 +125,11 @@ public class MultiStageReviewService implements AutoCloseable {
         String securityResult = securityFuture.join();
         String logicResult = logicFuture.join();
         String qualityResult = qualityFuture.join();
+        log.info("[Pipeline] Stage 2 完成：耗时 {}ms", System.currentTimeMillis() - stage2Start);
 
         // Stage 3: 聚合
         log.info("[Pipeline] Stage 3: 聚合审查结果...");
+        long stage3Start = System.currentTimeMillis();
         AggregatedReview aggregated;
         try {
             Result<AggregatedReview> aggResult = aggregationAgent.aggregate(
@@ -116,6 +139,7 @@ public class MultiStageReviewService implements AutoCloseable {
             log.warn("[Pipeline] Stage 3 聚合失败，手动合并：{}", e.getMessage());
             aggregated = null;
         }
+        log.info("[Pipeline] Stage 3 完成：耗时 {}ms", System.currentTimeMillis() - stage3Start);
 
         // 转换为 ReviewResult
         ReviewResult result = convertToReviewResult(aggregated, diffEntries.size());
@@ -180,5 +204,14 @@ public class MultiStageReviewService implements AutoCloseable {
     @Override
     public void close() {
         parallelExecutor.shutdown();
+        try {
+            if (!parallelExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                parallelExecutor.shutdownNow();
+                log.warn("[Pipeline] 线程池未在 10s 内优雅关闭，已强制终止");
+            }
+        } catch (InterruptedException e) {
+            parallelExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
