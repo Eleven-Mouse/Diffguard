@@ -13,6 +13,8 @@ import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -21,6 +23,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DiffCollector {
+
+    private static final Logger log = LoggerFactory.getLogger(DiffCollector.class);
 
     /**
      * 收集暂存区差异（索引 vs HEAD），等同于 "git diff --cached"。
@@ -98,7 +102,7 @@ public class DiffCollector {
             }
 
             if (++fileCount > maxFiles) {
-                System.err.println("已达到最大差异文件数量（" + maxFiles + "），跳过剩余文件。");
+                log.warn("已达到最大差异文件数量（{}），跳过剩余文件", maxFiles);
                 break;
             }
 
@@ -107,8 +111,7 @@ public class DiffCollector {
                 String provider = config.getLlm().getProvider();
                 int tokenCount = TokenEstimator.estimate(diffContent, provider);
                 if (tokenCount > maxTokens) {
-                    System.err.println("  文件 " + filePath + " 超出 token 限制（"
-                            + tokenCount + " > " + maxTokens + "），已跳过。");
+                    log.warn("文件 {} 超出 token 限制（{} > {}），已跳过", filePath, tokenCount, maxTokens);
                     continue;
                 }
                 entries.add(new DiffFileEntry(filePath, diffContent, tokenCount));

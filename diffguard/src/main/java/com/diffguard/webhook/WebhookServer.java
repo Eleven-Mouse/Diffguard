@@ -20,6 +20,7 @@ public class WebhookServer {
         this.controller = new WebhookController(config);
         this.app = Javalin.create(cfg -> {
             cfg.showJavalinBanner = false;
+            cfg.http.maxRequestSize = 1_000_000L; // 1MB，防止 OOM 攻击
         });
         registerRoutes();
     }

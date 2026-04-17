@@ -59,15 +59,17 @@ public class ReviewConfig {
     public static class LlmConfig {
         private String provider = "claude";
         private String model = "claude-sonnet-4-6-20250514";
+
+        @JsonProperty("max_tokens")
         private int maxTokens = 4096;
+
         private double temperature = 0.3;
+
+        @JsonProperty("timeout_seconds")
         private int timeoutSeconds = 60;
 
         @JsonProperty("api_key_env")
         private String apiKeyEnv = "DIFFGUARD_API_KEY";
-
-        @JsonProperty("api_key")
-        private String apiKey = null;
 
         @JsonProperty("base_url")
         private String baseUrl = null;
@@ -85,8 +87,6 @@ public class ReviewConfig {
         public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
         public String getApiKeyEnv() { return apiKeyEnv; }
         public void setApiKeyEnv(String apiKeyEnv) { this.apiKeyEnv = apiKeyEnv; }
-        public String getApiKey() { return apiKey; }
-        public void setApiKey(String apiKey) { this.apiKey = apiKey; }
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
 
@@ -102,17 +102,13 @@ public class ReviewConfig {
         }
 
         public String resolveApiKey() {
-            // 1. 配置文件中直接填写的 api_key（优先）
-            if (apiKey != null && !apiKey.isBlank()) {
-                return apiKey.trim();
-            }
-            // 2. 环境变量（后备）
+            // 仅通过环境变量获取，不允许明文存储 API Key
             String envKey = System.getenv(apiKeyEnv);
             if (envKey != null && !envKey.isBlank()) {
                 return envKey.trim();
             }
             throw new IllegalStateException(
-                "未找到API密钥。请在配置文件中设置 api_key，或通过环境变量设置：" + apiKeyEnv);
+                "未找到API密钥。请通过环境变量设置：" + apiKeyEnv);
         }
     }
 

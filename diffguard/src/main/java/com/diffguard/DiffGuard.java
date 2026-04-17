@@ -14,6 +14,8 @@ import com.diffguard.output.ConsoleFormatter;
 import com.diffguard.output.ProgressDisplay;
 import com.diffguard.service.ReviewService;
 import com.diffguard.webhook.WebhookServer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -32,6 +34,8 @@ import java.util.concurrent.Callable;
         description = "基于AI的代码审查命令行工具，集成Git钩子"
 )
 public class DiffGuard implements Callable<Integer> {
+
+    private static final Logger log = LoggerFactory.getLogger(DiffGuard.class);
 
     @Command(name = "review", description = "使用AI审查代码变更")
     public int review(
@@ -54,9 +58,11 @@ public class DiffGuard implements Callable<Integer> {
                     : ConfigLoader.load(projectDir);
         } catch (ConfigException e) {
             System.err.println("  配置加载失败：" + e.getMessage());
+            log.error("配置加载失败", e);
             return 1;
         } catch (IllegalArgumentException e) {
             System.err.println("  配置加载失败：" + e.getMessage());
+            log.error("配置参数错误", e);
             return 1;
         }
 
@@ -75,6 +81,7 @@ public class DiffGuard implements Callable<Integer> {
             }
         } catch (DiffCollectionException e) {
             System.err.println("  差异收集失败：" + e.getMessage());
+            log.error("差异收集失败", e);
             return 1;
         }
 
@@ -95,9 +102,11 @@ public class DiffGuard implements Callable<Integer> {
             // LLM 调用失败，fail-closed：阻止提交
             System.err.println("  AI 审查失败：" + e.getMessage());
             System.err.println("  为确保代码安全，提交已中止。使用 --force 可跳过。");
+            log.error("LLM 调用失败，状态码：{}", e.getStatusCode(), e);
             return 1;
         } catch (DiffGuardException e) {
             System.err.println("  审查过程出错：" + e.getMessage());
+            log.error("审查过程出错", e);
             return 1;
         }
 

@@ -7,9 +7,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -18,17 +21,32 @@ public class PromptBuilder {
 
     private static final Logger log = LoggerFactory.getLogger(PromptBuilder.class);
 
-    /** 单次请求中合并差异内容的最大Token数 */
+    /** 单次请求中合并差异内容的最大 Token 数 */
     private static final int MAX_COMBINED_TOKENS = 6000;
+
+    /** 项目级自定义模板目录 */
+    private static final String CUSTOM_PROMPT_DIR = ".diffguard/prompts";
+
+    private static final String SYSTEM_PROMPT_FILE = "system.txt";
+    private static final String USER_PROMPT_FILE = "user.txt";
 
     private final String systemPrompt;
     private final String userPromptTemplate;
     private final ReviewConfig config;
 
     public PromptBuilder(ReviewConfig config) {
+        this(config, Path.of("").toAbsolutePath());
+    }
+
+    /**
+     * 支持指定项目根目录，用于加载项目级自定义模板。
+     */
+    public PromptBuilder(ReviewConfig config, Path projectDir) {
         this.config = config;
-        String system = loadTemplate("/prompt-templates/default-system.txt");
-        String user = loadTemplate("/prompt-templates/default-user.txt");
+
+        // 模板加载优先级：项目自定义 → 内置默认
+        String system = loadCustomOrBuiltin(projectDir, SYSTEM_PROMPT_FILE, "/prompt-templates/default-system.txt");
+        String user = loadCustomOrBuiltin(projectDir, USER_PROMPT_FILE, "/prompt-templates/default-user.txt");
 
         if (system.isEmpty()) {
             log.warn("系统提示词模板为空，将使用默认指令");
@@ -45,7 +63,7 @@ public class PromptBuilder {
 
     /**
      * 将所有文件差异合并为尽可能少的提示词。
-     * 不是每个文件一次API调用，而是将多个文件合并到一次调用中，
+     * 不是每个文件一次 API 调用，而是将多个文件合并到一次调用中，
      * 以避免频率限制并减少总延迟。
      */
     public List<PromptContent> buildPrompts(List<DiffFileEntry> entries) {
@@ -112,17 +130,39 @@ public class PromptBuilder {
         };
     }
 
-    private String loadTemplate(String resourcePath) {
+    /**
+     * 模板加载：优先从项目自定义目录加载，不存在则回退到 classpath 内置模板。
+     */
+    private String loadCustomOrBuiltin(Path projectDir, String fileName, String builtinPath) {
+        // 1. 尝试项目级自定义模板
+        Path customFile = projectDir.resolve(CUSTOM_PROMPT_DIR).resolve(fileName);
+        if (Files.isRegularFile(customFile)) {
+            try {
+                String content = Files.readString(customFile, StandardCharsets.UTF_8);
+                if (!content.isBlank()) {
+                    log.info("使用自定义提示词模板：{}", customFile);
+                    return content;
+                }
+            } catch (IOException e) {
+                log.warn("读取自定义模板失败：{}，回退到内置模板", customFile);
+            }
+        }
+
+        // 2. 回退到 classpath 内置模板
+        return loadClasspathResource(builtinPath);
+    }
+
+    private String loadClasspathResource(String resourcePath) {
         try (InputStream is = PromptBuilder.class.getResourceAsStream(resourcePath)) {
             if (is == null) {
-                log.warn("提示词模板文件不存在：{}", resourcePath);
+                log.warn("内置模板不存在：{}", resourcePath);
                 return "";
             }
             return new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))
                     .lines()
                     .collect(Collectors.joining("\n"));
         } catch (Exception e) {
-            log.error("加载提示词模板失败：{}", resourcePath, e);
+            log.error("加载内置模板失败：{}", resourcePath, e);
             return "";
         }
     }
@@ -139,13 +179,8 @@ public class PromptBuilder {
             this.userPrompt = userPrompt;
         }
 
-        public String getSystemPrompt() {
-            return systemPrompt;
-        }
-
-        public String getUserPrompt() {
-            return userPrompt;
-        }
+        public String getSystemPrompt() { return systemPrompt; }
+        public String getUserPrompt() { return userPrompt; }
 
         public int estimateTokens() {
             return TokenEstimator.count(systemPrompt) + TokenEstimator.count(userPrompt);

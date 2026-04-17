@@ -4,6 +4,8 @@ import com.diffguard.model.ReviewIssue;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,12 +16,13 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
- * 基于文件系统的审查结果缓存。
- * 缓存存储在 .git/diffguard-cache/ 目录下，跨进程持久化，
- * 确保 Git Hook 多次调用（pre-commit / pre-push）之间可复用审查结果。
+ * 审查结果缓存，采用 Caffeine 内存缓存 + 文件持久化的双层架构。
+ * - 内存层：Caffeine 提供高性能并发安全的 in-process 缓存
+ * - 磁盘层：文件持久化保证跨 JVM 进程（CLI 多次调用）间缓存复用
  */
 public class ReviewCache {
 
@@ -31,16 +34,21 @@ public class ReviewCache {
     private static final int MAX_CACHE_ENTRIES = 500;
 
     private final Path cacheDir;
+    private final Cache<String, List<ReviewIssue>> memoryCache;
 
     /**
-     * 创建文件持久化缓存。
+     * 创建双层缓存。
      *
      * @param projectDir 项目根目录（用于定位 .git 目录）
      */
     public ReviewCache(Path projectDir) {
         this.cacheDir = resolveCacheDir(projectDir);
         ensureCacheDir();
-        cleanup();
+        cleanupDiskCache();
+        this.memoryCache = Caffeine.newBuilder()
+                .maximumSize(MAX_CACHE_ENTRIES)
+                .expireAfterWrite(24, TimeUnit.HOURS)
+                .build();
     }
 
     /**
@@ -53,8 +61,12 @@ public class ReviewCache {
         } else {
             this.cacheDir = resolveCacheDir(projectDir);
             ensureCacheDir();
-            cleanup();
+            cleanupDiskCache();
         }
+        this.memoryCache = Caffeine.newBuilder()
+                .maximumSize(MAX_CACHE_ENTRIES)
+                .expireAfterWrite(24, TimeUnit.HOURS)
+                .build();
     }
 
     /**
@@ -74,24 +86,47 @@ public class ReviewCache {
         }
     }
 
+    /**
+     * 获取缓存：先查内存，再查磁盘。
+     */
     public List<ReviewIssue> get(String key) {
+        // 1. 内存缓存
+        List<ReviewIssue> cached = memoryCache.getIfPresent(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        // 2. 磁盘缓存
         Path file = cacheFile(key);
         if (!Files.isRegularFile(file)) return null;
 
         try {
             if (isExpired(file)) {
                 deleteQuietly(file);
+                memoryCache.invalidate(key);
                 return null;
             }
-            return MAPPER.readValue(file.toFile(), new TypeReference<List<ReviewIssue>>() {});
+            List<ReviewIssue> issues = MAPPER.readValue(file.toFile(), new TypeReference<List<ReviewIssue>>() {});
+            // 回填内存缓存
+            memoryCache.put(key, issues);
+            return issues;
         } catch (IOException e) {
             log.debug("缓存读取失败: {}", file.getFileName());
             return null;
         }
     }
 
+    /**
+     * 写入缓存：同时写入内存和磁盘。
+     */
     public void put(String key, List<ReviewIssue> issues) {
-        if (cacheDir == null || issues == null) return;
+        if (issues == null) return;
+
+        // 1. 内存缓存
+        memoryCache.put(key, issues);
+
+        // 2. 磁盘持久化
+        if (cacheDir == null) return;
         Path file = cacheFile(key);
         try {
             MAPPER.writeValue(file.toFile(), issues);
@@ -105,6 +140,7 @@ public class ReviewCache {
     }
 
     public void clear() {
+        memoryCache.invalidateAll();
         if (cacheDir == null || !Files.isDirectory(cacheDir)) return;
         try (Stream<Path> files = Files.list(cacheDir)) {
             files.filter(p -> p.toString().endsWith(".json"))
@@ -132,7 +168,7 @@ public class ReviewCache {
         }
     }
 
-    private void cleanup() {
+    private void cleanupDiskCache() {
         if (cacheDir == null || !Files.isDirectory(cacheDir)) return;
 
         try (Stream<Path> stream = Files.list(cacheDir)) {

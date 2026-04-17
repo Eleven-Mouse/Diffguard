@@ -9,9 +9,10 @@ import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.prompt.PromptBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,12 +22,28 @@ import java.util.List;
  */
 public class ReviewService {
 
+    private static final Logger log = LoggerFactory.getLogger(ReviewService.class);
+
     private final ReviewConfig config;
+    private final Path projectDir;
     private final ReviewCache cache;
+    private final LlmClient llmClient; // nullable，用于测试注入
 
     public ReviewService(ReviewConfig config, Path projectDir, boolean noCache) {
         this.config = config;
+        this.projectDir = projectDir;
         this.cache = noCache ? null : new ReviewCache(projectDir);
+        this.llmClient = null;
+    }
+
+    /**
+     * 包内可见构造方法，用于测试注入 mock LlmClient。
+     */
+    ReviewService(ReviewConfig config, Path projectDir, boolean noCache, LlmClient llmClient) {
+        this.config = config;
+        this.projectDir = projectDir;
+        this.cache = noCache ? null : new ReviewCache(projectDir);
+        this.llmClient = llmClient;
     }
 
     /**
@@ -41,11 +58,13 @@ public class ReviewService {
         List<DiffFileEntry> uncachedEntries = new ArrayList<>();
 
         // 1. 缓存查询：分离已缓存和未缓存的文件
+        int cacheHits = 0;
         for (DiffFileEntry entry : diffEntries) {
             if (cache != null) {
                 String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent());
                 List<ReviewIssue> cached = cache.get(cacheKey);
                 if (cached != null) {
+                    cacheHits++;
                     for (ReviewIssue issue : cached) {
                         result.addIssue(issue);
                     }
@@ -56,13 +75,19 @@ public class ReviewService {
             uncachedEntries.add(entry);
         }
 
+        if (cacheHits > 0) {
+            log.debug("缓存命中 {} 个文件，{} 个文件需重新审查", cacheHits, uncachedEntries.size());
+        }
+
         // 2. 构建提示词并调用 LLM（仅未缓存的文件）
         if (!uncachedEntries.isEmpty()) {
-            PromptBuilder promptBuilder = new PromptBuilder(config);
+            log.info("开始审查 {} 个文件（共 {} 个批次）",
+                    uncachedEntries.size(), new PromptBuilder(config, projectDir).buildPrompts(uncachedEntries).size());
+            PromptBuilder promptBuilder = new PromptBuilder(config, projectDir);
             List<PromptBuilder.PromptContent> prompts = promptBuilder.buildPrompts(uncachedEntries);
 
-            LlmClient llmClient = new LlmClient(config);
-            ReviewResult freshResult = llmClient.review(prompts);
+            LlmClient client = this.llmClient != null ? this.llmClient : new LlmClient(config);
+            ReviewResult freshResult = client.review(prompts);
 
             // 3. 合并结果
             for (ReviewIssue issue : freshResult.getIssues()) {

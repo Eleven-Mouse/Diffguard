@@ -21,40 +21,22 @@ class ReviewConfigTest {
     class ResolveApiKey {
 
         @Test
-        @DisplayName("api_key 字段优先于环境变量")
-        void apiKeyFieldTakesPriority() {
+        @DisplayName("环境变量未设置时抛出异常")
+        void envNotSetThrows() {
             ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
-            config.setApiKey("sk-test-key-12345");
-
-            assertEquals("sk-test-key-12345", config.resolveApiKey());
-        }
-
-        @Test
-        @DisplayName("api_key 为空白时 fallback 到环境变量")
-        void blankApiKeyFallsBackToEnv() {
-            ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
-            config.setApiKey("   ");
 
             // 环境变量 DIFFGUARD_API_KEY 通常未设置，应抛异常
             assertThrows(IllegalStateException.class, config::resolveApiKey);
         }
 
         @Test
-        @DisplayName("api_key 为 null 时 fallback 到环境变量")
-        void nullApiKeyFallsBackToEnv() {
+        @DisplayName("自定义环境变量名生效")
+        void customEnvVarName() {
             ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
-            config.setApiKey(null);
+            config.setApiKeyEnv("NONEXISTENT_API_KEY_FOR_TEST");
 
             assertThrows(IllegalStateException.class, config::resolveApiKey);
-        }
-
-        @Test
-        @DisplayName("api_key 前后空格被 trim")
-        void apiKeyTrimmed() {
-            ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
-            config.setApiKey("  sk-key  ");
-
-            assertEquals("sk-key", config.resolveApiKey());
+            assertTrue(config.getApiKeyEnv().equals("NONEXISTENT_API_KEY_FOR_TEST"));
         }
     }
 
