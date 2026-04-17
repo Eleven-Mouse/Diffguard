@@ -52,9 +52,9 @@ public class LlmClient implements AutoCloseable {
     private ChatModel chatModelForAiServices;
     private final ExecutorService executor;
 
-    /** JSON 重试 prompt（从外部文件懒加载） */
-    private static String jsonRetrySystemPrompt;
-    private static String jsonRetryUserTemplate;
+    /** JSON 重试 prompt（从外部文件懒加载，volatile + DCL） */
+    private static volatile String jsonRetrySystemPrompt;
+    private static volatile String jsonRetryUserTemplate;
 
     public LlmClient(ReviewConfig config) {
         TokenTracker tracker = tokens -> totalTokensUsed.addAndGet(tokens);
@@ -127,8 +127,16 @@ public class LlmClient implements AutoCloseable {
             for (int i = 0; i < prompts.size(); i++) {
                 final int idx = i;
                 futures.add(executor.submit(() -> {
-                    concurrencyLimiter.acquire();
                     try {
+                        concurrencyLimiter.acquire();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new LlmApiException("获取并发许可被中断", e);
+                    }
+                    try {
+                        if (toolProvider != null) {
+                            toolProvider.resetCallCount();
+                        }
                         ProgressDisplay.printBatchProgress(idx + 1, prompts.size());
                         return callLlmWithRetry(prompts.get(idx));
                     } finally {
@@ -138,8 +146,13 @@ public class LlmClient implements AutoCloseable {
             }
 
             int failedBatches = 0;
+            long batchStartTime = System.currentTimeMillis();
             for (int i = 0; i < futures.size(); i++) {
                 try {
+                    if (i > 0) {
+                        long elapsed = (System.currentTimeMillis() - batchStartTime) / 1000;
+                        log.info("批次进度：{}/{}/{}，已耗时 {}s", i + 1, futures.size(), failedBatches, elapsed);
+                    }
                     LlmResponse response = futures.get(i).get(BATCH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                     mergeResponse(response, result);
                 } catch (InterruptedException e) {
@@ -201,17 +214,23 @@ public class LlmClient implements AutoCloseable {
     private LlmResponse callLlmWithRetry(PromptBuilder.PromptContent prompt) throws LlmApiException {
         // Phase 1：优先尝试 AiServices 结构化输出
         if (structuredService != null) {
+            int tokensBefore = totalTokensUsed.get();
             LlmResponse structured = tryStructuredOutput(prompt);
             if (structured != null) {
                 log.debug("AiServices 结构化输出成功");
                 return structured;
             }
-            // structured == null: 结构化输出未获得结果（null content 或异常），走 fallback
+            // Phase 1 消耗了 Token 但未获得有效结果 → 限制 Phase 2 重试次数
+            boolean tokensConsumed = totalTokensUsed.get() > tokensBefore;
+            if (tokensConsumed) {
+                log.warn("Phase 1 已消耗 Token 但未获得有效结果，Phase 2 仅尝试 1 次");
+            }
             log.info("AiServices 未返回有效结果，回退到 provider.call() + 手动解析");
+            return callLlmWithRetryFallback(prompt, tokensConsumed);
         }
 
         // Phase 2：回退到 provider.call() + 手动 JSON 解析
-        return callLlmWithRetryFallback(prompt);
+        return callLlmWithRetryFallback(prompt, false);
     }
 
     /**
@@ -269,7 +288,13 @@ public class LlmClient implements AutoCloseable {
 
         ReviewOutput output = result.content();
         if (output == null) {
-            log.warn("AiServices 返回 null content — LLM 可能未输出有效 JSON 结构。Token 已消耗但结果丢失。");
+            // Token 已消耗，尝试从原始 LLM 文本中提取结果，避免静默丢弃
+            if (result.aiMessage() != null && result.aiMessage().text() != null
+                    && !result.aiMessage().text().isBlank()) {
+                log.warn("AiServices 返回 null content，降级为原始文本解析（Token 已消耗）");
+                return LlmResponse.fromContent(result.aiMessage().text());
+            }
+            log.warn("AiServices 返回 null content 且无原始文本，Token 已消耗但结果丢失");
             return null;
         }
 
@@ -288,7 +313,7 @@ public class LlmClient implements AutoCloseable {
         }
 
         // 即使 issues 为空，has_critical/summary 等仍有价值，返回非 null
-        return new LlmResponse(issues, null, output.has_critical());
+        return new LlmResponse(issues, null, Boolean.TRUE.equals(output.has_critical()));
     }
 
     private static boolean isRetriableServerError(Throwable e) {
@@ -314,10 +339,11 @@ public class LlmClient implements AutoCloseable {
     /**
      * provider.call() + 手动 JSON 解析路径（fallback）。
      */
-    private LlmResponse callLlmWithRetryFallback(PromptBuilder.PromptContent prompt) throws LlmApiException {
+    private LlmResponse callLlmWithRetryFallback(PromptBuilder.PromptContent prompt, boolean reduceRetries) throws LlmApiException {
         LlmApiException lastException = null;
+        int maxAttempts = reduceRetries ? 1 : MAX_RETRIES;
 
-        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 ProgressDisplay.printWaiting();
                 try {
@@ -336,18 +362,23 @@ public class LlmClient implements AutoCloseable {
                     LlmResponse response = LlmResponse.fromContent(responseBody);
 
                     if (response.isRawText() && response.getRawText() != null && !response.getRawText().isBlank()) {
-                        log.info("首次响应非 JSON，发起格式化重试...");
-                        try {
-                            String retryUserPrompt = String.format(loadJsonRetryUserTemplate(), response.getRawText());
-                            String retryResponse = provider.call(loadJsonRetrySystemPrompt(), retryUserPrompt);
-                            LlmResponse retryResult = LlmResponse.fromContent(retryResponse);
-                            if (!retryResult.isRawText()) {
-                                log.info("格式化重试成功，获得有效 JSON 响应");
-                                return retryResult;
+                        // Token 已被 Phase 1 消耗时，跳过格式化重试以避免进一步消耗
+                        if (!reduceRetries) {
+                            log.info("首次响应非 JSON，发起格式化重试...");
+                            try {
+                                String retryUserPrompt = String.format(loadJsonRetryUserTemplate(), response.getRawText());
+                                String retryResponse = provider.call(loadJsonRetrySystemPrompt(), retryUserPrompt);
+                                LlmResponse retryResult = LlmResponse.fromContent(retryResponse);
+                                if (!retryResult.isRawText()) {
+                                    log.info("格式化重试成功，获得有效 JSON 响应");
+                                    return retryResult;
+                                }
+                                log.warn("格式化重试仍未返回有效 JSON，使用原始文本");
+                            } catch (Exception retryEx) {
+                                log.warn("格式化重试失败：{}，使用原始文本", retryEx.getMessage());
                             }
-                            log.warn("格式化重试仍未返回有效 JSON，使用原始文本");
-                        } catch (Exception retryEx) {
-                            log.warn("格式化重试失败：{}，使用原始文本", retryEx.getMessage());
+                        } else {
+                            log.info("Phase 1 已消耗 Token，跳过格式化重试，直接使用原始文本");
                         }
                     }
 
@@ -357,8 +388,8 @@ public class LlmClient implements AutoCloseable {
                 }
             } catch (LlmApiException e) {
                 lastException = e;
-                int maxAttempts = e.isRateLimitError() ? MAX_RETRIES : MAX_SERVER_ERROR_RETRIES;
-                if (e.isRetryable() && attempt < maxAttempts) {
+                int errorMaxAttempts = e.isRateLimitError() ? MAX_RETRIES : MAX_SERVER_ERROR_RETRIES;
+                if (e.isRetryable() && attempt < errorMaxAttempts) {
                     int delay;
                     if (e.isRateLimitError()) {
                         delay = (int) RETRY_DELAY_MS;
@@ -368,7 +399,7 @@ public class LlmClient implements AutoCloseable {
                     if (e.isRateLimitError()) {
                         ProgressDisplay.printRateLimitRetry(attempt, MAX_RETRIES, delay / 1000);
                     } else {
-                        ProgressDisplay.printServerErrorRetry(attempt, maxAttempts, delay / 1000);
+                        ProgressDisplay.printServerErrorRetry(attempt, errorMaxAttempts, delay / 1000);
                     }
                     sleepQuietly(delay);
                 } else {
@@ -384,25 +415,33 @@ public class LlmClient implements AutoCloseable {
     /**
      * 懒加载 JSON 重试 prompt 模板。
      */
-    private static synchronized String loadJsonRetrySystemPrompt() {
+    private static String loadJsonRetrySystemPrompt() {
         if (jsonRetrySystemPrompt == null) {
-            jsonRetrySystemPrompt = loadTemplate("/prompt-templates/json-retry-system.txt",
-                    "你是一个格式转换助手。你的唯一任务是将用户给出的代码审查内容转换为严格的 JSON 格式。你必须且仅输出一个合法的 JSON 对象，不得包含任何其他文本。");
+            synchronized (LlmClient.class) {
+                if (jsonRetrySystemPrompt == null) {
+                    jsonRetrySystemPrompt = loadTemplate("/prompt-templates/json-retry-system.txt",
+                            "你是一个格式转换助手。你的唯一任务是将用户给出的代码审查内容转换为严格的 JSON 格式。你必须且仅输出一个合法的 JSON 对象，不得包含任何其他文本。");
+                }
+            }
         }
         return jsonRetrySystemPrompt;
     }
 
-    private static synchronized String loadJsonRetryUserTemplate() {
+    private static String loadJsonRetryUserTemplate() {
         if (jsonRetryUserTemplate == null) {
-            jsonRetryUserTemplate = loadTemplate("/prompt-templates/json-retry-user.txt", null);
-            if (jsonRetryUserTemplate == null) {
-                jsonRetryUserTemplate = "以下是一次代码审查的原始回复内容，请将其转换为以下 JSON 格式：\n\n"
-                    + "```json\n"
-                    + "{\"has_critical\": boolean, \"summary\": \"总结\", "
-                    + "\"issues\": [{\"severity\": \"CRITICAL|WARNING|INFO\", \"file\": \"路径\", "
-                    + "\"line\": 行号, \"type\": \"类型\", \"message\": \"描述\", \"suggestion\": \"建议\"}], "
-                    + "\"highlights\": [\"亮点\"], \"test_suggestions\": [\"测试建议\"]}\n```\n\n"
-                    + "原始回复内容：\n%s";
+            synchronized (LlmClient.class) {
+                if (jsonRetryUserTemplate == null) {
+                    jsonRetryUserTemplate = loadTemplate("/prompt-templates/json-retry-user.txt", null);
+                    if (jsonRetryUserTemplate == null) {
+                        jsonRetryUserTemplate = "以下是一次代码审查的原始回复内容，请将其转换为以下 JSON 格式：\n\n"
+                            + "```json\n"
+                            + "{\"has_critical\": boolean, \"summary\": \"总结\", "
+                            + "\"issues\": [{\"severity\": \"CRITICAL|WARNING|INFO\", \"file\": \"路径\", "
+                            + "\"line\": 行号, \"type\": \"类型\", \"message\": \"描述\", \"suggestion\": \"建议\"}], "
+                            + "\"highlights\": [\"亮点\"], \"test_suggestions\": [\"测试建议\"]}\n```\n\n"
+                            + "原始回复内容：\n%s";
+                    }
+                }
             }
         }
         return jsonRetryUserTemplate;

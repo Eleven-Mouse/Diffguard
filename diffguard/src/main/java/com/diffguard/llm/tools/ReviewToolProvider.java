@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,15 +37,31 @@ public class ReviewToolProvider {
     );
 
     private final FileAccessSandbox sandbox;
+    private final AtomicInteger callCount = new AtomicInteger(0);
+    private static final int MAX_TOOL_CALLS = 10;
 
     public ReviewToolProvider(FileAccessSandbox sandbox) {
         this.sandbox = sandbox;
+    }
+
+    private String checkCallLimit() {
+        if (callCount.incrementAndGet() > MAX_TOOL_CALLS) {
+            log.warn("Tool 调用次数已达上限（{}次），阻止后续调用", MAX_TOOL_CALLS);
+            return "Tool 调用次数已达上限（" + MAX_TOOL_CALLS + "次），请基于已有信息完成审查。";
+        }
+        return null;
+    }
+
+    public void resetCallCount() {
+        callCount.set(0);
     }
 
     @Tool("Read the full content of a file being reviewed, not just the diff. "
           + "Use this to understand the broader context around changed lines, "
           + "check class structure, field declarations, and surrounding code.")
     public String readFile(@P("Relative file path, e.g. 'src/main/java/com/example/Service.java'") String filePath) {
+        String limitMsg = checkCallLimit();
+        if (limitMsg != null) return limitMsg;
         try {
             String content = sandbox.readFile(filePath);
             log.debug("Tool readFile 成功：{}", filePath);
@@ -60,6 +77,8 @@ public class ReviewToolProvider {
           + "Returns method names, return types, and parameter types. "
           + "Use this to understand the class structure and method contracts.")
     public String listMethods(@P("Relative file path") String filePath) {
+        String limitMsg = checkCallLimit();
+        if (limitMsg != null) return limitMsg;
         try {
             String content = sandbox.readFile(filePath);
             List<String> signatures = extractMethodSignatures(content);
@@ -78,6 +97,8 @@ public class ReviewToolProvider {
           + "Returns all imports and identifies potentially unused or missing ones. "
           + "Use this to detect missing imports for newly added code.")
     public String checkImports(@P("Relative file path") String filePath) {
+        String limitMsg = checkCallLimit();
+        if (limitMsg != null) return limitMsg;
         try {
             String content = sandbox.readFile(filePath);
             List<String> imports = extractImports(content);

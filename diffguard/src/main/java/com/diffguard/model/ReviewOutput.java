@@ -9,7 +9,7 @@ import java.util.List;
  */
 public record ReviewOutput(
         @Description("Whether any CRITICAL issues were found")
-        boolean has_critical,
+        Boolean has_critical,
         @Description("2-4 sentence summary of the changes and potential risks")
         String summary,
         @Description("List of issues found in the code")

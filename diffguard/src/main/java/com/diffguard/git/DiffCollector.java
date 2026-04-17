@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 public class DiffCollector {
 
@@ -150,14 +152,20 @@ public class DiffCollector {
         return false;
     }
 
+    private static final ConcurrentHashMap<String, Pattern> globPatternCache = new ConcurrentHashMap<>();
+
     private static boolean matchGlob(String path, String pattern) {
+        Pattern compiled = globPatternCache.computeIfAbsent(pattern, DiffCollector::compileGlob);
+        return compiled.matcher(path).matches();
+    }
+
+    private static Pattern compileGlob(String pattern) {
         StringBuilder regex = new StringBuilder("^");
         int i = 0;
         while (i < pattern.length()) {
             char c = pattern.charAt(i);
             if (c == '*') {
                 if (i + 1 < pattern.length() && pattern.charAt(i + 1) == '*') {
-                    // **/ matches any directory prefix, ** matches anything
                     if (i + 2 < pattern.length() && pattern.charAt(i + 2) == '/') {
                         regex.append("(.*/)?");
                         i += 3;
@@ -173,7 +181,6 @@ public class DiffCollector {
                 regex.append("[^/]");
                 i++;
             } else if ("\\[]{}()+^$|.".indexOf(c) >= 0) {
-                // Escape all regex metacharacters
                 regex.append('\\').append(c);
                 i++;
             } else {
@@ -182,6 +189,6 @@ public class DiffCollector {
             }
         }
         regex.append('$');
-        return path.matches(regex.toString());
+        return Pattern.compile(regex.toString());
     }
 }

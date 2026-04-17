@@ -164,6 +164,11 @@ public class ReviewService implements AutoCloseable {
     private void cacheBatchResults(List<DiffFileEntry> entries, ReviewResult result) {
         if (cache == null) return;
 
+        // 分离跨文件/无文件 issue 和有明确文件的 issue
+        List<ReviewIssue> crossFileIssues = result.getIssues().stream()
+                .filter(issue -> issue.getFile() == null || issue.getFile().isBlank())
+                .toList();
+
         if (entries.size() == 1) {
             // 单文件：直接缓存所有 issue
             DiffFileEntry entry = entries.get(0);
@@ -171,11 +176,18 @@ public class ReviewService implements AutoCloseable {
             cache.put(cacheKey, result.getIssues());
         } else {
             // 多文件：按文件路径将 issue 分组后分别缓存
+            // 跨文件 issue 仅缓存到第一个文件，避免重复
+            boolean crossFileIssuesAssigned = false;
             for (DiffFileEntry entry : entries) {
                 String filePath = entry.getFilePath();
                 List<ReviewIssue> fileIssues = result.getIssues().stream()
-                        .filter(issue -> filePath.equals(issue.getFile()) || issue.getFile() == null || issue.getFile().isBlank())
-                        .toList();
+                        .filter(issue -> filePath.equals(issue.getFile()))
+                        .collect(Collectors.toCollection(ArrayList::new));
+                // 跨文件 issue 仅分配到第一个文件，避免重复缓存
+                if (!crossFileIssuesAssigned && !crossFileIssues.isEmpty()) {
+                    fileIssues.addAll(crossFileIssues);
+                    crossFileIssuesAssigned = true;
+                }
                 String cacheKey = ReviewCache.buildKey(filePath, entry.getContent());
                 cache.put(cacheKey, fileIssues);
             }

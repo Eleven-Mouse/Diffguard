@@ -10,7 +10,7 @@ import java.util.List;
  */
 public record AggregatedReview(
         @Description("是否存在 CRITICAL 级别问题")
-        boolean has_critical,
+        Boolean has_critical,
         @Description("综合审查总结")
         String summary,
         @Description("去重合并后的所有问题")

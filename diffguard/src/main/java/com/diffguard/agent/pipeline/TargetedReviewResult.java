@@ -23,7 +23,10 @@ public record TargetedReviewResult(
         try {
             return JacksonMapper.MAPPER.writeValueAsString(this);
         } catch (Exception e) {
-            return "{\"summary\":\"" + (summary != null ? summary : "") + "\",\"issues\":[]}";
+            String escaped = summary == null ? ""
+                    : summary.replace("\\", "\\\\").replace("\"", "\\\"")
+                             .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+            return "{\"summary\":\"" + escaped + "\",\"issues\":[]}";
         }
     }
 }

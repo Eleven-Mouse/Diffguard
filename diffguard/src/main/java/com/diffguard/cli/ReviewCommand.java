@@ -146,15 +146,7 @@ public class ReviewCommand implements Runnable {
     private ReviewResult runPipelineReview(ReviewConfig config,
                                            List<DiffFileEntry> diffEntries,
                                            java.nio.file.Path projectDir) throws LlmApiException {
-        String providerName = config.getLlm().getProvider().toLowerCase();
-        ChatModel chatModel;
-
-        // 从适配器中获取 ChatModel
-        if ("claude".equals(providerName)) {
-            chatModel = new LangChain4jClaudeAdapter(config.getLlm(), tokens -> {}).getChatModel();
-        } else {
-            chatModel = new LangChain4jOpenAiAdapter(config.getLlm(), tokens -> {}).getChatModel();
-        }
+        ChatModel chatModel = createChatModel(config, null);
 
         // 创建带 Tool Use 的 Pipeline（传入文件沙箱）
         java.util.Set<String> filePaths = diffEntries.stream()
@@ -164,7 +156,20 @@ public class ReviewCommand implements Runnable {
 
         try (MultiStageReviewService pipeline = new MultiStageReviewService(chatModel, sandbox)) {
             System.out.println("  使用多阶段审查 Pipeline（安全/逻辑/质量 专项并行审查）...");
-            return pipeline.review(diffEntries, projectDir);
+            ReviewResult result = pipeline.review(diffEntries, projectDir,
+                    config.getPipeline().getMaxTotalTokens(), config.getLlm().getProvider());
+            result.setTotalTokensUsed(pipeline.getTotalTokensUsed());
+            return result;
+        }
+    }
+
+    private static ChatModel createChatModel(ReviewConfig config,
+                                              com.diffguard.llm.provider.TokenTracker tracker) {
+        String providerName = config.getLlm().getProvider().toLowerCase();
+        if ("claude".equals(providerName)) {
+            return new LangChain4jClaudeAdapter(config.getLlm(), tracker != null ? tracker : tokens -> {}).getChatModel();
+        } else {
+            return new LangChain4jOpenAiAdapter(config.getLlm(), tracker != null ? tracker : tokens -> {}).getChatModel();
         }
     }
 }

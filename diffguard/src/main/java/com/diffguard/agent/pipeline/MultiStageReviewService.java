@@ -1,6 +1,7 @@
 package com.diffguard.agent.pipeline;
 
 import com.diffguard.model.IssueRecord;
+import com.diffguard.util.TokenEstimator;
 import com.diffguard.agent.pipeline.model.AggregatedReview;
 import com.diffguard.agent.pipeline.model.DiffSummary;
 import com.diffguard.llm.tools.FileAccessSandbox;
@@ -20,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -42,6 +44,7 @@ public class MultiStageReviewService implements AutoCloseable {
     private final QualityReviewer qualityReviewer;
     private final AggregationAgent aggregationAgent;
     private final ExecutorService parallelExecutor;
+    private final AtomicInteger totalTokensUsed = new AtomicInteger(0);
 
     public MultiStageReviewService(ChatModel chatModel) {
         this.summaryAgent = AiServices.create(DiffSummaryAgent.class, chatModel);
@@ -56,14 +59,13 @@ public class MultiStageReviewService implements AutoCloseable {
      * 带 Tool Use 的构造方法。
      */
     public MultiStageReviewService(ChatModel chatModel, FileAccessSandbox sandbox) {
-        ReviewToolProvider toolProvider = new ReviewToolProvider(sandbox);
         this.summaryAgent = AiServices.create(DiffSummaryAgent.class, chatModel);
         this.securityReviewer = AiServices.builder(SecurityReviewer.class)
-                .chatModel(chatModel).tools(toolProvider).build();
+                .chatModel(chatModel).tools(new ReviewToolProvider(sandbox)).build();
         this.logicReviewer = AiServices.builder(LogicReviewer.class)
-                .chatModel(chatModel).tools(toolProvider).build();
+                .chatModel(chatModel).tools(new ReviewToolProvider(sandbox)).build();
         this.qualityReviewer = AiServices.builder(QualityReviewer.class)
-                .chatModel(chatModel).tools(toolProvider).build();
+                .chatModel(chatModel).tools(new ReviewToolProvider(sandbox)).build();
         this.aggregationAgent = AiServices.create(AggregationAgent.class, chatModel);
         this.parallelExecutor = Executors.newFixedThreadPool(3);
     }
@@ -85,6 +87,8 @@ public class MultiStageReviewService implements AutoCloseable {
         this.parallelExecutor = Executors.newFixedThreadPool(3);
     }
 
+    private static final int DEFAULT_MAX_TOTAL_TOKENS = 50000;
+
     /**
      * 执行多阶段审查 Pipeline。
      *
@@ -93,8 +97,37 @@ public class MultiStageReviewService implements AutoCloseable {
      * @return 与单次审查格式一致的 ReviewResult
      */
     public ReviewResult review(List<DiffFileEntry> diffEntries, java.nio.file.Path projectDir) {
+        return review(diffEntries, projectDir, DEFAULT_MAX_TOTAL_TOKENS, null);
+    }
+
+    /**
+     * 执行多阶段审查 Pipeline（带 token 限制和 provider 信息）。
+     *
+     * @param diffEntries    差异文件列表
+     * @param projectDir     项目目录
+     * @param maxTotalTokens diff 最大 token 数
+     * @param provider       LLM 供应商名称（用于 token 估算）
+     * @return 审查结果
+     */
+    public ReviewResult review(List<DiffFileEntry> diffEntries, java.nio.file.Path projectDir,
+                               int maxTotalTokens, String provider) {
         long startTime = System.currentTimeMillis();
-        String allDiffs = concatenateDiffs(diffEntries);
+        String rawDiffs = concatenateDiffs(diffEntries);
+
+        // Token 限制检查：防止大 diff 超出模型上下文窗口
+        String allDiffs;
+        if (maxTotalTokens > 0 && provider != null) {
+            int estimatedTokens = TokenEstimator.estimate(rawDiffs, provider);
+            if (estimatedTokens > maxTotalTokens) {
+                log.warn("[Pipeline] Diff token 估算 {} 超过限制 {}，截断处理",
+                        estimatedTokens, maxTotalTokens);
+                allDiffs = truncateToTokenLimit(rawDiffs, maxTotalTokens, provider);
+            } else {
+                allDiffs = rawDiffs;
+            }
+        } else {
+            allDiffs = rawDiffs;
+        }
 
         // Stage 1: 总结变更
         log.info("[Pipeline] Stage 1: 分析变更摘要...");
@@ -102,6 +135,7 @@ public class MultiStageReviewService implements AutoCloseable {
         DiffSummary summary;
         try {
             Result<DiffSummary> summaryResult = summaryAgent.summarize(allDiffs);
+            trackTokens(summaryResult);
             summary = summaryResult.content();
         } catch (Exception e) {
             log.warn("[Pipeline] Stage 1 失败，使用简化摘要：{}", e.getMessage());
@@ -122,9 +156,31 @@ public class MultiStageReviewService implements AutoCloseable {
         CompletableFuture<String> qualityFuture = CompletableFuture.supplyAsync(
                 () -> safeReview(qualityReviewer, summaryText, allDiffs), parallelExecutor);
 
-        String securityResult = securityFuture.join();
-        String logicResult = logicFuture.join();
-        String qualityResult = qualityFuture.join();
+        String securityResult = null;
+        String logicResult = null;
+        String qualityResult = null;
+        CompletableFuture<Void> allFutures = CompletableFuture.allOf(
+                securityFuture, logicFuture, qualityFuture);
+        try {
+            allFutures.get(5, TimeUnit.MINUTES);
+            securityResult = securityFuture.getNow(null);
+            logicResult = logicFuture.getNow(null);
+            qualityResult = qualityFuture.getNow(null);
+        } catch (java.util.concurrent.TimeoutException e) {
+            log.warn("[Pipeline] Stage 2 总超时（5分钟），取消未完成任务");
+            for (CompletableFuture<String> f : List.of(securityFuture, logicFuture, qualityFuture)) {
+                if (!f.isDone()) f.cancel(true);
+            }
+        } catch (java.util.concurrent.ExecutionException e) {
+            log.warn("[Pipeline] Stage 2 审查执行异常：{}", e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[Pipeline] Stage 2 审查被中断");
+        }
+        // 从已完成的 Future 中获取可用结果
+        securityResult = safeGetResult(securityFuture, securityResult);
+        logicResult = safeGetResult(logicFuture, logicResult);
+        qualityResult = safeGetResult(qualityFuture, qualityResult);
         log.info("[Pipeline] Stage 2 完成：耗时 {}ms", System.currentTimeMillis() - stage2Start);
 
         // Stage 3: 聚合
@@ -132,8 +188,13 @@ public class MultiStageReviewService implements AutoCloseable {
         long stage3Start = System.currentTimeMillis();
         AggregatedReview aggregated;
         try {
+            // null 安全处理：防止 null 结果传入聚合 Agent
+            String secInput = securityResult != null ? securityResult : "（安全审查未返回结果）";
+            String logInput = logicResult != null ? logicResult : "（逻辑审查未返回结果）";
+            String qualInput = qualityResult != null ? qualityResult : "（质量审查未返回结果）";
             Result<AggregatedReview> aggResult = aggregationAgent.aggregate(
-                    summaryText, securityResult, logicResult, qualityResult);
+                    summaryText, secInput, logInput, qualInput);
+            trackTokens(aggResult);
             aggregated = aggResult.content();
         } catch (Exception e) {
             log.warn("[Pipeline] Stage 3 聚合失败，手动合并：{}", e.getMessage());
@@ -152,22 +213,60 @@ public class MultiStageReviewService implements AutoCloseable {
     private String safeReview(Object reviewer, String summary, String diff) {
         try {
             if (reviewer instanceof SecurityReviewer sr) {
-                return sr.review(summary, diff).content().toString();
+                var r = sr.review(summary, diff);
+                trackTokens(r);
+                return r.content() != null ? r.content().toString() : null;
             } else if (reviewer instanceof LogicReviewer lr) {
-                return lr.review(summary, diff).content().toString();
+                var r = lr.review(summary, diff);
+                trackTokens(r);
+                return r.content() != null ? r.content().toString() : null;
             } else if (reviewer instanceof QualityReviewer qr) {
-                return qr.review(summary, diff).content().toString();
+                var r = qr.review(summary, diff);
+                trackTokens(r);
+                return r.content() != null ? r.content().toString() : null;
             }
         } catch (Exception e) {
             log.warn("[Pipeline] 专项审查失败：{}", e.getMessage());
         }
-        return "审查失败，无结果";
+        return null;
+    }
+
+    private void trackTokens(Result<?> result) {
+        if (result != null && result.tokenUsage() != null) {
+            long tokens = result.tokenUsage().inputTokenCount() + result.tokenUsage().outputTokenCount();
+            if (tokens > 0) {
+                totalTokensUsed.addAndGet((int) tokens);
+            }
+        }
+    }
+
+    public int getTotalTokensUsed() {
+        return totalTokensUsed.get();
+    }
+
+    private String safeGetResult(CompletableFuture<String> future, String existing) {
+        if (existing != null) return existing;
+        if (future.isDone() && !future.isCancelled()) {
+            try {
+                return future.getNow(null);
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
     }
 
     private String concatenateDiffs(List<DiffFileEntry> entries) {
         return entries.stream()
                 .map(e -> "--- 文件：" + e.getFilePath() + " ---\n" + e.getContent())
                 .collect(Collectors.joining("\n\n"));
+    }
+
+    private String truncateToTokenLimit(String content, int maxTokens, String provider) {
+        String truncated = content;
+        while (TokenEstimator.estimate(truncated, provider) > maxTokens && truncated.length() > 100) {
+            truncated = truncated.substring(0, truncated.length() * 2 / 3);
+        }
+        return truncated + "\n\n... (内容已截断，超出 token 限制)";
     }
 
     private ReviewResult convertToReviewResult(AggregatedReview aggregated, int fileCount) {
@@ -178,7 +277,7 @@ public class MultiStageReviewService implements AutoCloseable {
             return result;
         }
 
-        if (aggregated.has_critical()) {
+        if (Boolean.TRUE.equals(aggregated.has_critical())) {
             result.setHasCriticalFlag(true);
         }
 
