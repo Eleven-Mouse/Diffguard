@@ -113,8 +113,19 @@ public class ProgressDisplay {
      * 打印频率限制重试提示。
      */
     public static void printRateLimitRetry(int attempt, int maxAttempts, int waitSeconds) {
+        printRetry("请求频率受限", attempt, maxAttempts, waitSeconds);
+    }
+
+    /**
+     * 打印服务端错误重试提示。
+     */
+    public static void printServerErrorRetry(int attempt, int maxAttempts, int waitSeconds) {
+        printRetry("服务端临时错误", attempt, maxAttempts, waitSeconds);
+    }
+
+    private static void printRetry(String reason, int attempt, int maxAttempts, int waitSeconds) {
         if (silent) return;
-        System.out.println("  " + DIM + "│" + RESET + " " + YELLOW + "⚡ 请求频率受限" + RESET + " — " + BOLD + waitSeconds + "秒" + RESET
+        System.out.println("  " + DIM + "│" + RESET + " " + YELLOW + "⚡ " + reason + RESET + " — " + BOLD + waitSeconds + "秒" + RESET
                 + GRAY + "后重试 (" + attempt + "/" + maxAttempts + ")" + RESET);
     }
 

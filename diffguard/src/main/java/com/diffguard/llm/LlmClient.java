@@ -200,10 +200,15 @@ public class LlmClient {
                 }
             } catch (LlmApiException e) {
                 lastException = e;
-                if (e.isRateLimitError() && attempt < MAX_RETRIES) {
-                    ProgressDisplay.printRateLimitRetry(attempt, MAX_RETRIES, (int) (RETRY_DELAY_MS / 1000));
+                if (e.isRetryable() && attempt < MAX_RETRIES) {
+                    int delay = e.isRateLimitError() ? (int) RETRY_DELAY_MS : 5_000;
+                    if (e.isRateLimitError()) {
+                        ProgressDisplay.printRateLimitRetry(attempt, MAX_RETRIES, delay / 1000);
+                    } else {
+                        ProgressDisplay.printServerErrorRetry(attempt, MAX_RETRIES, delay / 1000);
+                    }
                     try {
-                        Thread.sleep(RETRY_DELAY_MS);
+                        Thread.sleep(delay);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         throw e;

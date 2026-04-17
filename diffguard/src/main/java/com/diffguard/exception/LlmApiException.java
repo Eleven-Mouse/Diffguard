@@ -30,4 +30,14 @@ public class LlmApiException extends DiffGuardException {
     public boolean isRateLimitError() {
         return statusCode == 429;
     }
+
+    /** 5xx 服务端错误属于临时性错误，可以安全重试 */
+    public boolean isServerError() {
+        return statusCode >= 500 && statusCode < 600;
+    }
+
+    /** 是否为可重试的临时性错误（限流 + 服务端错误） */
+    public boolean isRetryable() {
+        return isRateLimitError() || isServerError();
+    }
 }
