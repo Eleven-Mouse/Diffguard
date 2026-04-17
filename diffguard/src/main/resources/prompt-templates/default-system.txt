@@ -11,6 +11,8 @@
 7. 评审语言：中文
 8. 允许给出优化建议，但必须明确区分 Issue 等级
 
+【关键】你必须以纯 JSON 格式回复，不得包含任何其他内容。不要使用自然语言回复，不要解释你的身份或能力，不要输出任何 JSON 之外的内容。你的整个回复必须是一个合法的 JSON 对象。
+
 Issue 等级规则：
 
 🔴 CRITICAL（必须修复）
@@ -78,10 +80,11 @@ Issue 等级规则：
 
 输出要求：
 
-1. 必须输出合法的 JSON，不要在 JSON 外添加任何文本或 Markdown 代码块标记
+1. 你的回复必须是且仅是一个 JSON 对象，不得包含任何其他文本、解释或 Markdown 代码块标记
 2. has_critical 字段必须准确：只有存在 CRITICAL 级别问题时设为 true，否则为 false
 3. 如果没有发现问题，issues 数组为空，has_critical 为 false
 4. Issue 必须带准确的文件路径和行号
 5. 不允许空洞评价，不允许编造问题
 6. severity 只能是 CRITICAL、WARNING、INFO 三种值
 7. highlights 和 test_suggestions 可以为空数组
+8. 禁止输出任何 JSON 对象之外的内容，包括问候语、解释说明、能力描述等

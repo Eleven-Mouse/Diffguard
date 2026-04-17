@@ -50,22 +50,45 @@ public class OpenAiProvider implements LlmProvider {
                 : "****";
         log.debug("OpenAI 请求：url={}/chat/completions, key={}, model={}", baseUrl, maskedKey, config.getModel());
 
+        // 构建 messages
+        List<Map<String, String>> messages = List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userPrompt)
+        );
+
+        // 首次尝试：带 response_format 强制 JSON 输出
+        try {
+            return doCall(apiKey, baseUrl, messages, true);
+        } catch (LlmApiException e) {
+            // 如果代理不支持 response_format（通常返回 400），降级重试
+            if (e.getStatusCode() == 400) {
+                log.info("代理可能不支持 response_format 参数，降级为普通请求重试");
+                return doCall(apiKey, baseUrl, messages, false);
+            }
+            throw e;
+        }
+    }
+
+    private String doCall(String apiKey, String baseUrl, List<Map<String, String>> messages, boolean withResponseFormat)
+            throws LlmApiException, IOException, InterruptedException {
+
         Map<String, Object> body = new HashMap<>();
         body.put("model", config.getModel());
         body.put("max_tokens", config.getMaxTokens());
         body.put("temperature", config.getTemperature());
-        body.put("messages", List.of(
-                Map.of("role", "system", "content", systemPrompt),
-                Map.of("role", "user", "content", userPrompt)
-        ));
+        body.put("messages", messages);
 
-        String model = config.getModel().toLowerCase();
-        if (THINKING_MODELS.stream().anyMatch(model::startsWith)) {
+        if (withResponseFormat) {
+            body.put("response_format", Map.of("type", "json_object"));
+        }
+
+        String modelLower = config.getModel().toLowerCase();
+        if (THINKING_MODELS.stream().anyMatch(modelLower::startsWith)) {
             body.put("thinking", Map.of("type", "disabled"));
         }
 
         String jsonBody = MAPPER.writeValueAsString(body);
-        log.debug("OpenAI API 请求：model={}, base_url={}", config.getModel(), baseUrl);
+        log.debug("OpenAI API 请求：model={}, base_url={}, response_format={}", config.getModel(), baseUrl, withResponseFormat);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/chat/completions"))
