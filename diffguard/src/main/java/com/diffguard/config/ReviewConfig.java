@@ -58,7 +58,7 @@ public class ReviewConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class LlmConfig {
         private String provider = "claude";
-        private String model = "claude-sonnet-4-6-20250514";
+        private String model = "claude-sonnet-4-6";
 
         @JsonProperty("max_tokens")
         private int maxTokens = 4096;
@@ -66,7 +66,7 @@ public class ReviewConfig {
         private double temperature = 0.3;
 
         @JsonProperty("timeout_seconds")
-        private int timeoutSeconds = 60;
+        private int timeoutSeconds = 300;
 
         @JsonProperty("api_key_env")
         private String apiKeyEnv = "DIFFGUARD_API_KEY";

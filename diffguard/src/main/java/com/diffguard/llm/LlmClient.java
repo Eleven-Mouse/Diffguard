@@ -36,6 +36,8 @@ public class LlmClient {
 
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MS = 15_000;
+    /** 服务端错误重试的基础延迟（毫秒），实际延迟 = base × 2^(attempt-1)，即 5s → 15s → 30s */
+    private static final long SERVER_ERROR_BASE_DELAY_MS = 5_000;
 
     /** 并发调用时的最大并行度 */
     private static final int MAX_CONCURRENCY = 3;
@@ -201,7 +203,13 @@ public class LlmClient {
             } catch (LlmApiException e) {
                 lastException = e;
                 if (e.isRetryable() && attempt < MAX_RETRIES) {
-                    int delay = e.isRateLimitError() ? (int) RETRY_DELAY_MS : 5_000;
+                    int delay;
+                    if (e.isRateLimitError()) {
+                        delay = (int) RETRY_DELAY_MS;
+                    } else {
+                        // 指数退避：5s → 15s → 30s，给服务端更多恢复时间
+                        delay = (int) (SERVER_ERROR_BASE_DELAY_MS * (1L << (attempt - 1)));
+                    }
                     if (e.isRateLimitError()) {
                         ProgressDisplay.printRateLimitRetry(attempt, MAX_RETRIES, delay / 1000);
                     } else {
