@@ -10,6 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +20,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * 审查结果缓存，采用 Caffeine 内存缓存 + 文件持久化的双层架构。
@@ -32,6 +36,8 @@ public class ReviewCache {
 
     private static final long MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000L; // 24 hours
     private static final int MAX_CACHE_ENTRIES = 500;
+    /** 超过此大小（字节）的 JSON 缓存使用 gzip 压缩 */
+    private static final int COMPRESSION_THRESHOLD = 4096;
 
     private final Path cacheDir;
     private final Cache<String, List<ReviewIssue>> memoryCache;
@@ -87,7 +93,7 @@ public class ReviewCache {
     }
 
     /**
-     * 获取缓存：先查内存，再查磁盘。
+     * 获取缓存：先查内存，再查磁盘（自动检测 gzip 压缩）。
      */
     public List<ReviewIssue> get(String key) {
         // 1. 内存缓存
@@ -96,28 +102,40 @@ public class ReviewCache {
             return cached;
         }
 
-        // 2. 磁盘缓存
-        Path file = cacheFile(key);
-        if (!Files.isRegularFile(file)) return null;
+        // 2. 磁盘缓存：优先尝试压缩文件，回退到 JSON 文件
+        Path gzipFile = cacheFile(key, ".json.gz");
+        Path jsonFile = cacheFile(key, ".json");
 
         try {
-            if (isExpired(file)) {
-                deleteQuietly(file);
-                memoryCache.invalidate(key);
-                return null;
+            if (Files.isRegularFile(gzipFile)) {
+                if (isExpired(gzipFile)) {
+                    deleteQuietly(gzipFile);
+                    memoryCache.invalidate(key);
+                    return null;
+                }
+                List<ReviewIssue> issues = readCompressed(gzipFile);
+                memoryCache.put(key, issues);
+                return issues;
             }
-            List<ReviewIssue> issues = MAPPER.readValue(file.toFile(), new TypeReference<List<ReviewIssue>>() {});
-            // 回填内存缓存
-            memoryCache.put(key, issues);
-            return issues;
+
+            if (Files.isRegularFile(jsonFile)) {
+                if (isExpired(jsonFile)) {
+                    deleteQuietly(jsonFile);
+                    memoryCache.invalidate(key);
+                    return null;
+                }
+                List<ReviewIssue> issues = MAPPER.readValue(jsonFile.toFile(), new TypeReference<List<ReviewIssue>>() {});
+                memoryCache.put(key, issues);
+                return issues;
+            }
         } catch (IOException e) {
-            log.debug("缓存读取失败: {}", file.getFileName());
-            return null;
+            log.debug("缓存读取失败: {}", key);
         }
+        return null;
     }
 
     /**
-     * 写入缓存：同时写入内存和磁盘。
+     * 写入缓存：同时写入内存和磁盘（超过阈值自动压缩）。
      */
     public void put(String key, List<ReviewIssue> issues) {
         if (issues == null) return;
@@ -127,11 +145,19 @@ public class ReviewCache {
 
         // 2. 磁盘持久化
         if (cacheDir == null) return;
-        Path file = cacheFile(key);
         try {
-            MAPPER.writeValue(file.toFile(), issues);
+            byte[] jsonBytes = MAPPER.writeValueAsBytes(issues);
+            if (jsonBytes.length >= COMPRESSION_THRESHOLD) {
+                writeCompressed(cacheFile(key, ".json.gz"), jsonBytes);
+                // 清理可能存在的旧格式文件
+                deleteQuietly(cacheFile(key, ".json"));
+            } else {
+                Files.write(cacheFile(key, ".json"), jsonBytes);
+                // 清理可能存在的旧压缩文件
+                deleteQuietly(cacheFile(key, ".json.gz"));
+            }
         } catch (IOException e) {
-            log.debug("缓存写入失败: {}", file.getFileName());
+            log.debug("缓存写入失败: {}", key);
         }
     }
 
@@ -143,15 +169,29 @@ public class ReviewCache {
         memoryCache.invalidateAll();
         if (cacheDir == null || !Files.isDirectory(cacheDir)) return;
         try (Stream<Path> files = Files.list(cacheDir)) {
-            files.filter(p -> p.toString().endsWith(".json"))
+            files.filter(p -> p.toString().endsWith(".json") || p.toString().endsWith(".json.gz"))
                     .forEach(ReviewCache::deleteQuietly);
         } catch (IOException e) {
             log.debug("清理缓存失败", e);
         }
     }
 
-    private Path cacheFile(String key) {
-        return cacheDir.resolve(sha256(key) + ".json");
+    private Path cacheFile(String key, String suffix) {
+        return cacheDir.resolve(sha256(key) + suffix);
+    }
+
+    private List<ReviewIssue> readCompressed(Path file) throws IOException {
+        try (InputStream fis = Files.newInputStream(file);
+             InputStream gis = new GZIPInputStream(fis)) {
+            return MAPPER.readValue(gis, new TypeReference<List<ReviewIssue>>() {});
+        }
+    }
+
+    private void writeCompressed(Path file, byte[] jsonBytes) throws IOException {
+        try (OutputStream fos = Files.newOutputStream(file);
+             OutputStream gos = new GZIPOutputStream(fos)) {
+            gos.write(jsonBytes);
+        }
     }
 
     private boolean isExpired(Path file) throws IOException {
@@ -173,7 +213,7 @@ public class ReviewCache {
 
         try (Stream<Path> stream = Files.list(cacheDir)) {
             List<Path> entries = stream
-                    .filter(p -> p.toString().endsWith(".json"))
+                    .filter(p -> p.toString().endsWith(".json") || p.toString().endsWith(".json.gz"))
                     .toList();
 
             // 删除过期条目
@@ -190,7 +230,7 @@ public class ReviewCache {
             // 限制最大条目数，删除最旧的
             try (Stream<Path> remaining = Files.list(cacheDir)) {
                 List<Path> sorted = remaining
-                        .filter(p -> p.toString().endsWith(".json"))
+                        .filter(p -> p.toString().endsWith(".json") || p.toString().endsWith(".json.gz"))
                         .sorted((a, b) -> {
                             try {
                                 return Long.compare(

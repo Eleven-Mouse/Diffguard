@@ -109,12 +109,28 @@ public class ReviewResult {
     }
 
     public String getSummary() {
+        return getSummary("zh");
+    }
+
+    /**
+     * 根据语言获取摘要。
+     * @param language 语言代码，如 "zh"、"en"
+     */
+    public String getSummary(String language) {
+        boolean isEn = language != null && language.toLowerCase().startsWith("en");
+
         if (isRawReport()) {
-            return "AI 代码审查";
+            return isEn ? "AI Code Review" : "AI 代码审查";
         }
+
         int critical = getIssuesBySeverity(Severity.CRITICAL).size();
         int warning = getIssuesBySeverity(Severity.WARNING).size();
         int info = getIssuesBySeverity(Severity.INFO).size();
+
+        if (isEn) {
+            return String.format("Found %d issue(s) (%d critical, %d warning, %d info)",
+                    issues.size(), critical, warning, info);
+        }
         return String.format("发现 %d 个问题（%d 个严重，%d 个警告，%d 个提示）",
                 issues.size(), critical, warning, info);
     }

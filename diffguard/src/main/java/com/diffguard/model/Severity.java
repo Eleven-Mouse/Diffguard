@@ -1,20 +1,37 @@
 package com.diffguard.model;
 
-public enum Severity {
-    CRITICAL("严重", "🔴"),
-    WARNING("警告", "🟡"),
-    INFO("提示", "🔵");
+import java.util.Locale;
 
-    private final String label;
+public enum Severity {
+    CRITICAL("严重", "Critical", "🔴"),
+    WARNING("警告", "Warning", "🟡"),
+    INFO("提示", "Info", "🔵");
+
+    private final String zhLabel;
+    private final String enLabel;
     private final String icon;
 
-    Severity(String label, String icon) {
-        this.label = label;
+    Severity(String zhLabel, String enLabel, String icon) {
+        this.zhLabel = zhLabel;
+        this.enLabel = enLabel;
         this.icon = icon;
     }
 
+    /**
+     * 获取中文标签（向后兼容）。
+     */
     public String getLabel() {
-        return label;
+        return zhLabel;
+    }
+
+    /**
+     * 根据语言获取标签。
+     */
+    public String getLabel(String language) {
+        if (language == null) return zhLabel;
+        String lang = language.toLowerCase(Locale.ROOT);
+        if (lang.startsWith("en")) return enLabel;
+        return zhLabel;
     }
 
     public String getIcon() {

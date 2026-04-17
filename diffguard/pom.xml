@@ -13,8 +13,8 @@
     <description>Git Hook integrated AI Code Review tool powered by LLM</description>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jgit.version>6.8.0.202311291450-r</jgit.version>
         <jackson.version>2.17.0</jackson.version>

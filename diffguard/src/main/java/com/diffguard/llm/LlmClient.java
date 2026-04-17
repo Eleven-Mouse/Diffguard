@@ -19,10 +19,15 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class LlmClient {
+
 
     private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
 
@@ -32,8 +37,12 @@ public class LlmClient {
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MS = 15_000;
 
+    /** 并发调用时的最大并行度 */
+    private static final int MAX_CONCURRENCY = 3;
+
     private final LlmProvider provider;
     private final HttpClient httpClient;
+    private final Semaphore concurrencyLimiter = new Semaphore(MAX_CONCURRENCY);
     private int totalTokensUsed = 0;
 
     public LlmClient(ReviewConfig config) {
@@ -57,34 +66,47 @@ public class LlmClient {
 
         ProgressDisplay.printReviewStart(prompts.size());
 
-        StringBuilder rawReportBuilder = new StringBuilder();
-
-        for (int i = 0; i < prompts.size(); i++) {
-            if (prompts.size() > 1) {
-                ProgressDisplay.printBatchProgress(i + 1, prompts.size());
+        if (prompts.size() <= 1) {
+            // 单批次：无需并行开销
+            if (!prompts.isEmpty()) {
+                LlmResponse response = callLlmWithRetry(prompts.get(0));
+                mergeResponse(response, result);
             }
+        } else {
+            // 多批次：并行调用，按顺序合并结果保证稳定性
+            ExecutorService executor = Executors.newFixedThreadPool(
+                    Math.min(prompts.size(), MAX_CONCURRENCY));
+            try {
+                List<Future<LlmResponse>> futures = new ArrayList<>();
+                for (int i = 0; i < prompts.size(); i++) {
+                    final int idx = i;
+                    futures.add(executor.submit(() -> {
+                        concurrencyLimiter.acquire();
+                        try {
+                            ProgressDisplay.printBatchProgress(idx + 1, prompts.size());
+                            return callLlmWithRetry(prompts.get(idx));
+                        } finally {
+                            concurrencyLimiter.release();
+                        }
+                    }));
+                }
 
-            LlmResponse response = callLlmWithRetry(prompts.get(i));
-            if (response.isRawText()) {
-                if (rawReportBuilder.length() > 0) {
-                    rawReportBuilder.append("\n\n");
+                for (Future<LlmResponse> future : futures) {
+                    try {
+                        LlmResponse response = future.get();
+                        mergeResponse(response, result);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new LlmApiException("并行审查被中断", e);
+                    } catch (ExecutionException e) {
+                        Throwable cause = e.getCause();
+                        if (cause instanceof LlmApiException lae) throw lae;
+                        throw new LlmApiException("并行审查失败：" + cause.getMessage(), cause);
+                    }
                 }
-                rawReportBuilder.append(response.getRawText());
-            } else {
-                for (ReviewIssue issue : response.getIssues()) {
-                    result.addIssue(issue);
-                }
-                // 传播 hasCritical 标志：JSON 显式标记 或 存在 CRITICAL 级别 issue
-                if (Boolean.TRUE.equals(response.getHasCritical())
-                        || response.getIssues().stream().anyMatch(issue -> issue.getSeverity().shouldBlockCommit())) {
-                    result.setHasCriticalFlag(true);
-                }
+            } finally {
+                executor.shutdown();
             }
-            result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
-        }
-
-        if (rawReportBuilder.length() > 0) {
-            result.setRawReport(rawReportBuilder.toString());
         }
 
         result.setTotalTokensUsed(totalTokensUsed);
@@ -93,6 +115,26 @@ public class LlmClient {
         int totalIssues = result.isRawReport() ? 0 : result.getIssues().size();
         ProgressDisplay.printReviewComplete(totalIssues);
         return result;
+    }
+
+    /**
+     * 将单个 LLM 响应合并到聚合结果中。
+     */
+    private void mergeResponse(LlmResponse response, ReviewResult result) {
+        if (response.isRawText()) {
+            String existing = result.getRawReport();
+            result.setRawReport(existing == null ? response.getRawText()
+                    : existing + "\n\n" + response.getRawText());
+        } else {
+            for (ReviewIssue issue : response.getIssues()) {
+                result.addIssue(issue);
+            }
+            if (Boolean.TRUE.equals(response.getHasCritical())
+                    || response.getIssues().stream().anyMatch(i -> i.getSeverity().shouldBlockCommit())) {
+                result.setHasCriticalFlag(true);
+            }
+        }
+        result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
     }
 
     private LlmResponse callLlmWithRetry(PromptBuilder.PromptContent prompt) throws LlmApiException {
@@ -168,13 +210,17 @@ public class LlmClient {
         }
 
         static LlmResponse fromContent(String content) {
+
             if (content == null || content.isBlank()) {
                 return new LlmResponse(List.of(), null, false);
             }
 
+            // 预处理：去除 markdown 代码块包裹和常见的思考标签
+            String cleaned = stripWrappers(content);
+
             // 1. 优先尝试 JSON 对象格式（包含 has_critical 明确标志）
             try {
-                String jsonObj = extractJsonObject(content);
+                String jsonObj = extractJsonObject(cleaned);
                 if (jsonObj != null) {
                     Map<String, Object> parsed = MAPPER.readValue(jsonObj, new TypeReference<Map<String, Object>>() {});
                     boolean critical = false;
@@ -196,7 +242,7 @@ public class LlmClient {
 
             // 2. 尝试 JSON 数组格式（向后兼容旧 prompt 输出）
             try {
-                String json = extractJsonArray(content);
+                String json = extractJsonArray(cleaned);
                 if (json != null) {
                     List<ReviewIssue> issues = MAPPER.readValue(json, new TypeReference<List<ReviewIssue>>() {});
                     return new LlmResponse(issues, null, null);
@@ -207,7 +253,24 @@ public class LlmClient {
 
             // 3. 原始文本 fallback（不可靠，仅作为最后手段）
             log.warn("LLM 未输出有效 JSON，降级为原始文本模式。commit 阻断判定可能不准确。");
+            log.warn("LLM 原始响应（前200字符）：{}", content.substring(0, Math.min(200, content.length())));
             return new LlmResponse(List.of(), content, null);
+        }
+
+        /**
+         * 去除 LLM 输出中常见的包裹标记：
+         * - markdown 代码块（```json ... ```）
+         * - XML 风格思考标签（<thinking>...</thinking> 等）
+         */
+        private static String stripWrappers(String content) {
+            String s = content;
+            // 去除 markdown 代码块
+            s = s.replaceAll("(?s)```(?:json)?\\s*\\n?", "");
+            s = s.replaceAll("(?s)\\n?\\s*```", "");
+            // 去除 <thinking> / <think /> 标签
+            s = s.replaceAll("(?s)<thinking>.*?</thinking>", "");
+            s = s.replaceAll("(?s)<think\\s*/>", "");
+            return s.trim();
         }
 
         private static String extractJsonObject(String content) {
