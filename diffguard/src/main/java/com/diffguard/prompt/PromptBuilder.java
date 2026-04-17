@@ -63,8 +63,6 @@ public class PromptBuilder {
 
     /**
      * 将所有文件差异合并为尽可能少的提示词。
-     * 不是每个文件一次 API 调用，而是将多个文件合并到一次调用中，
-     * 以避免频率限制并减少总延迟。
      */
     public List<PromptContent> buildPrompts(List<DiffFileEntry> entries) {
         if (entries.isEmpty()) {
@@ -79,7 +77,6 @@ public class PromptBuilder {
             String fileSection = "\n\n--- 文件：" + entry.getFilePath() + " ---\n" + entry.getContent();
             int fileTokens = TokenEstimator.estimate(fileSection, config.getLlm().getProvider());
 
-            // 如果添加此文件会超过限制，先刷新当前批次
             if (currentTokens + fileTokens > MAX_COMBINED_TOKENS && combinedDiff.length() > 0) {
                 results.add(buildCombinedPrompt(combinedDiff.toString()));
                 combinedDiff = new StringBuilder();
@@ -90,7 +87,6 @@ public class PromptBuilder {
             currentTokens += fileTokens;
         }
 
-        // 刷新剩余内容
         if (combinedDiff.length() > 0) {
             results.add(buildCombinedPrompt(combinedDiff.toString()));
         }
@@ -108,7 +104,7 @@ public class PromptBuilder {
                 .replace("{{FILE_PATH}}", "（多个文件）")
                 .replace("{{DIFF_CONTENT}}", allDiffs);
 
-        return new PromptContent(systemPrompt, userPrompt);
+        return new PromptContent(systemPrompt, userPrompt, language, rulesSection, "（多个文件）", allDiffs);
     }
 
     private String buildRulesSection() {
@@ -130,11 +126,7 @@ public class PromptBuilder {
         };
     }
 
-    /**
-     * 模板加载：优先从项目自定义目录加载，不存在则回退到 classpath 内置模板。
-     */
     private String loadCustomOrBuiltin(Path projectDir, String fileName, String builtinPath) {
-        // 1. 尝试项目级自定义模板
         Path customFile = projectDir.resolve(CUSTOM_PROMPT_DIR).resolve(fileName);
         if (Files.isRegularFile(customFile)) {
             try {
@@ -147,8 +139,6 @@ public class PromptBuilder {
                 log.warn("读取自定义模板失败：{}，回退到内置模板", customFile);
             }
         }
-
-        // 2. 回退到 classpath 内置模板
         return loadClasspathResource(builtinPath);
     }
 
@@ -168,19 +158,45 @@ public class PromptBuilder {
     }
 
     /**
-     * 表示一个完整的提示词，包含系统部分和用户部分。
+     * 表示一个完整的提示词，包含系统部分和用户部分，以及结构化字段。
+     * <p>
+     * 结构化字段（language, rules, filePath, diffContent）直接携带原始值，
+     * 无需通过反向解析格式化后的 userPrompt 字符串来获取。
      */
     public static class PromptContent {
         private final String systemPrompt;
         private final String userPrompt;
+        private final String language;
+        private final String rules;
+        private final String filePath;
+        private final String diffContent;
 
+        /**
+         * 兼容旧构造方法，不携带结构化字段。
+         */
         public PromptContent(String systemPrompt, String userPrompt) {
+            this(systemPrompt, userPrompt, null, null, null, null);
+        }
+
+        /**
+         * 完整构造方法，同时携带格式化后的 prompt 和结构化原始字段。
+         */
+        public PromptContent(String systemPrompt, String userPrompt,
+                             String language, String rules, String filePath, String diffContent) {
             this.systemPrompt = systemPrompt;
             this.userPrompt = userPrompt;
+            this.language = language;
+            this.rules = rules;
+            this.filePath = filePath;
+            this.diffContent = diffContent;
         }
 
         public String getSystemPrompt() { return systemPrompt; }
         public String getUserPrompt() { return userPrompt; }
+        public String getLanguage() { return language != null ? language : "zh"; }
+        public String getRules() { return rules != null ? rules : ""; }
+        public String getFilePath() { return filePath != null ? filePath : "（多个文件）"; }
+        public String getDiffContent() { return diffContent != null ? diffContent : userPrompt; }
 
         public int estimateTokens() {
             return TokenEstimator.count(systemPrompt) + TokenEstimator.count(userPrompt);

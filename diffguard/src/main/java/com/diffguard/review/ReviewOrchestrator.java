@@ -1,12 +1,13 @@
-package com.diffguard.webhook;
+package com.diffguard.review;
 
 import com.diffguard.config.ReviewConfig;
-import com.diffguard.diff.DiffCollector;
+import com.diffguard.git.DiffCollector;
+import com.diffguard.webhook.GitHubApiClient;
+import com.diffguard.webhook.GitHubPayloadParser;
 import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.MarkdownFormatter;
 import com.diffguard.output.ProgressDisplay;
-import com.diffguard.service.ReviewService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

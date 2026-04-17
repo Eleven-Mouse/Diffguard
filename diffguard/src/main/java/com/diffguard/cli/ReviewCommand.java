@@ -2,17 +2,21 @@ package com.diffguard.cli;
 
 import com.diffguard.config.ConfigLoader;
 import com.diffguard.config.ReviewConfig;
-import com.diffguard.diff.DiffCollector;
+import com.diffguard.git.DiffCollector;
 import com.diffguard.exception.ConfigException;
 import com.diffguard.exception.DiffCollectionException;
 import com.diffguard.exception.DiffGuardException;
 import com.diffguard.exception.LlmApiException;
-import com.diffguard.hook.GitHookInstaller;
+import com.diffguard.agent.pipeline.MultiStageReviewService;
+import com.diffguard.llm.provider.LangChain4jClaudeAdapter;
+import com.diffguard.llm.provider.LangChain4jOpenAiAdapter;
+import com.diffguard.llm.tools.FileAccessSandbox;
 import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.ConsoleFormatter;
 import com.diffguard.output.ProgressDisplay;
-import com.diffguard.service.ReviewService;
+import com.diffguard.review.ReviewService;
+import dev.langchain4j.model.chat.ChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -42,6 +46,9 @@ public class ReviewCommand implements Runnable {
 
     @CommandLine.Option(names = "--no-cache", description = "禁用结果缓存")
     boolean noCache;
+
+    @CommandLine.Option(names = "--pipeline", description = "启用多阶段审查 Pipeline（安全/逻辑/质量 专项并行审查）")
+    boolean pipeline;
 
     @CommandLine.ParentCommand
     DiffGuardMain parent;
@@ -99,11 +106,16 @@ public class ReviewCommand implements Runnable {
         int totalLines = diffEntries.stream().mapToInt(DiffFileEntry::getLineCount).sum();
         ProgressDisplay.printDiffCollected(diffEntries.size(), totalLines);
 
-        // 3. 执行审查（委托给 ReviewService）
-        ReviewService reviewService = new ReviewService(config, projectDir, noCache);
+        // 3. 执行审查
+        boolean usePipeline = pipeline || config.getPipeline().isEnabled();
         ReviewResult result;
         try {
-            result = reviewService.review(diffEntries);
+            if (usePipeline) {
+                result = runPipelineReview(config, diffEntries, projectDir);
+            } else {
+                ReviewService reviewService = new ReviewService(config, projectDir, noCache);
+                result = reviewService.review(diffEntries);
+            }
         } catch (LlmApiException e) {
             // LLM 调用失败，fail-closed：阻止提交
             System.err.println("  AI 审查失败：" + e.getMessage());
@@ -125,5 +137,33 @@ public class ReviewCommand implements Runnable {
         }
 
         return 0;
+    }
+
+    /**
+     * 执行多阶段 Pipeline 审查。
+     */
+    private ReviewResult runPipelineReview(ReviewConfig config,
+                                           List<DiffFileEntry> diffEntries,
+                                           java.nio.file.Path projectDir) throws LlmApiException {
+        String providerName = config.getLlm().getProvider().toLowerCase();
+        ChatModel chatModel;
+
+        // 从适配器中获取 ChatModel
+        if ("claude".equals(providerName)) {
+            chatModel = new LangChain4jClaudeAdapter(config.getLlm(), tokens -> {}).getChatModel();
+        } else {
+            chatModel = new LangChain4jOpenAiAdapter(config.getLlm(), tokens -> {}).getChatModel();
+        }
+
+        // 创建带 Tool Use 的 Pipeline（传入文件沙箱）
+        java.util.Set<String> filePaths = diffEntries.stream()
+                .map(DiffFileEntry::getFilePath)
+                .collect(java.util.stream.Collectors.toSet());
+        FileAccessSandbox sandbox = new FileAccessSandbox(projectDir, filePaths);
+
+        try (MultiStageReviewService pipeline = new MultiStageReviewService(chatModel, sandbox)) {
+            System.out.println("  使用多阶段审查 Pipeline（安全/逻辑/质量 专项并行审查）...");
+            return pipeline.review(diffEntries, projectDir);
+        }
     }
 }

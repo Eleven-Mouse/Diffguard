@@ -2,6 +2,7 @@ package com.diffguard.webhook;
 
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.WebhookException;
+import com.diffguard.review.ReviewOrchestrator;
 import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

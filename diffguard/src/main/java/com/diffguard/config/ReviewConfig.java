@@ -13,6 +13,7 @@ public class ReviewConfig {
     private RulesConfig rules = new RulesConfig();
     private IgnoreConfig ignore = new IgnoreConfig();
     private ReviewOptions review = new ReviewOptions();
+    private PipelineConfig pipeline = new PipelineConfig();
     private WebhookConfig webhook = null;
 
     public LlmConfig getLlm() {
@@ -197,6 +198,22 @@ public class ReviewConfig {
         public String getLanguage() { return language; }
         public void setLanguage(String language) { this.language = language; }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class PipelineConfig {
+        private boolean enabled = false;
+
+        @JsonProperty("max_total_tokens")
+        private int maxTotalTokens = 50000;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public int getMaxTotalTokens() { return maxTotalTokens; }
+        public void setMaxTotalTokens(int maxTotalTokens) { this.maxTotalTokens = maxTotalTokens; }
+    }
+
+    public PipelineConfig getPipeline() { return pipeline; }
+    public void setPipeline(PipelineConfig pipeline) { this.pipeline = pipeline; }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class WebhookConfig {

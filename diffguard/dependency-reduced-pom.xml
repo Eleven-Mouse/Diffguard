@@ -106,10 +106,11 @@
     </dependency>
   </dependencies>
   <properties>
-    <maven.compiler.target>21</maven.compiler.target>
     <maven.compiler.source>21</maven.compiler.source>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <jackson.version>2.17.0</jackson.version>
     <jgit.version>6.8.0.202311291450-r</jgit.version>
+    <langchain4j.version>1.13.0</langchain4j.version>
+    <maven.compiler.target>21</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 </project>

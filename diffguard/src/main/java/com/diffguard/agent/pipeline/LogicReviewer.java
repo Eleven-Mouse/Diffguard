@@ -1,0 +1,21 @@
+package com.diffguard.agent.pipeline;
+
+import com.diffguard.model.IssueRecord;
+import dev.langchain4j.model.output.structured.Description;
+import dev.langchain4j.service.Result;
+import dev.langchain4j.service.SystemMessage;
+import dev.langchain4j.service.UserMessage;
+import dev.langchain4j.service.V;
+
+import java.util.List;
+
+/**
+ * Stage 2：逻辑和 Bug 风险审查 Agent。
+ * 关注逻辑错误、空指针、并发问题、资源泄漏、边界条件等。
+ */
+@SystemMessage(fromResource = "prompt-templates/pipeline/logic-system.txt")
+public interface LogicReviewer {
+
+    @UserMessage("审查以下代码变更的逻辑问题：\n\n变更总结：{{summary}}\n\n代码变更：\n{{diff}}")
+    Result<TargetedReviewResult> review(@V("summary") String summary, @V("diff") String diffContent);
+}

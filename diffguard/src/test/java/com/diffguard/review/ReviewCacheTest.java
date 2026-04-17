@@ -1,4 +1,4 @@
-package com.diffguard.cache;
+package com.diffguard.review;
 
 import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.Severity;

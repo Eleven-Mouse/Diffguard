@@ -1,0 +1,17 @@
+以下是一次代码审查的原始回复内容，请将其转换为以下 JSON 格式：
+
+```json
+{
+  "has_critical": boolean,
+  "summary": "总结",
+  "issues": [{"severity": "CRITICAL|WARNING|INFO", "file": "路径", "line": 行号, "type": "类型", "message": "描述", "suggestion": "建议"}],
+  "highlights": ["亮点"],
+  "test_suggestions": ["测试建议"]
+}
+```
+
+如果原始内容中没有明确的问题，则 issues 为空数组，has_critical 为 false。
+请根据原始回复内容提取信息，不要编造问题。
+
+原始回复内容：
+%s

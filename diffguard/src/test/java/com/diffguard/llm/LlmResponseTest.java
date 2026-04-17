@@ -33,7 +33,7 @@ class LlmResponseTest {
                 }
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertFalse(resp.isRawText());
             assertTrue(resp.getHasCritical());
@@ -52,7 +52,7 @@ class LlmResponseTest {
                 }
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertFalse(resp.isRawText());
             assertFalse(resp.getHasCritical());
@@ -70,7 +70,7 @@ class LlmResponseTest {
                 }
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertFalse(resp.isRawText());
             assertFalse(resp.getHasCritical());
@@ -87,7 +87,7 @@ class LlmResponseTest {
                 }
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertFalse(resp.isRawText());
             assertTrue(resp.getHasCritical());
@@ -99,7 +99,7 @@ class LlmResponseTest {
         void objectWrappedInMarkdown() {
             String content = "```json\n{\"has_critical\": false, \"issues\": []}\n```";
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(content);
+            LlmResponse resp = LlmResponse.fromContent(content);
 
             assertFalse(resp.isRawText());
             assertFalse(resp.getHasCritical());
@@ -110,7 +110,7 @@ class LlmResponseTest {
         void objectWithPrefixText() {
             String content = "以下是审查结果：\n\n{\"has_critical\": true, \"issues\": []}";
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(content);
+            LlmResponse resp = LlmResponse.fromContent(content);
 
             assertFalse(resp.isRawText());
             assertTrue(resp.getHasCritical());
@@ -130,7 +130,7 @@ class LlmResponseTest {
                 }
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertEquals(3, resp.getIssues().size());
             assertEquals(Severity.CRITICAL, resp.getIssues().get(0).getSeverity());
@@ -152,7 +152,7 @@ class LlmResponseTest {
         void emptyArray() {
             String json = "[]";
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertFalse(resp.isRawText());
             assertTrue(resp.getIssues().isEmpty());
@@ -171,7 +171,7 @@ class LlmResponseTest {
                 ]
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertFalse(resp.isRawText());
             // Object 路径解析了第一个 {}，其中无 has_critical → false，无 issues → 空列表
@@ -193,7 +193,7 @@ class LlmResponseTest {
         void plainTextFallback() {
             String text = "# 代码审查报告\n\n## 严重问题\n未发现严重问题\n\n## 建议\n无";
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(text);
+            LlmResponse resp = LlmResponse.fromContent(text);
 
             assertTrue(resp.isRawText());
             assertEquals(text, resp.getRawText());
@@ -206,7 +206,7 @@ class LlmResponseTest {
         void brokenJsonFallback() {
             String text = "{这个不是有效的JSON";
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(text);
+            LlmResponse resp = LlmResponse.fromContent(text);
 
             assertTrue(resp.isRawText());
         }
@@ -214,7 +214,7 @@ class LlmResponseTest {
         @Test
         @DisplayName("null 输入 → 空 issues，非 raw text")
         void nullInput() {
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(null);
+            LlmResponse resp = LlmResponse.fromContent(null);
 
             assertFalse(resp.isRawText());
             assertTrue(resp.getIssues().isEmpty());
@@ -224,7 +224,7 @@ class LlmResponseTest {
         @Test
         @DisplayName("空白字符串 → 空 issues，非 raw text")
         void blankInput() {
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent("   \n\t  ");
+            LlmResponse resp = LlmResponse.fromContent("   \n\t  ");
 
             assertFalse(resp.isRawText());
             assertTrue(resp.getIssues().isEmpty());
@@ -251,7 +251,7 @@ class LlmResponseTest {
                 }
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertEquals(1, resp.getIssues().size());
             assertEquals(Severity.CRITICAL, resp.getIssues().get(0).getSeverity());
@@ -269,7 +269,7 @@ class LlmResponseTest {
                 }
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertEquals(1, resp.getIssues().size());
             assertEquals(Severity.WARNING, resp.getIssues().get(0).getSeverity());
@@ -287,7 +287,7 @@ class LlmResponseTest {
                 }
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertEquals(1, resp.getIssues().size());
             assertEquals(Severity.INFO, resp.getIssues().get(0).getSeverity());
@@ -305,7 +305,7 @@ class LlmResponseTest {
                 }
                 """;
 
-            LlmClient.LlmResponse resp = LlmClient.LlmResponse.fromContent(json);
+            LlmResponse resp = LlmResponse.fromContent(json);
 
             assertFalse(resp.isRawText());
             assertTrue(resp.getIssues().isEmpty());

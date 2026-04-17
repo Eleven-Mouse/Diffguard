@@ -1,10 +1,11 @@
-package com.diffguard.service;
+package com.diffguard.review;
 
-import com.diffguard.cache.ReviewCache;
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.DiffGuardException;
 import com.diffguard.exception.LlmApiException;
 import com.diffguard.llm.LlmClient;
+import com.diffguard.llm.tools.FileAccessSandbox;
+import com.diffguard.llm.tools.ReviewToolProvider;
 import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
@@ -15,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 代码审查核心业务逻辑。
@@ -87,6 +89,16 @@ public class ReviewService {
             List<PromptBuilder.PromptContent> prompts = promptBuilder.buildPrompts(uncachedEntries);
 
             LlmClient client = this.llmClient != null ? this.llmClient : new LlmClient(config);
+
+            // 注册 Tool Use：让 LLM 可以读取 diff 之外的代码上下文
+            if (this.llmClient == null) {
+                java.util.Set<String> filePaths = uncachedEntries.stream()
+                        .map(DiffFileEntry::getFilePath)
+                        .collect(Collectors.toSet());
+                FileAccessSandbox sandbox = new FileAccessSandbox(projectDir, filePaths);
+                client.withTools(new ReviewToolProvider(sandbox));
+            }
+
             ReviewResult freshResult = client.review(prompts);
 
             // 3. 合并结果

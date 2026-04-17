@@ -1,4 +1,4 @@
-package com.diffguard.diff;
+package com.diffguard.git;
 
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.DiffCollectionException;

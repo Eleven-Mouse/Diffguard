@@ -1,4 +1,4 @@
-package com.diffguard.service;
+package com.diffguard.review;
 
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.LlmApiException;

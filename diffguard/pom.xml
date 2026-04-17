@@ -18,6 +18,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jgit.version>6.8.0.202311291450-r</jgit.version>
         <jackson.version>2.17.0</jackson.version>
+        <langchain4j.version>1.13.0</langchain4j.version>
     </properties>
 
     <dependencies>
@@ -68,6 +69,25 @@
             <groupId>io.javalin</groupId>
             <artifactId>javalin</artifactId>
             <version>5.6.3</version>
+        </dependency>
+
+        <!-- LangChain4j Core -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        <!-- LangChain4j OpenAI Integration -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        <!-- LangChain4j Anthropic Integration -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-anthropic</artifactId>
+            <version>${langchain4j.version}</version>
         </dependency>
 
         <!-- Logging -->
