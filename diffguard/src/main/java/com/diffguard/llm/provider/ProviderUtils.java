@@ -44,6 +44,7 @@ public final class ProviderUtils {
         if (msg.contains("500")) return 500;
         if (msg.contains("502")) return 502;
         if (msg.contains("503")) return 503;
+        if (msg.contains("504")) return 504;
         if (msg.contains("529")) return 529; // Claude 特有的过载错误
         if (msg.contains("400")) return 400;
         return -1;

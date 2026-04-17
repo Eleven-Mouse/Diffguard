@@ -40,6 +40,7 @@ public class LangChain4jClaudeAdapter implements LlmProvider {
                 .maxTokens(config.getMaxTokens())
                 .temperature(config.getTemperature())
                 .timeout(java.time.Duration.ofSeconds(config.getTimeoutSeconds()))
+                .maxRetries(0)
                 .build();
 
         log.debug("LangChain4j Claude 适配器初始化：model={}, baseUrl={}", config.getModel(), baseUrl);

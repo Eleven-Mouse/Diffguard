@@ -44,7 +44,8 @@ public class LangChain4jOpenAiAdapter implements LlmProvider {
                 .baseUrl(baseUrl)
                 .modelName(config.getModel())
                 .maxTokens(config.getMaxTokens())
-                .timeout(java.time.Duration.ofSeconds(config.getTimeoutSeconds()));
+                .timeout(java.time.Duration.ofSeconds(config.getTimeoutSeconds()))
+                .maxRetries(0);
 
         if (!NO_TEMPERATURE_MODELS.contains(modelLower)) {
             primaryBuilder.temperature(config.getTemperature());
@@ -60,7 +61,8 @@ public class LangChain4jOpenAiAdapter implements LlmProvider {
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
                 .modelName(config.getModel())
-                .maxTokens(config.getMaxTokens());
+                .maxTokens(config.getMaxTokens())
+                .maxRetries(0);
 
         if (THINKING_MODELS.stream().anyMatch(modelLower::startsWith)) {
             fallbackBuilder.timeout(java.time.Duration.ofSeconds(config.getTimeoutSeconds() * 2));

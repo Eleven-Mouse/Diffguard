@@ -36,15 +36,18 @@ public class LlmClient implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
 
     private static final int MAX_RETRIES = 3;
+    private static final int MAX_SERVER_ERROR_RETRIES = 2;
     private static final long RETRY_DELAY_MS = 15_000;
     private static final long SERVER_ERROR_BASE_DELAY_MS = 5_000;
     private static final int MAX_CONCURRENCY = 3;
+    private static final long BATCH_TIMEOUT_SECONDS = 600; // 单批次最大等待时间 10 分钟
 
     private final LlmProvider provider;
     private final Semaphore concurrencyLimiter = new Semaphore(MAX_CONCURRENCY);
     private final AtomicInteger totalTokensUsed = new AtomicInteger(0);
 
     private StructuredReviewService structuredService;
+    private StructuredReviewService structuredServiceNoTools;
     private ReviewToolProvider toolProvider;
     private ChatModel chatModelForAiServices;
     private final ExecutorService executor;
@@ -81,6 +84,7 @@ public class LlmClient implements AutoCloseable {
             log.warn("AiServices 初始化失败，将使用手动 JSON 解析：{}", e.getMessage());
         }
         this.structuredService = service;
+        this.structuredServiceNoTools = service;
         this.executor = Executors.newFixedThreadPool(MAX_CONCURRENCY);
     }
 
@@ -102,6 +106,7 @@ public class LlmClient implements AutoCloseable {
     LlmClient(LlmProvider provider, ReviewConfig config) {
         this.provider = provider;
         this.structuredService = null;
+        this.structuredServiceNoTools = null;
         this.chatModelForAiServices = null;
         this.executor = Executors.newFixedThreadPool(MAX_CONCURRENCY);
     }
@@ -132,20 +137,31 @@ public class LlmClient implements AutoCloseable {
                 }));
             }
 
-            for (Future<LlmResponse> future : futures) {
+            int failedBatches = 0;
+            for (int i = 0; i < futures.size(); i++) {
                 try {
-                    LlmResponse response = future.get();
+                    LlmResponse response = futures.get(i).get(BATCH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                     mergeResponse(response, result);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     cancelRemainingFutures(futures);
                     throw new LlmApiException("并行审查被中断", e);
                 } catch (ExecutionException e) {
-                    cancelRemainingFutures(futures);
+                    failedBatches++;
                     Throwable cause = e.getCause();
-                    if (cause instanceof LlmApiException lae) throw lae;
-                    throw new LlmApiException("并行审查失败：" + cause.getMessage(), cause);
+                    log.warn("批次 {}/{} 审查失败：{}", i + 1, futures.size(),
+                            cause instanceof LlmApiException lae ? lae.getMessage() : cause.getMessage());
+                } catch (TimeoutException e) {
+                    failedBatches++;
+                    log.warn("批次 {}/{} 审查超时（{}秒），跳过该批次", i + 1, futures.size(), BATCH_TIMEOUT_SECONDS);
                 }
+            }
+
+            if (failedBatches == futures.size()) {
+                throw new LlmApiException("所有批次审查均失败");
+            }
+            if (failedBatches > 0) {
+                log.warn("{}/{} 个批次审查失败，返回部分结果", failedBatches, futures.size());
             }
         }
 
@@ -183,20 +199,18 @@ public class LlmClient implements AutoCloseable {
     }
 
     private LlmResponse callLlmWithRetry(PromptBuilder.PromptContent prompt) throws LlmApiException {
-        // Phase 2：优先尝试 AiServices 结构化输出
+        // Phase 1：优先尝试 AiServices 结构化输出
         if (structuredService != null) {
-            try {
-                LlmResponse structured = tryStructuredOutput(prompt);
-                if (structured != null) {
-                    log.debug("AiServices 结构化输出成功");
-                    return structured;
-                }
-            } catch (Exception e) {
-                log.warn("AiServices 结构化输出失败，回退到手动解析：{}", e.getMessage());
+            LlmResponse structured = tryStructuredOutput(prompt);
+            if (structured != null) {
+                log.debug("AiServices 结构化输出成功");
+                return structured;
             }
+            // structured == null: 结构化输出未获得结果（null content 或异常），走 fallback
+            log.info("AiServices 未返回有效结果，回退到 provider.call() + 手动解析");
         }
 
-        // 回退：provider.call() + 手动 JSON 解析
+        // Phase 2：回退到 provider.call() + 手动 JSON 解析
         return callLlmWithRetryFallback(prompt);
     }
 
@@ -209,10 +223,53 @@ public class LlmClient implements AutoCloseable {
         String filePath = prompt.getFilePath();
         String diffContent = prompt.getDiffContent();
 
-        Result<ReviewOutput> result = structuredService.review(language, rules, filePath, diffContent);
-        ReviewOutput output = result.content();
+        // Phase 1: 带 Tool Use 的结构化输出（可能多轮 HTTP 往返）
+        try {
+            LlmResponse result = doStructuredCall(structuredService, language, rules, filePath, diffContent);
+            if (result != null) {
+                return result;
+            }
+            log.warn("AiServices Tool Use 返回 null content，尝试无工具模式");
+        } catch (Exception e) {
+            if (isRetriableServerError(e) && structuredServiceNoTools != null && structuredServiceNoTools != structuredService) {
+                log.warn("Tool Use 路径 {}，降级为无工具结构化输出重试", e.getMessage());
+                sleepQuietly(SERVER_ERROR_BASE_DELAY_MS);
 
+                // Phase 2: 降级为无工具结构化输出（单轮 HTTP）
+                try {
+                    LlmResponse result = doStructuredCall(structuredServiceNoTools, language, rules, filePath, diffContent);
+                    if (result != null) {
+                        return result;
+                    }
+                    log.warn("无工具结构化输出返回 null content，回退到手动解析");
+                } catch (Exception fallbackEx) {
+                    log.warn("无工具结构化输出也失败：{}，回退到手动解析", fallbackEx.getMessage());
+                }
+                // Tool Use + 无工具都失败，不抛异常，让 callLlmWithRetry 走 fallback
+                return null;
+            }
+            // 非可重试错误（非 502/503/504/429）：记录但不抛异常，让 fallback 处理
+            log.warn("AiServices 结构化输出失败（不可重试）：{}，回退到手动解析", e.getMessage());
+        }
+        return null;
+    }
+
+    private LlmResponse doStructuredCall(StructuredReviewService service,
+                                          String language, String rules,
+                                          String filePath, String diffContent) {
+        Result<ReviewOutput> result = service.review(language, rules, filePath, diffContent);
+
+        // 追踪 AiServices 调用的 token 消耗
+        if (result.tokenUsage() != null) {
+            long tokens = result.tokenUsage().inputTokenCount() + result.tokenUsage().outputTokenCount();
+            if (tokens > 0) {
+                totalTokensUsed.addAndGet((int) tokens);
+            }
+        }
+
+        ReviewOutput output = result.content();
         if (output == null) {
+            log.warn("AiServices 返回 null content — LLM 可能未输出有效 JSON 结构。Token 已消耗但结果丢失。");
             return null;
         }
 
@@ -229,7 +286,29 @@ public class LlmClient implements AutoCloseable {
                 issues.add(issue);
             }
         }
+
+        // 即使 issues 为空，has_critical/summary 等仍有价值，返回非 null
         return new LlmResponse(issues, null, output.has_critical());
+    }
+
+    private static boolean isRetriableServerError(Throwable e) {
+        Throwable current = e;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null && msg.matches(".*\\b(502|503|504|429)\\b.*")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static void sleepQuietly(long delayMs) {
+        try {
+            Thread.sleep(delayMs);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -240,17 +319,20 @@ public class LlmClient implements AutoCloseable {
 
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
-                Thread animator = new Thread(() -> {
-                    while (!Thread.currentThread().isInterrupted()) {
-                        ProgressDisplay.printWaiting();
-                        try { Thread.sleep(200); } catch (InterruptedException e) { break; }
-                    }
-                });
-                animator.setDaemon(true);
-                animator.start();
-
+                ProgressDisplay.printWaiting();
                 try {
                     String responseBody = provider.call(prompt.getSystemPrompt(), prompt.getUserPrompt());
+
+                    // 空响应保护：LLM 返回空内容时记录警告但不当作成功
+                    if (responseBody == null || responseBody.isBlank()) {
+                        log.warn("LLM 返回空响应（attempt {}/{}）", attempt, MAX_RETRIES);
+                        if (attempt < MAX_RETRIES) {
+                            sleepQuietly(SERVER_ERROR_BASE_DELAY_MS);
+                            continue;
+                        }
+                        return new LlmResponse(List.of(), "LLM 返回空响应", null);
+                    }
+
                     LlmResponse response = LlmResponse.fromContent(responseBody);
 
                     if (response.isRawText() && response.getRawText() != null && !response.getRawText().isBlank()) {
@@ -271,13 +353,12 @@ public class LlmClient implements AutoCloseable {
 
                     return response;
                 } finally {
-                    animator.interrupt();
-                    animator.join(300);
                     ProgressDisplay.clearWaiting();
                 }
             } catch (LlmApiException e) {
                 lastException = e;
-                if (e.isRetryable() && attempt < MAX_RETRIES) {
+                int maxAttempts = e.isRateLimitError() ? MAX_RETRIES : MAX_SERVER_ERROR_RETRIES;
+                if (e.isRetryable() && attempt < maxAttempts) {
                     int delay;
                     if (e.isRateLimitError()) {
                         delay = (int) RETRY_DELAY_MS;
@@ -287,14 +368,9 @@ public class LlmClient implements AutoCloseable {
                     if (e.isRateLimitError()) {
                         ProgressDisplay.printRateLimitRetry(attempt, MAX_RETRIES, delay / 1000);
                     } else {
-                        ProgressDisplay.printServerErrorRetry(attempt, MAX_RETRIES, delay / 1000);
+                        ProgressDisplay.printServerErrorRetry(attempt, maxAttempts, delay / 1000);
                     }
-                    try {
-                        Thread.sleep(delay);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw e;
-                    }
+                    sleepQuietly(delay);
                 } else {
                     throw e;
                 }
