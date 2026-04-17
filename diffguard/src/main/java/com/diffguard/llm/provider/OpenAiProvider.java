@@ -31,6 +31,9 @@ public class OpenAiProvider implements LlmProvider {
     /** 需要禁用扩展思考的模型 */
     private static final Set<String> THINKING_MODELS = Set.of("o1", "o1-mini", "o3", "o3-mini", "o3-pro");
 
+    /** 不支持 temperature 参数的推理模型（GPT-5 系列） */
+    private static final Set<String> NO_TEMPERATURE_MODELS = Set.of("gpt-5", "gpt-5-codex", "gpt-5.1", "gpt-5.1-codex", "gpt-5.2", "gpt-5.2-codex", "gpt-5.3-codex", "gpt-5.4");
+
     private final ReviewConfig.LlmConfig config;
     private final HttpClient httpClient;
     private final TokenTracker tokenTracker;
@@ -80,23 +83,28 @@ public class OpenAiProvider implements LlmProvider {
     private String doCall(String apiKey, String baseUrl, List<Map<String, String>> messages, boolean withResponseFormat)
             throws LlmApiException, IOException, InterruptedException {
 
+        String modelLower = config.getModel().toLowerCase();
+
         Map<String, Object> body = new HashMap<>();
         body.put("model", config.getModel());
         body.put("max_tokens", config.getMaxTokens());
-        body.put("temperature", config.getTemperature());
+        // 推理模型（GPT-5 系列）不支持 temperature 参数
+        if (!NO_TEMPERATURE_MODELS.contains(modelLower)) {
+            body.put("temperature", config.getTemperature());
+        }
         body.put("messages", messages);
 
         if (withResponseFormat) {
             body.put("response_format", Map.of("type", "json_object"));
         }
 
-        String modelLower = config.getModel().toLowerCase();
         if (THINKING_MODELS.stream().anyMatch(modelLower::startsWith)) {
             body.put("thinking", Map.of("type", "disabled"));
         }
 
         String jsonBody = MAPPER.writeValueAsString(body);
-        log.debug("OpenAI API 请求：model={}, base_url={}, response_format={}", config.getModel(), baseUrl, withResponseFormat);
+        log.info("OpenAI API 请求：model={}, base_url={}, response_format={}, 请求体长度={}", config.getModel(), baseUrl, withResponseFormat, jsonBody.length());
+        log.debug("OpenAI API 完整请求体：{}", jsonBody);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/chat/completions"))
@@ -115,6 +123,7 @@ public class OpenAiProvider implements LlmProvider {
             throw new LlmApiException(response.statusCode(), "OpenAI API 错误（" + response.statusCode() + "）：" + truncate(errorBody, 200));
         }
 
+        log.info("OpenAI API 响应状态：200，响应体长度={}，前500字符：{}", response.body().length(), truncate(response.body(), 500));
         return extractContent(response.body());
     }
 
