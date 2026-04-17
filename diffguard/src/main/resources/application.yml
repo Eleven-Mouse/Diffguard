@@ -12,3 +12,36 @@ llm:
   # 自定义 API 地址（留空使用官方地址）
   # base_url: https://api.your-proxy.com/v1
 
+rules:
+  enabled:
+    - security
+    - bug-risk
+    - code-style
+    - performance
+  severity_threshold: info
+
+ignore:
+  files:
+    - "**/*.generated.java"
+    - "**/target/**"
+    - "**/node_modules/**"
+    - "**/*.min.js"
+    - "**/*.min.css"
+    - "**/package-lock.json"
+    - "**/pom.xml"
+  patterns:
+    - ".*import statement.*"
+
+review:
+  max_diff_files: 20
+  max_tokens_per_file: 4000
+  language: zh
+
+# Webhook 服务器配置（仅 server 模式需要）
+# webhook:
+#   port: 8080
+#   secret_env: DIFFGUARD_WEBHOOK_SECRET
+#   github_token_env: DIFFGUARD_GITHUB_TOKEN
+#   repos:
+#     - full_name: "owner/repo"
+#       local_path: "/path/to/local/repo"
