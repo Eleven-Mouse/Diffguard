@@ -1,6 +1,7 @@
 package com.diffguard.cli;
 
 import com.diffguard.git.GitHookInstaller;
+import com.diffguard.output.TerminalUI;
 import picocli.CommandLine;
 
 import java.nio.file.Path;
@@ -31,7 +32,7 @@ public class InstallCommand implements Runnable {
             }
             parent.setExitCode(0);
         } catch (Exception e) {
-            System.err.println("安装钩子失败：" + e.getMessage());
+            TerminalUI.error("Hook install failed: " + e.getMessage());
             parent.setExitCode(1);
         }
     }

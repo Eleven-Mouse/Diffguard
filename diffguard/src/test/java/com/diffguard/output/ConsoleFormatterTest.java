@@ -50,140 +50,127 @@ class ConsoleFormatterTest {
         return result;
     }
 
-    // ------------------------------------------------------------------
-    // 结构化报告
-    // ------------------------------------------------------------------
-
     @Nested
-    @DisplayName("结构化报告")
+    @DisplayName("Structured report")
     class StructuredReport {
 
         @Test
-        @DisplayName("含 issues → 输出标题、issues、总结行")
+        @DisplayName("issues present → outputs header, issues, verdict")
         void reportWithIssues() {
             ReviewResult result = makeResult(
-                    makeIssue(Severity.WARNING, "Service.java", 10, "代码质量", "建议优化", "使用更好的方法")
+                    makeIssue(Severity.WARNING, "Service.java", 10, "quality", "optimize", "use better method")
             );
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));
 
-            assertTrue(output.contains("代码审查报告"));
             assertTrue(output.contains("Service.java"));
             assertTrue(output.contains("10"));
-            assertTrue(output.contains("建议优化"));
-            assertTrue(output.contains("使用更好的方法"));
+            assertTrue(output.contains("optimize"));
+            assertTrue(output.contains("use better method"));
         }
 
         @Test
-        @DisplayName("空 issues → 显示未发现问题")
+        @DisplayName("empty issues → shows all clear")
         void noIssuesFound() {
             ReviewResult result = makeResult();
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));
 
-            assertTrue(output.contains("未发现问题"));
+            assertTrue(output.contains("All clear"));
         }
 
         @Test
-        @DisplayName("含 CRITICAL → 显示提交中止和 --force 提示")
+        @DisplayName("CRITICAL → shows BLOCKED and --force hint")
         void criticalShowsForceHint() {
             ReviewResult result = makeResult(
-                    makeIssue(Severity.CRITICAL, "Dao.java", 42, "安全漏洞", "SQL注入", "参数化查询")
+                    makeIssue(Severity.CRITICAL, "Dao.java", 42, "security", "SQL injection", "parameterize")
             );
             result.setHasCriticalFlag(true);
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));
 
-            assertTrue(output.contains("提交已中止"));
+            assertTrue(output.contains("BLOCKED"));
             assertTrue(output.contains("--force"));
         }
 
         @Test
-        @DisplayName("无 CRITICAL → 显示允许提交")
+        @DisplayName("no CRITICAL → shows PASSED")
         void noCriticalAllowsCommit() {
             ReviewResult result = makeResult(
-                    makeIssue(Severity.WARNING, "Util.java", 5, "代码风格", "命名不规范", null)
+                    makeIssue(Severity.WARNING, "Util.java", 5, "style", "naming", null)
             );
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));
 
-            assertTrue(output.contains("允许提交"));
+            assertTrue(output.contains("PASSED"));
         }
     }
 
-    // ------------------------------------------------------------------
-    // Raw Report 模式
-    // ------------------------------------------------------------------
-
     @Nested
-    @DisplayName("Raw Report 模式")
+    @DisplayName("Raw Report mode")
     class RawReport {
 
         @Test
-        @DisplayName("原始文本直接输出")
+        @DisplayName("raw text output")
         void rawTextOutput() {
             ReviewResult result = new ReviewResult();
-            result.setRawReport("# 审查报告\n\n这是原始文本");
+            result.setRawReport("# Review Report\n\nRaw text here");
             result.setTotalFilesReviewed(1);
             result.setReviewDurationMs(500);
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));
 
-            assertTrue(output.contains("# 审查报告"));
-            assertTrue(output.contains("这是原始文本"));
+            assertTrue(output.contains("# Review Report"));
+            assertTrue(output.contains("Raw text here"));
         }
 
         @Test
-        @DisplayName("不确定结果（raw report + 无 hasCritical 标记）→ 显示人工审阅提示")
+        @DisplayName("uncertain result → shows manual review hint")
         void uncertainResultShowsWarning() {
             ReviewResult result = new ReviewResult();
-            result.setRawReport("一些审查文本");
+            result.setRawReport("some review text");
             result.setTotalFilesReviewed(1);
             result.setReviewDurationMs(500);
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));
 
-            assertTrue(output.contains("人工审阅"));
+            assertTrue(output.contains("Unstructured"));
         }
     }
 
-    // ------------------------------------------------------------------
-    // 格式化细节
-    // ------------------------------------------------------------------
-
     @Nested
-    @DisplayName("格式化细节")
+    @DisplayName("Formatting details")
     class FormattingDetails {
 
         @Test
-        @DisplayName("issue 带 suggestion → 输出建议行")
+        @DisplayName("issue with suggestion → outputs suggestion")
         void issueWithSuggestion() {
             ReviewResult result = makeResult(
-                    makeIssue(Severity.INFO, "A.java", 1, "亮点", "代码清晰", "保持良好风格")
+                    makeIssue(Severity.INFO, "A.java", 1, "highlight", "clear code", "keep it up")
             );
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));
 
-            assertTrue(output.contains("保持良好风格"));
+            assertTrue(output.contains("keep it up"));
         }
 
         @Test
-        @DisplayName("issue 无 suggestion → 不输出建议行")
+        @DisplayName("issue without suggestion → no suggestion line")
         void issueWithoutSuggestion() {
             ReviewResult result = makeResult(
-                    makeIssue(Severity.INFO, "A.java", 1, "提示", "不错", null)
+                    makeIssue(Severity.INFO, "A.java", 1, "note", "nice", null)
             );
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));
 
-            assertFalse(output.contains("建议："));
+            assertFalse(output.contains("→ nice"));
         }
 
         @Test
-        @DisplayName("输出包含 ANSI 转义码")
+        @DisplayName("output contains ANSI escape codes")
         void outputContainsAnsiCodes() {
             ReviewResult result = makeResult(
-                    makeIssue(Severity.WARNING, "A.java", 1, "类型", "消息", "建议")
+                    makeIssue(Severity.WARNING, "A.java", 1, "type", "msg", "suggestion")
             );
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));
@@ -192,10 +179,10 @@ class ConsoleFormatterTest {
         }
 
         @Test
-        @DisplayName("issue 输出包含文件名和行号")
+        @DisplayName("issue output contains file name and line number")
         void issueContainsFileAndLine() {
             ReviewResult result = makeResult(
-                    makeIssue(Severity.WARNING, "src/Main.java", 42, "类型", "消息", null)
+                    makeIssue(Severity.WARNING, "src/Main.java", 42, "type", "msg", null)
             );
 
             String output = captureOutput(() -> ConsoleFormatter.printReport(result));

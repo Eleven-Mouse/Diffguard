@@ -4,9 +4,14 @@ import com.diffguard.model.DiffFileEntry;
 
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Agent 运行上下文，持有 review session 的所有状态。
+ * <p>
+ * 支持多 Agent 并发写入，内部使用线程安全集合与原子计数器。
  */
 public class AgentContext {
 
@@ -14,8 +19,8 @@ public class AgentContext {
     private final List<DiffFileEntry> diffEntries;
     private final Map<String, Object> attributes;
     private final List<StepRecord> stepHistory;
-    private int totalTokensUsed;
-    private int toolCallCount;
+    private final AtomicInteger totalTokensUsed;
+    private final AtomicInteger toolCallCount;
     private final int maxToolCalls;
 
     public AgentContext(Path projectDir, List<DiffFileEntry> diffEntries) {
@@ -25,23 +30,23 @@ public class AgentContext {
     public AgentContext(Path projectDir, List<DiffFileEntry> diffEntries, int maxToolCalls) {
         this.projectDir = projectDir;
         this.diffEntries = List.copyOf(diffEntries);
-        this.attributes = new HashMap<>();
-        this.stepHistory = new ArrayList<>();
-        this.totalTokensUsed = 0;
-        this.toolCallCount = 0;
+        this.attributes = new ConcurrentHashMap<>();
+        this.stepHistory = new CopyOnWriteArrayList<>();
+        this.totalTokensUsed = new AtomicInteger(0);
+        this.toolCallCount = new AtomicInteger(0);
         this.maxToolCalls = maxToolCalls;
     }
 
     public Path getProjectDir() { return projectDir; }
     public List<DiffFileEntry> getDiffEntries() { return diffEntries; }
-    public int getTotalTokensUsed() { return totalTokensUsed; }
-    public int getToolCallCount() { return toolCallCount; }
+    public int getTotalTokensUsed() { return totalTokensUsed.get(); }
+    public int getToolCallCount() { return toolCallCount.get(); }
     public int getMaxToolCalls() { return maxToolCalls; }
     public List<StepRecord> getStepHistory() { return Collections.unmodifiableList(stepHistory); }
 
-    public void addTokens(int tokens) { totalTokensUsed += tokens; }
-    public void incrementToolCalls() { toolCallCount++; }
-    public boolean isToolCallLimitReached() { return toolCallCount >= maxToolCalls; }
+    public void addTokens(int tokens) { totalTokensUsed.addAndGet(tokens); }
+    public void incrementToolCalls() { toolCallCount.incrementAndGet(); }
+    public boolean isToolCallLimitReached() { return toolCallCount.get() >= maxToolCalls; }
 
     public void setAttribute(String key, Object value) { attributes.put(key, value); }
     @SuppressWarnings("unchecked")

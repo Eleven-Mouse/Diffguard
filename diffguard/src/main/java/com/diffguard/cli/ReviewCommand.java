@@ -11,6 +11,7 @@ import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.ConsoleFormatter;
 import com.diffguard.output.ProgressDisplay;
+import com.diffguard.output.TerminalUI;
 import com.diffguard.review.ReviewEngine;
 import com.diffguard.review.ReviewEngineFactory;
 import org.slf4j.Logger;
@@ -69,11 +70,11 @@ public class ReviewCommand implements Runnable {
                     ? ConfigLoader.loadFromFile(configPath)
                     : ConfigLoader.load(projectDir);
         } catch (ConfigException e) {
-            System.err.println("  配置加载失败：" + e.getMessage());
+            TerminalUI.error("  Config load failed: " + e.getMessage());
             log.error("配置加载失败", e);
             return 1;
         } catch (IllegalArgumentException e) {
-            System.err.println("  配置加载失败：" + e.getMessage());
+            TerminalUI.error("  Config load failed: " + e.getMessage());
             log.error("配置参数错误", e);
             return 1;
         }
@@ -88,11 +89,11 @@ public class ReviewCommand implements Runnable {
             } else if (fromRef != null && toRef != null) {
                 diffEntries = DiffCollector.collectDiffBetweenRefs(projectDir, fromRef, toRef, config);
             } else {
-                System.err.println("  错误：请指定 --staged 或 --from/--to 引用");
+                TerminalUI.error("  Error: specify --staged or --from/--to");
                 return 1;
             }
         } catch (DiffCollectionException e) {
-            System.err.println("  差异收集失败：" + e.getMessage());
+            TerminalUI.error("  Diff collection failed: " + e.getMessage());
             log.error("差异收集失败", e);
             return 1;
         }
@@ -114,19 +115,18 @@ public class ReviewCommand implements Runnable {
         ReviewResult result;
         try (ReviewEngine engine = ReviewEngineFactory.create(engineType, config, projectDir, diffEntries, noCache)) {
             if (engineType == ReviewEngineFactory.EngineType.PIPELINE) {
-                System.out.println("  使用多阶段审查 Pipeline（安全/逻辑/质量 专项并行审查）...");
+                TerminalUI.println("  " + "Using multi-stage pipeline (security/logic/quality)...");
             } else if (engineType == ReviewEngineFactory.EngineType.MULTI_AGENT) {
-                System.out.println("  使用多 Agent 并行审查...");
+                TerminalUI.println("  " + "Using multi-agent parallel review...");
             }
             result = engine.review(diffEntries, projectDir);
         } catch (LlmApiException e) {
-            // LLM 调用失败，fail-closed：阻止提交
-            System.err.println("  AI 审查失败：" + e.getMessage());
-            System.err.println("  为确保代码安全，提交已中止。使用 --force 可跳过。");
+            TerminalUI.error("  AI review failed: " + e.getMessage());
+            TerminalUI.error("  Commit aborted for safety. Use --force to bypass.");
             log.error("LLM 调用失败，状态码：{}", e.getStatusCode(), e);
             return 1;
         } catch (DiffGuardException e) {
-            System.err.println("  审查过程出错：" + e.getMessage());
+            TerminalUI.error("  Review error: " + e.getMessage());
             log.error("审查过程出错", e);
             return 1;
         }

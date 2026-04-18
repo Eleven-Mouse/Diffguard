@@ -29,6 +29,10 @@ public class DiffProfiler {
      * 分析 diff 条目列表，生成变更画像。
      */
     public static DiffProfile profile(List<DiffFileEntry> entries) {
+        if (entries == null) {
+            entries = List.of();
+        }
+
         DiffProfile.Builder builder = DiffProfile.builder();
 
         int totalLines = 0;

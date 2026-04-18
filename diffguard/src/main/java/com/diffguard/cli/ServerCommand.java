@@ -3,6 +3,7 @@ package com.diffguard.cli;
 import com.diffguard.config.ConfigLoader;
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.ConfigException;
+import com.diffguard.output.TerminalUI;
 import com.diffguard.webhook.WebhookServer;
 import picocli.CommandLine;
 
@@ -29,14 +30,14 @@ public class ServerCommand implements Runnable {
                     ? ConfigLoader.loadFromFile(configPath)
                     : ConfigLoader.load(Path.of("").toAbsolutePath());
         } catch (ConfigException e) {
-            System.err.println("配置加载失败：" + e.getMessage());
+            TerminalUI.error("Config load failed: " + e.getMessage());
             parent.setExitCode(1);
             return;
         }
 
         // 2. 校验 webhook 配置
         if (config.getWebhook() == null) {
-            System.err.println("错误：配置文件中缺少 webhook 段。请参阅文档配置 webhook 参数。");
+            TerminalUI.error("Error: webhook section missing in config.");
             parent.setExitCode(1);
             return;
         }
@@ -49,7 +50,7 @@ public class ServerCommand implements Runnable {
 
         // 注册关闭钩子
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("\n正在关闭 Webhook 服务器...");
+            TerminalUI.println("\nShutting down webhook server...");
             server.stop();
         }));
 
