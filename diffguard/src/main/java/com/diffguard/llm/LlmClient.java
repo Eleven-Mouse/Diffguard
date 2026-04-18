@@ -215,10 +215,15 @@ public class LlmClient implements AutoCloseable {
         // Phase 1：优先尝试 AiServices 结构化输出
         if (structuredService != null) {
             int tokensBefore = totalTokensUsed.get();
-            LlmResponse structured = tryStructuredOutput(prompt);
-            if (structured != null) {
-                log.debug("AiServices 结构化输出成功");
-                return structured;
+            ProgressDisplay.startSpinner();
+            try {
+                LlmResponse structured = tryStructuredOutput(prompt);
+                if (structured != null) {
+                    log.debug("AiServices 结构化输出成功");
+                    return structured;
+                }
+            } finally {
+                ProgressDisplay.stopSpinner();
             }
             // Phase 1 消耗了 Token 但未获得有效结果 → 限制 Phase 2 重试次数
             boolean tokensConsumed = totalTokensUsed.get() > tokensBefore;
@@ -348,7 +353,7 @@ public class LlmClient implements AutoCloseable {
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                ProgressDisplay.printWaiting();
+                ProgressDisplay.startSpinner();
                 try {
                     String responseBody = provider.call(prompt.getSystemPrompt(), prompt.getUserPrompt());
 
@@ -387,7 +392,7 @@ public class LlmClient implements AutoCloseable {
 
                     return response;
                 } finally {
-                    ProgressDisplay.clearWaiting();
+                    ProgressDisplay.stopSpinner();
                 }
             } catch (LlmApiException e) {
                 lastException = e;

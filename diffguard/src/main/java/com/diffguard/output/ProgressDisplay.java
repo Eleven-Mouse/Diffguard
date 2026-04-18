@@ -21,8 +21,13 @@ public class ProgressDisplay {
         silent = value;
     }
 
-    private static final String[] SPINNER = {"\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"};
+    private static final String[] SPINNER = {"⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"};
     private static final AtomicInteger spinnerIndex = new AtomicInteger(0);
+
+    /** 后台 spinner 线程 */
+    private static volatile Thread spinnerThread;
+    private static volatile boolean spinnerRunning = false;
+    private static volatile long spinnerStartTime = 0;
 
     private static String loadVersion() {
         try (InputStream is = ProgressDisplay.class.getResourceAsStream("/version.properties")) {
@@ -38,6 +43,56 @@ public class ProgressDisplay {
     private static String spinner() {
         String frame = SPINNER[spinnerIndex.getAndIncrement() % SPINNER.length];
         return CYAN + frame + RESET;
+    }
+
+    private static String formatElapsed(long startMs) {
+        long seconds = (System.currentTimeMillis() - startMs) / 1000;
+        long mins = seconds / 60;
+        long secs = seconds % 60;
+        if (mins > 0) {
+            return GRAY + String.format("%dm%02ds", mins, secs) + RESET;
+        }
+        return GRAY + secs + "s" + RESET;
+    }
+
+    /**
+     * 启动后台 spinner 动画线程，持续显示旋转动画和已用时间。
+     */
+    public static void startSpinner() {
+        if (silent) return;
+        stopSpinner(); // 确保没有残留线程
+        spinnerRunning = true;
+        spinnerStartTime = System.currentTimeMillis();
+        spinnerThread = new Thread(() -> {
+            while (spinnerRunning) {
+                String elapsed = formatElapsed(spinnerStartTime);
+                System.out.print("\r  " + DIM + "│" + RESET + " " + spinner() + " 正在分析代码... " + elapsed + "  ");
+                System.out.flush();
+                try {
+                    Thread.sleep(120);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }, "spinner");
+        spinnerThread.setDaemon(true);
+        spinnerThread.start();
+    }
+
+    /**
+     * 停止 spinner 动画并清除动画行。
+     */
+    public static void stopSpinner() {
+        if (silent) return;
+        spinnerRunning = false;
+        if (spinnerThread != null) {
+            spinnerThread.interrupt();
+            try { spinnerThread.join(200); } catch (InterruptedException ignored) {}
+            spinnerThread = null;
+        }
+        // 清除 spinner 行
+        System.out.print("\r  " + DIM + "│" + RESET + "                              \r");
+        System.out.flush();
     }
 
     /**
@@ -93,20 +148,20 @@ public class ProgressDisplay {
 
     /**
      * 打印等待状态的旋转动画。请重复调用以产生动画效果。
+     * @deprecated 使用 {@link #startSpinner()} / {@link #stopSpinner()} 替代
      */
+    @Deprecated
     public static void printWaiting() {
-        if (silent) return;
-        System.out.print("\r  " + DIM + "│" + RESET + " " + spinner() + " 正在分析代码...   ");
-        System.out.flush();
+        startSpinner();
     }
 
     /**
      * 清除等待旋转动画行。
+     * @deprecated 使用 {@link #stopSpinner()} 替代
      */
+    @Deprecated
     public static void clearWaiting() {
-        if (silent) return;
-        System.out.print("\r  " + DIM + "│" + RESET + "                           \r");
-        System.out.flush();
+        stopSpinner();
     }
 
     /**
@@ -125,8 +180,14 @@ public class ProgressDisplay {
 
     private static void printRetry(String reason, int attempt, int maxAttempts, int waitSeconds) {
         if (silent) return;
+        // 先暂停 spinner，打印重试信息，再重新启动
+        boolean wasRunning = spinnerRunning;
+        stopSpinner();
         System.out.println("  " + DIM + "│" + RESET + " " + YELLOW + "⚡ " + reason + RESET + " — " + BOLD + waitSeconds + "秒" + RESET
                 + GRAY + "后重试 (" + attempt + "/" + maxAttempts + ")" + RESET);
+        if (wasRunning) {
+            startSpinner();
+        }
     }
 
     /**
@@ -134,7 +195,12 @@ public class ProgressDisplay {
      */
     public static void printBatchProgress(int current, int total) {
         if (silent) return;
+        boolean wasRunning = spinnerRunning;
+        stopSpinner();
         System.out.println("  " + DIM + "│" + RESET + " " + CYAN + "批次 " + BOLD + current + "/" + total + RESET + " 正在分析...");
+        if (wasRunning) {
+            startSpinner();
+        }
     }
 
     /**
@@ -142,6 +208,7 @@ public class ProgressDisplay {
      */
     public static void printReviewComplete(int issues) {
         if (silent) return;
+        stopSpinner();
         System.out.println(DIM + "  │" + RESET);
         System.out.println("  " + DIM + "╰──" + RESET + " " + GREEN + "分析完成" + RESET
                 + GRAY + "（发现 " + issues + " 个问题）" + RESET);
