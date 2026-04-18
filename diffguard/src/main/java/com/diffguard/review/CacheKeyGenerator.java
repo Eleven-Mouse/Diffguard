@@ -4,6 +4,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 缓存键生成器。
@@ -12,6 +14,8 @@ import java.util.List;
  * 生成唯一且稳定的 SHA-256 缓存键。
  */
 public final class CacheKeyGenerator {
+
+    private static final char[] HEX_CHARS = "0123456789abcdef".toCharArray();
 
     private CacheKeyGenerator() {}
 
@@ -24,8 +28,12 @@ public final class CacheKeyGenerator {
 
     /**
      * 根据文件路径、差异内容和审查上下文生成缓存键。
+     *
+     * @throws NullPointerException 如果 filePath 或 diffContent 为 null
      */
     public static String buildKey(String filePath, String diffContent, String contextHash) {
+        Objects.requireNonNull(filePath, "filePath must not be null");
+        Objects.requireNonNull(diffContent, "diffContent must not be null");
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             digest.update(filePath.getBytes(StandardCharsets.UTF_8));
@@ -35,7 +43,7 @@ public final class CacheKeyGenerator {
             }
             return hexEncode(digest.digest());
         } catch (NoSuchAlgorithmException e) {
-            return Integer.toHexString((filePath + diffContent + (contextHash != null ? contextHash : "")).hashCode());
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
         }
     }
 
@@ -44,8 +52,16 @@ public final class CacheKeyGenerator {
      */
     public static String computeContextHash(String model, List<String> enabledRules,
                                             String language, boolean pipelineEnabled) {
-        String raw = model
-                + "|rules=" + String.join(",", enabledRules != null ? enabledRules : List.of())
+        String normalizedRules = enabledRules == null ? ""
+                : enabledRules.stream()
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .sorted()
+                        .collect(Collectors.joining(","));
+
+        String raw = (model != null ? model : "<unset>")
+                + "|rules=" + normalizedRules
                 + "|lang=" + (language != null ? language : "")
                 + "|pipeline=" + pipelineEnabled;
         return sha256(raw);
@@ -56,15 +72,17 @@ public final class CacheKeyGenerator {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return hexEncode(digest.digest(input.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
-            return Integer.toHexString(input.hashCode());
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
         }
     }
 
     private static String hexEncode(byte[] bytes) {
-        StringBuilder hexString = new StringBuilder();
-        for (byte b : bytes) {
-            hexString.append(String.format("%02x", b));
+        char[] hexChars = new char[bytes.length * 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int v = bytes[i] & 0xFF;
+            hexChars[i * 2] = HEX_CHARS[v >>> 4];
+            hexChars[i * 2 + 1] = HEX_CHARS[v & 0x0F];
         }
-        return hexString.toString();
+        return new String(hexChars);
     }
 }

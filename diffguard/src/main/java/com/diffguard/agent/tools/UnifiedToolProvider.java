@@ -53,7 +53,7 @@ public class UnifiedToolProvider {
         return dispatch("get_method_definition", filePath);
     }
 
-    @Tool("Check import statements and file structure in a Java file. "
+    @Tool("Read a file's content to inspect its import statements and file structure. "
           + "Use this to detect missing imports for newly added code.")
     public String checkImports(@P("Relative file path") String filePath) {
         return dispatch("get_file_content", filePath);
