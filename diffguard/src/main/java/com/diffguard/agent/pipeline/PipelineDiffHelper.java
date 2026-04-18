@@ -26,6 +26,9 @@ class PipelineDiffHelper {
         while (TokenEstimator.estimate(truncated, provider) > maxTokens && truncated.length() > 100) {
             truncated = truncated.substring(0, truncated.length() * 2 / 3);
         }
+        if (truncated == content) {
+            return content;
+        }
         return truncated + "\n\n... (内容已截断，超出 token 限制)";
     }
 }

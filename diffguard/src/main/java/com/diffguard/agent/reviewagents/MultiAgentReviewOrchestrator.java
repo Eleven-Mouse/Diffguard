@@ -48,17 +48,21 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
      */
     @Override
     public ReviewResult review(List<DiffFileEntry> diffEntries, java.nio.file.Path projectDir) {
-        return review(diffEntries);
+        return doReview(diffEntries, projectDir != null ? projectDir : this.projectDir);
     }
 
     /**
      * 执行多 Agent 并行审查。
      */
     public ReviewResult review(List<DiffFileEntry> diffEntries) {
-        long startTime = System.currentTimeMillis();
-        AgentContext context = new AgentContext(projectDir, diffEntries, 15);
+        return doReview(diffEntries, projectDir);
+    }
 
-        List<NamedAgent> agents = createAgents();
+    private ReviewResult doReview(List<DiffFileEntry> diffEntries, Path effectiveProjectDir) {
+        long startTime = System.currentTimeMillis();
+        AgentContext context = new AgentContext(effectiveProjectDir, diffEntries, 15);
+
+        List<NamedAgent> agents = createAgents(effectiveProjectDir);
 
         Map<String, Future<AgentResponse>> futures = new LinkedHashMap<>();
         for (NamedAgent na : agents) {
@@ -83,6 +87,7 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
                 log.info("{} Agent 完成: {} issues, critical={}", entry.getKey(),
                         response.getIssues().size(), response.isHasCritical());
             } catch (TimeoutException e) {
+                entry.getValue().cancel(true);
                 log.warn("{} Agent 超时 ({}分钟)", entry.getKey(), timeoutMinutes);
                 responses.put(entry.getKey(), AgentResponse.builder()
                         .completed(false)
@@ -103,10 +108,10 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
         return result;
     }
 
-    protected List<NamedAgent> createAgents() {
-        SecurityReviewAgent security = SecurityReviewAgent.create(chatModel, projectDir);
-        PerformanceReviewAgent performance = PerformanceReviewAgent.create(chatModel, projectDir);
-        ArchitectureReviewAgent architecture = ArchitectureReviewAgent.create(chatModel, projectDir);
+    protected List<NamedAgent> createAgents(Path agentProjectDir) {
+        SecurityReviewAgent security = SecurityReviewAgent.create(chatModel, agentProjectDir);
+        PerformanceReviewAgent performance = PerformanceReviewAgent.create(chatModel, agentProjectDir);
+        ArchitectureReviewAgent architecture = ArchitectureReviewAgent.create(chatModel, agentProjectDir);
         return List.of(
                 new NamedAgent("Security", security::review),
                 new NamedAgent("Performance", performance::review),
