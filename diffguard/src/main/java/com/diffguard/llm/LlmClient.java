@@ -161,6 +161,9 @@ public class LlmClient implements AutoCloseable {
         LlmApiException lastException = null;
         int maxAttempts = reduceRetries ? 1 : MAX_RETRIES;
 
+        log.debug("Phase 2 调用: systemPrompt长度={}, userPrompt长度={}, reduceRetries={}",
+                prompt.getSystemPrompt().length(), prompt.getUserPrompt().length(), reduceRetries);
+
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 ProgressDisplay.startSpinner();
@@ -168,8 +171,8 @@ public class LlmClient implements AutoCloseable {
                     String responseBody = provider.call(prompt.getSystemPrompt(), prompt.getUserPrompt());
 
                     if (responseBody == null || responseBody.isBlank()) {
-                        log.warn("LLM 返回空响应（attempt {}/{}）", attempt, MAX_RETRIES);
-                        if (attempt < MAX_RETRIES) {
+                        log.warn("LLM 返回空响应（attempt {}/{}）", attempt, maxAttempts);
+                        if (attempt < maxAttempts) {
                             sleepQuietly(SERVER_ERROR_BASE_DELAY_MS);
                             continue;
                         }

@@ -126,6 +126,11 @@ public class LangChain4jOpenAiAdapter implements LlmProvider {
     private String extractAndValidate(ChatResponse response) throws LlmApiException {
         String text = response.aiMessage().text();
         if (text == null || text.isBlank()) {
+            log.warn("LLM 响应文本为空: model={}, finishReason={}, hasToolCalls={}",
+                    response.modelName(),
+                    response.finishReason(),
+                    response.aiMessage().hasToolExecutionRequests());
+            log.debug("LLM 完整响应: {}", response);
             return "";
         }
 
