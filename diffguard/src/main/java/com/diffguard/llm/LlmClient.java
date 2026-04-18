@@ -273,7 +273,7 @@ public class LlmClient implements AutoCloseable {
                 return null;
             }
             // 非可重试错误（非 502/503/504/429）：记录但不抛异常，让 fallback 处理
-            log.warn("AiServices 结构化输出失败（不可重试）：{}，回退到手动解析", e.getMessage());
+            log.debug("AiServices 结构化输出失败（不可重试）：{}，回退到手动解析", e.getMessage());
         }
         return null;
     }
