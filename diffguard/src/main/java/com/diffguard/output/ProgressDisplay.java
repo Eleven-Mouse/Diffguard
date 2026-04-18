@@ -81,11 +81,11 @@ public class ProgressDisplay {
         stopSpinner();
     }
 
-    public static void startSpinner() {
+    public static synchronized void startSpinner() {
         SpinnerRenderer.start("Analyzing code...");
     }
 
-    public static void stopSpinner() {
+    public static synchronized void stopSpinner() {
         SpinnerRenderer.stop();
     }
 
@@ -99,24 +99,28 @@ public class ProgressDisplay {
 
     private static void printRetry(String reason, int attempt, int maxAttempts, int waitSeconds) {
         if (TerminalUI.isSilent()) return;
-        boolean wasRunning = SpinnerRenderer.isRunning();
-        SpinnerRenderer.stop();
-        TerminalUI.println("  " + YELLOW + "⚡ " + reason + RESET + " — "
-                + BOLD + waitSeconds + "s" + RESET
-                + GRAY + " until retry (" + attempt + "/" + maxAttempts + ")" + RESET);
-        if (wasRunning) {
-            SpinnerRenderer.start("Analyzing code...");
+        synchronized (ProgressDisplay.class) {
+            boolean wasRunning = SpinnerRenderer.isRunning();
+            SpinnerRenderer.stop();
+            TerminalUI.println("  " + YELLOW + "⚡ " + reason + RESET + " — "
+                    + BOLD + waitSeconds + "s" + RESET
+                    + GRAY + " until retry (" + attempt + "/" + maxAttempts + ")" + RESET);
+            if (wasRunning) {
+                SpinnerRenderer.start("Analyzing code...");
+            }
         }
     }
 
     public static void printBatchProgress(int current, int total) {
         if (TerminalUI.isSilent()) return;
-        boolean wasRunning = SpinnerRenderer.isRunning();
-        SpinnerRenderer.stop();
-        TerminalUI.println("  " + GRAY + "├─" + RESET + " Batch "
-                + BOLD + current + "/" + total + RESET + " analyzing...");
-        if (wasRunning) {
-            SpinnerRenderer.start("Analyzing code...");
+        synchronized (ProgressDisplay.class) {
+            boolean wasRunning = SpinnerRenderer.isRunning();
+            SpinnerRenderer.stop();
+            TerminalUI.println("  " + GRAY + "├─" + RESET + " Batch "
+                    + BOLD + current + "/" + total + RESET + " analyzing...");
+            if (wasRunning) {
+                SpinnerRenderer.start("Analyzing code...");
+            }
         }
     }
 

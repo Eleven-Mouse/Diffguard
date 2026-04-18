@@ -15,6 +15,11 @@ public final class TerminalUI {
 
     private TerminalUI() {}
 
+    public static String sanitize(String text) {
+        if (text == null) return "";
+        return text.replaceAll("[\\u0000-\\u001F\\u007F&&[^\n\r\t]]", "");
+    }
+
     public static void setSilent(boolean value) {
         silent = value;
     }

@@ -44,7 +44,7 @@ public class AgentContext {
     public int getMaxToolCalls() { return maxToolCalls; }
     public List<StepRecord> getStepHistory() { return Collections.unmodifiableList(stepHistory); }
 
-    public void addTokens(int tokens) { totalTokensUsed.addAndGet(tokens); }
+    public void addTokens(int tokens) { totalTokensUsed.addAndGet(Math.max(tokens, 0)); }
     public void incrementToolCalls() { toolCallCount.incrementAndGet(); }
     public boolean isToolCallLimitReached() { return toolCallCount.get() >= maxToolCalls; }
 

@@ -4,6 +4,8 @@ import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.model.Severity;
 
+import java.util.Objects;
+
 import static com.diffguard.output.AnsiColors.*;
 
 /**
@@ -19,6 +21,7 @@ public final class ReviewReportPrinter {
     private ReviewReportPrinter() {}
 
     public static void printReport(ReviewResult result) {
+        Objects.requireNonNull(result, "result");
         if (result.isRawReport()) {
             printRawReport(result);
             return;
@@ -42,7 +45,7 @@ public final class ReviewReportPrinter {
         TerminalUI.println();
         TerminalUI.println("  " + CYAN + BOLD + THICK_LINE + RESET);
         TerminalUI.println("  " + BOLD + "  DiffGuard Review Report" + RESET);
-        TerminalUI.println("  " + GRAY + result.getSummary() + RESET);
+        TerminalUI.println("  " + GRAY + TerminalUI.sanitize(Objects.toString(result.getSummary(), "")) + RESET);
         TerminalUI.println("  " + CYAN + BOLD + THICK_LINE + RESET);
         TerminalUI.println();
     }
@@ -79,16 +82,22 @@ public final class ReviewReportPrinter {
         String color = severityColor(severity);
         String marker = last ? "  ╰─" : "  ├─";
 
+        String file = TerminalUI.sanitize(Objects.toString(issue.getFile(), ""));
+        String line = Objects.toString(issue.getLine(), "");
+        String type = TerminalUI.sanitize(Objects.toString(issue.getType(), ""));
+        String message = TerminalUI.sanitize(Objects.toString(issue.getMessage(), ""));
+        String suggestion = issue.getSuggestion();
+
         TerminalUI.println("  " + GRAY + marker + RESET + " "
-                + BOLD + truncate(issue.getFile(), 40) + RESET
-                + GRAY + ":" + RESET + issue.getLine()
-                + "  " + GRAY + issue.getType() + RESET);
+                + BOLD + truncate(file, 40) + RESET
+                + GRAY + ":" + RESET + line
+                + "  " + GRAY + type + RESET);
 
-        TerminalUI.println("  " + GRAY + (last ? "    " : "  │ ") + RESET + color + issue.getMessage() + RESET);
+        TerminalUI.println("  " + GRAY + (last ? "    " : "  │ ") + RESET + color + message + RESET);
 
-        if (issue.getSuggestion() != null && !issue.getSuggestion().isBlank()) {
+        if (suggestion != null && !suggestion.isBlank()) {
             TerminalUI.println("  " + GRAY + (last ? "    " : "  │ ") + RESET
-                    + DIM + "→ " + issue.getSuggestion() + RESET);
+                    + DIM + "→ " + TerminalUI.sanitize(suggestion) + RESET);
         }
     }
 
@@ -146,7 +155,7 @@ public final class ReviewReportPrinter {
 
     static void printRawReport(ReviewResult result) {
         TerminalUI.println();
-        TerminalUI.println(result.getRawReport());
+        TerminalUI.println(TerminalUI.sanitize(result.getRawReport()));
         TerminalUI.println();
 
         printStats(result);
