@@ -1,6 +1,9 @@
 package com.diffguard.agent.reviewagents;
 
 import com.diffguard.agent.core.*;
+import com.diffguard.agent.strategy.ReviewStrategy;
+import com.diffguard.agent.strategy.ReviewStrategy.AgentType;
+import com.diffguard.agent.strategy.StrategyPlanner;
 import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
@@ -20,7 +23,8 @@ import java.util.stream.Collectors;
  * 并行调度多个专用 Agent（安全、性能、架构），
  * 聚合结果、去重、定级，输出统一的 ReviewResult。
  * <p>
- * 使用 LangChain4j Function Calling 进行工具调用。
+ * 通过 {@link StrategyPlanner} 根据代码变更画像动态调整 Agent 权重，
+ * 跳过权重为 0 的 Agent，并注入针对性的审查规则和重点领域。
  */
 public class MultiAgentReviewOrchestrator implements com.diffguard.review.ReviewEngine {
 
@@ -43,26 +47,29 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
         this.timeoutMinutes = timeoutMinutes;
     }
 
-    /**
-     * {@link com.diffguard.review.ReviewEngine} 统一入口。
-     */
     @Override
     public ReviewResult review(List<DiffFileEntry> diffEntries, java.nio.file.Path projectDir) {
         return doReview(diffEntries, projectDir != null ? projectDir : this.projectDir);
     }
 
-    /**
-     * 执行多 Agent 并行审查。
-     */
     public ReviewResult review(List<DiffFileEntry> diffEntries) {
         return doReview(diffEntries, projectDir);
     }
 
     private ReviewResult doReview(List<DiffFileEntry> diffEntries, Path effectiveProjectDir) {
         long startTime = System.currentTimeMillis();
+
+        // 基于代码变更画像生成审查策略
+        ReviewStrategy strategy = StrategyPlanner.plan(diffEntries);
+        log.info("审查策略: {} (权重: Security={}/Performance={}/Architecture={})",
+                strategy.getName(),
+                strategy.getAgentWeights().getOrDefault(AgentType.SECURITY, 0.0),
+                strategy.getAgentWeights().getOrDefault(AgentType.PERFORMANCE, 0.0),
+                strategy.getAgentWeights().getOrDefault(AgentType.ARCHITECTURE, 0.0));
+
         AgentContext context = new AgentContext(effectiveProjectDir, diffEntries, 15);
 
-        List<NamedAgent> agents = createAgents(effectiveProjectDir);
+        List<NamedAgent> agents = createAgents(effectiveProjectDir, strategy);
 
         Map<String, Future<AgentResponse>> futures = new LinkedHashMap<>();
         for (NamedAgent na : agents) {
@@ -79,6 +86,15 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
             }));
         }
 
+        Map<String, AgentResponse> responses = collectResponses(futures);
+
+        ReviewResult result = aggregateResults(responses, diffEntries, strategy);
+        result.setReviewDurationMs(System.currentTimeMillis() - startTime);
+        result.setTotalFilesReviewed(diffEntries.size());
+        return result;
+    }
+
+    private Map<String, AgentResponse> collectResponses(Map<String, Future<AgentResponse>> futures) {
         Map<String, AgentResponse> responses = new LinkedHashMap<>();
         for (var entry : futures.entrySet()) {
             try {
@@ -101,26 +117,52 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
                         .build());
             }
         }
-
-        ReviewResult result = aggregateResults(responses, diffEntries);
-        result.setReviewDurationMs(System.currentTimeMillis() - startTime);
-        result.setTotalFilesReviewed(diffEntries.size());
-        return result;
+        return responses;
     }
 
+    /**
+     * 根据审查策略创建 Agent 列表，跳过权重为 0 的 Agent。
+     */
+    protected List<NamedAgent> createAgents(Path agentProjectDir, ReviewStrategy strategy) {
+        List<NamedAgent> agents = new ArrayList<>();
+
+        double securityWeight = strategy.getAgentWeights().getOrDefault(AgentType.SECURITY, 1.0);
+        double performanceWeight = strategy.getAgentWeights().getOrDefault(AgentType.PERFORMANCE, 1.0);
+        double architectureWeight = strategy.getAgentWeights().getOrDefault(AgentType.ARCHITECTURE, 1.0);
+
+        if (securityWeight > 0) {
+            SecurityReviewAgent security = SecurityReviewAgent.create(chatModel, agentProjectDir);
+            agents.add(new NamedAgent("Security", security::review));
+        }
+        if (performanceWeight > 0) {
+            PerformanceReviewAgent performance = PerformanceReviewAgent.create(chatModel, agentProjectDir);
+            agents.add(new NamedAgent("Performance", performance::review));
+        }
+        if (architectureWeight > 0) {
+            ArchitectureReviewAgent architecture = ArchitectureReviewAgent.create(chatModel, agentProjectDir);
+            agents.add(new NamedAgent("Architecture", architecture::review));
+        }
+
+        log.info("启用 {} 个 Agent: {}", agents.size(),
+                agents.stream().map(NamedAgent::name).collect(Collectors.joining(", ")));
+        return agents;
+    }
+
+    /**
+     * 向后兼容的无策略版本。
+     */
     protected List<NamedAgent> createAgents(Path agentProjectDir) {
-        SecurityReviewAgent security = SecurityReviewAgent.create(chatModel, agentProjectDir);
-        PerformanceReviewAgent performance = PerformanceReviewAgent.create(chatModel, agentProjectDir);
-        ArchitectureReviewAgent architecture = ArchitectureReviewAgent.create(chatModel, agentProjectDir);
-        return List.of(
-                new NamedAgent("Security", security::review),
-                new NamedAgent("Performance", performance::review),
-                new NamedAgent("Architecture", architecture::review)
-        );
+        return createAgents(agentProjectDir, ReviewStrategy.builder()
+                .name("default")
+                .agentWeight(AgentType.SECURITY, 1.0)
+                .agentWeight(AgentType.PERFORMANCE, 1.0)
+                .agentWeight(AgentType.ARCHITECTURE, 1.0)
+                .build());
     }
 
     private ReviewResult aggregateResults(Map<String, AgentResponse> responses,
-                                            List<DiffFileEntry> diffEntries) {
+                                            List<DiffFileEntry> diffEntries,
+                                            ReviewStrategy strategy) {
         ReviewResult result = new ReviewResult();
         List<AgentResponse> completedResponses = responses.values().stream()
                 .filter(AgentResponse::isCompleted)
@@ -151,7 +193,8 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
             }
         }
 
-        log.info("多 Agent 审查聚合完成: {} issues ({} critical), {} agents completed",
+        log.info("多 Agent 审查聚合完成 [策略: {}]: {} issues ({} critical), {} agents completed",
+                strategy.getName(),
                 result.getIssues().size(),
                 result.hasCriticalIssues() ? "有" : "无",
                 completedResponses.size());

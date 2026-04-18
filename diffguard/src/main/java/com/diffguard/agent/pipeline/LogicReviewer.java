@@ -12,6 +12,6 @@ import dev.langchain4j.service.V;
 @SystemMessage(fromResource = "prompt-templates/pipeline/logic-system.txt")
 public interface LogicReviewer {
 
-    @UserMessage("审查以下代码变更的逻辑问题：\n\n变更总结：{{summary}}\n\n代码变更：\n{{diff}}")
+    @UserMessage(fromResource = "/prompt-templates/pipeline/logic-user.txt")
     Result<TargetedReviewResult> review(@V("summary") String summary, @V("diff") String diffContent);
 }

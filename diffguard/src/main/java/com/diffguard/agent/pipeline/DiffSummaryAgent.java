@@ -13,6 +13,6 @@ import dev.langchain4j.service.V;
 @SystemMessage(fromResource = "prompt-templates/pipeline/diff-summary-system.txt")
 public interface DiffSummaryAgent {
 
-    @UserMessage("分析以下代码变更，提供结构化的变更总结：\n\n{{diff}}")
+    @UserMessage(fromResource = "/prompt-templates/pipeline/diff-summary-user.txt")
     Result<DiffSummary> summarize(@V("diff") String diffContent);
 }

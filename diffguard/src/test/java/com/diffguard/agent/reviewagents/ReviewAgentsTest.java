@@ -7,7 +7,6 @@ import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.IssueRecord;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.model.Severity;
-import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -225,7 +224,7 @@ class ReviewAgentsTest {
         }
 
         @Override
-        protected java.util.List<NamedAgent> createAgents() {
+        protected java.util.List<NamedAgent> createAgents(java.nio.file.Path agentProjectDir, com.diffguard.agent.strategy.ReviewStrategy strategy) {
             return java.util.List.of(
                     new NamedAgent("Security", new SecurityReviewAgent(reactAgent)::review),
                     new NamedAgent("Performance", new PerformanceReviewAgent(reactAgent)::review),

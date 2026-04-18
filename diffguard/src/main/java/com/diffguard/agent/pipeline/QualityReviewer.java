@@ -12,6 +12,6 @@ import dev.langchain4j.service.V;
 @SystemMessage(fromResource = "prompt-templates/pipeline/quality-system.txt")
 public interface QualityReviewer {
 
-    @UserMessage("审查以下代码变更的质量和性能问题：\n\n变更总结：{{summary}}\n\n代码变更：\n{{diff}}")
+    @UserMessage(fromResource = "/prompt-templates/pipeline/quality-user.txt")
     Result<TargetedReviewResult> review(@V("summary") String summary, @V("diff") String diffContent);
 }

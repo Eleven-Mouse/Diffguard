@@ -13,11 +13,7 @@ import dev.langchain4j.service.V;
 @SystemMessage(fromResource = "prompt-templates/pipeline/aggregation-system.txt")
 public interface AggregationAgent {
 
-    @UserMessage("请合并以下专项审查结果：\n\n"
-            + "变更总结：{{summary}}\n\n"
-            + "安全审查结果：{{securityResult}}\n\n"
-            + "逻辑审查结果：{{logicResult}}\n\n"
-            + "质量审查结果：{{qualityResult}}")
+    @UserMessage(fromResource = "/prompt-templates/pipeline/aggregation-user.txt")
     Result<AggregatedReview> aggregate(
             @V("summary") String summary,
             @V("securityResult") String securityResult,

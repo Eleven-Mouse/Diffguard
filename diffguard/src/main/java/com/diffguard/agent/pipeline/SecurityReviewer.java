@@ -12,6 +12,6 @@ import dev.langchain4j.service.V;
 @SystemMessage(fromResource = "prompt-templates/pipeline/security-system.txt")
 public interface SecurityReviewer {
 
-    @UserMessage("审查以下代码变更的安全问题：\n\n变更总结：{{summary}}\n\n代码变更：\n{{diff}}")
+    @UserMessage(fromResource = "/prompt-templates/pipeline/security-user.txt")
     Result<TargetedReviewResult> review(@V("summary") String summary, @V("diff") String diffContent);
 }

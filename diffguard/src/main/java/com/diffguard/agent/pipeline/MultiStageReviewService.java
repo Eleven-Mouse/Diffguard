@@ -1,7 +1,7 @@
 package com.diffguard.agent.pipeline;
 
-import com.diffguard.llm.tools.FileAccessSandbox;
-import com.diffguard.llm.tools.UnifiedToolProvider;
+import com.diffguard.agent.tools.FileAccessSandbox;
+import com.diffguard.agent.tools.UnifiedToolProvider;
 import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.agent.pipeline.model.AggregatedReview;
@@ -15,9 +15,10 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.List;
+import com.diffguard.concurrent.ExecutorManager;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -42,6 +43,7 @@ public class MultiStageReviewService implements com.diffguard.review.ReviewEngin
     private final QualityReviewer qualityReviewer;
     private final AggregationAgent aggregationAgent;
     private final ExecutorService parallelExecutor;
+    private final ExecutorManager executorManager;
     private final PipelineDiffHelper diffHelper = new PipelineDiffHelper();
     private final PipelineResultConverter resultConverter = new PipelineResultConverter();
     private final AtomicInteger totalTokensUsed = new AtomicInteger(0);
@@ -52,7 +54,8 @@ public class MultiStageReviewService implements com.diffguard.review.ReviewEngin
         this.logicReviewer = AiServices.create(LogicReviewer.class, chatModel);
         this.qualityReviewer = AiServices.create(QualityReviewer.class, chatModel);
         this.aggregationAgent = AiServices.create(AggregationAgent.class, chatModel);
-        this.parallelExecutor = Executors.newFixedThreadPool(3);
+        this.executorManager = new ExecutorManager();
+        this.parallelExecutor = executorManager.createFixedPool(3, "pipeline-review");
     }
 
     /**
@@ -68,7 +71,8 @@ public class MultiStageReviewService implements com.diffguard.review.ReviewEngin
         this.qualityReviewer = AiServices.builder(QualityReviewer.class)
                 .chatModel(chatModel).tools(tools).build();
         this.aggregationAgent = AiServices.create(AggregationAgent.class, chatModel);
-        this.parallelExecutor = Executors.newFixedThreadPool(3);
+        this.executorManager = new ExecutorManager();
+        this.parallelExecutor = executorManager.createFixedPool(3, "pipeline-review");
     }
 
     /**
@@ -85,7 +89,8 @@ public class MultiStageReviewService implements com.diffguard.review.ReviewEngin
         this.logicReviewer = logicReviewer;
         this.qualityReviewer = qualityReviewer;
         this.aggregationAgent = aggregationAgent;
-        this.parallelExecutor = Executors.newFixedThreadPool(3);
+        this.executorManager = new ExecutorManager();
+        this.parallelExecutor = executorManager.createFixedPool(3, "pipeline-review");
     }
 
     @Override
@@ -250,15 +255,6 @@ public class MultiStageReviewService implements com.diffguard.review.ReviewEngin
 
     @Override
     public void close() {
-        parallelExecutor.shutdown();
-        try {
-            if (!parallelExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                parallelExecutor.shutdownNow();
-                log.warn("[Pipeline] 线程池未在 10s 内优雅关闭，已强制终止");
-            }
-        } catch (InterruptedException e) {
-            parallelExecutor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        executorManager.close();
     }
 }

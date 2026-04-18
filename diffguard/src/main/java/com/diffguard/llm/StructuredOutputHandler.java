@@ -1,6 +1,6 @@
 package com.diffguard.llm;
 
-import com.diffguard.agent.core.StructuredReviewService;
+
 import com.diffguard.model.IssueRecord;
 import com.diffguard.model.ReviewOutput;
 import com.diffguard.model.ReviewIssue;

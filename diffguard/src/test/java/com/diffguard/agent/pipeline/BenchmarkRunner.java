@@ -4,7 +4,7 @@ import com.diffguard.agent.pipeline.model.AggregatedReview;
 import com.diffguard.agent.pipeline.model.DiffSummary;
 import com.diffguard.llm.provider.LlmProvider;
 import com.diffguard.model.*;
-import com.diffguard.output.ConsoleFormatter;
+import com.diffguard.output.ReviewReportPrinter;
 import com.diffguard.output.MarkdownFormatter;
 import dev.langchain4j.service.Result;
 
@@ -81,12 +81,12 @@ public class BenchmarkRunner {
         int iterations = 2000;
 
         for (int i = 0; i < warmup; i++) {
-            ConsoleFormatter.printReport(result);
+            ReviewReportPrinter.printReport(result);
         }
 
         long consoleStart = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            ConsoleFormatter.printReport(result);
+            ReviewReportPrinter.printReport(result);
         }
         long consoleMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - consoleStart);
 
@@ -100,7 +100,7 @@ public class BenchmarkRunner {
         }
         long mdMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - mdStart);
 
-        System.out.printf("  ConsoleFormatter: %d iterations in %dms (avg %.2fms)%n",
+        System.out.printf("  ReviewReportPrinter: %d iterations in %dms (avg %.2fms)%n",
                 iterations, consoleMs, (double) consoleMs / iterations);
         System.out.printf("  MarkdownFormatter: %d iterations in %dms (avg %.2fms)%n",
                 iterations, mdMs, (double) mdMs / iterations);

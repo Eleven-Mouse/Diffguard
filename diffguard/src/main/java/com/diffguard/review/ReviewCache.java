@@ -11,11 +11,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -24,8 +21,9 @@ import java.util.zip.GZIPOutputStream;
 
 /**
  * 审查结果缓存，采用 Caffeine 内存缓存 + 文件持久化的双层架构。
- * - 内存层：Caffeine 提供高性能并发安全的 in-process 缓存
- * - 磁盘层：文件持久化保证跨 JVM 进程（CLI 多次调用）间缓存复用
+ * <p>
+ * 缓存键生成委托给 {@link CacheKeyGenerator}，
+ * 本类仅负责缓存的存取、持久化和生命周期管理。
  */
 public class ReviewCache {
 
@@ -41,8 +39,6 @@ public class ReviewCache {
 
     /**
      * 创建双层缓存，使用项目 .git 目录下的 diffguard-cache 子目录。
-     *
-     * @param projectDir 项目根目录（用于定位 .git 目录）
      */
     public ReviewCache(Path projectDir) {
         this(projectDir, resolveCacheDir(projectDir));
@@ -50,10 +46,6 @@ public class ReviewCache {
 
     /**
      * 使用指定缓存目录创建缓存（主要用于测试）。
-     *
-     * @param projectDir 项目根目录（语义占位）
-     * @param cacheDir   自定义缓存目录路径
-     * @return ReviewCache 实例
      */
     public static ReviewCache withCustomCacheDir(Path projectDir, Path cacheDir) {
         return new ReviewCache(projectDir, cacheDir);
@@ -69,70 +61,41 @@ public class ReviewCache {
                 .build();
     }
 
+    // ========== 向后兼容的静态委托方法 ==========
+
     /**
-     * 根据文件路径和差异内容生成缓存键（不含审查上下文，向后兼容）。
+     * @see CacheKeyGenerator#buildKey(String, String)
      */
     public static String buildKey(String filePath, String diffContent) {
-        return buildKey(filePath, diffContent, null);
+        return CacheKeyGenerator.buildKey(filePath, diffContent);
     }
 
     /**
-     * 根据文件路径、差异内容和审查上下文生成缓存键。
-     * 上下文包含模型名称、规则配置、语言、流水线模式等因子，
-     * 确保切换模型或规则后不会命中旧缓存。
-     *
-     * @param filePath     文件路径
-     * @param diffContent  diff 内容
-     * @param contextHash  审查上下文哈希（由 {@link #computeContextHash} 生成），可为 null
+     * @see CacheKeyGenerator#buildKey(String, String, String)
      */
     public static String buildKey(String filePath, String diffContent, String contextHash) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(filePath.getBytes(StandardCharsets.UTF_8));
-            digest.update(diffContent.getBytes(StandardCharsets.UTF_8));
-            if (contextHash != null && !contextHash.isEmpty()) {
-                digest.update(contextHash.getBytes(StandardCharsets.UTF_8));
-            }
-            byte[] hash = digest.digest();
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                hexString.append(String.format("%02x", b));
-            }
-            return hexString.toString();
-        } catch (NoSuchAlgorithmException e) {
-            return Integer.toHexString((filePath + diffContent + (contextHash != null ? contextHash : "")).hashCode());
-        }
+        return CacheKeyGenerator.buildKey(filePath, diffContent, contextHash);
     }
 
     /**
-     * 根据审查配置计算上下文哈希，用于区分不同模型/规则/语言下的审查结果。
-     *
-     * @param model        LLM 模型名称
-     * @param enabledRules 启用的审查规则列表
-     * @param language     审查语言
-     * @param pipelineEnabled 是否启用多阶段流水线
-     * @return 上下文哈希字符串
+     * @see CacheKeyGenerator#computeContextHash(String, List, String, boolean)
      */
     public static String computeContextHash(String model, List<String> enabledRules,
                                             String language, boolean pipelineEnabled) {
-        String raw = model
-                + "|rules=" + String.join(",", enabledRules != null ? enabledRules : List.of())
-                + "|lang=" + (language != null ? language : "")
-                + "|pipeline=" + pipelineEnabled;
-        return sha256(raw);
+        return CacheKeyGenerator.computeContextHash(model, enabledRules, language, pipelineEnabled);
     }
+
+    // ========== 缓存操作 ==========
 
     /**
      * 获取缓存：先查内存，再查磁盘（自动检测 gzip 压缩）。
      */
     public List<ReviewIssue> get(String key) {
-        // 1. 内存缓存
         List<ReviewIssue> cached = memoryCache.getIfPresent(key);
         if (cached != null) {
             return cached;
         }
 
-        // 2. 磁盘缓存：优先尝试压缩文件，回退到 JSON 文件
         Path gzipFile = cacheFile(key, ".json.gz");
         Path jsonFile = cacheFile(key, ".json");
 
@@ -170,20 +133,16 @@ public class ReviewCache {
     public void put(String key, List<ReviewIssue> issues) {
         if (issues == null) return;
 
-        // 1. 内存缓存
         memoryCache.put(key, issues);
 
-        // 2. 磁盘持久化
         if (cacheDir == null) return;
         try {
             byte[] jsonBytes = JacksonMapper.MAPPER.writeValueAsBytes(issues);
             if (jsonBytes.length >= COMPRESSION_THRESHOLD) {
                 writeCompressed(cacheFile(key, ".json.gz"), jsonBytes);
-                // 清理可能存在的旧格式文件
                 deleteQuietly(cacheFile(key, ".json"));
             } else {
                 Files.write(cacheFile(key, ".json"), jsonBytes);
-                // 清理可能存在的旧压缩文件
                 deleteQuietly(cacheFile(key, ".json.gz"));
             }
         } catch (IOException e) {
@@ -206,8 +165,10 @@ public class ReviewCache {
         }
     }
 
+    // ========== 内部方法 ==========
+
     private Path cacheFile(String key, String suffix) {
-        return cacheDir.resolve(sha256(key) + suffix);
+        return cacheDir.resolve(CacheKeyGenerator.sha256(key) + suffix);
     }
 
     private List<ReviewIssue> readCompressed(Path file) throws IOException {
@@ -246,7 +207,6 @@ public class ReviewCache {
                     .filter(p -> p.toString().endsWith(".json") || p.toString().endsWith(".json.gz"))
                     .toList();
 
-            // 删除过期条目
             long now = System.currentTimeMillis();
             for (Path entry : entries) {
                 try {
@@ -257,7 +217,6 @@ public class ReviewCache {
                 } catch (IOException ignored) {}
             }
 
-            // 限制最大条目数，删除最旧的
             try (Stream<Path> remaining = Files.list(cacheDir)) {
                 List<Path> sorted = remaining
                         .filter(p -> p.toString().endsWith(".json") || p.toString().endsWith(".json.gz"))
@@ -283,7 +242,6 @@ public class ReviewCache {
     static Path resolveCacheDir(Path projectDir) {
         Path gitDir = projectDir.resolve(".git");
 
-        // 处理 worktree：.git 是一个指向实际 gitdir 的文件
         if (Files.isRegularFile(gitDir)) {
             try {
                 String content = Files.readString(gitDir).trim();
@@ -297,20 +255,6 @@ public class ReviewCache {
         }
 
         return gitDir.resolve("diffguard-cache");
-    }
-
-    private static String sha256(String input) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                hexString.append(String.format("%02x", b));
-            }
-            return hexString.toString();
-        } catch (NoSuchAlgorithmException e) {
-            return Integer.toHexString(input.hashCode());
-        }
     }
 
     private static void deleteQuietly(Path file) {

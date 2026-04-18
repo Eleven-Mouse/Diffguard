@@ -54,7 +54,7 @@ public class MarkdownFormatter {
         sb.append("*Review powered by [DiffGuard](https://github.com/diffguard) | ");
         sb.append(result.getTotalFilesReviewed()).append(" file(s) | ");
         sb.append(result.getTotalTokensUsed()).append(" tokens | ");
-        sb.append(formatDuration(result.getReviewDurationMs())).append("*\n");
+        sb.append(FormatUtils.formatDuration(result.getReviewDurationMs())).append("*\n");
 
         return sb.toString();
     }
@@ -83,10 +83,5 @@ public class MarkdownFormatter {
     private static String escapeTable(String text) {
         if (text == null) return "";
         return text.replace("|", "\\|");
-    }
-
-    private static String formatDuration(long ms) {
-        if (ms < 1000) return ms + "ms";
-        return String.format("%.1fs", ms / 1000.0);
     }
 }

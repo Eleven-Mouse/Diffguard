@@ -6,7 +6,7 @@ import com.diffguard.config.ReviewConfig;
 import com.diffguard.llm.provider.LangChain4jClaudeAdapter;
 import com.diffguard.llm.provider.LangChain4jOpenAiAdapter;
 import com.diffguard.llm.provider.TokenTracker;
-import com.diffguard.llm.tools.FileAccessSandbox;
+import com.diffguard.agent.tools.FileAccessSandbox;
 import com.diffguard.model.DiffFileEntry;
 import dev.langchain4j.model.chat.ChatModel;
 import org.slf4j.Logger;

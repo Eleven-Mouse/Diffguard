@@ -2,12 +2,12 @@ package com.diffguard.llm;
 
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.LlmApiException;
-import com.diffguard.agent.core.StructuredReviewService;
+
 import com.diffguard.llm.provider.LangChain4jClaudeAdapter;
 import com.diffguard.llm.provider.LangChain4jOpenAiAdapter;
 import com.diffguard.llm.provider.LlmProvider;
 import com.diffguard.llm.provider.TokenTracker;
-import com.diffguard.llm.tools.UnifiedToolProvider;
+import com.diffguard.agent.tools.UnifiedToolProvider;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.ProgressDisplay;
 import com.diffguard.prompt.JsonRetryPromptLoader;
@@ -166,45 +166,17 @@ public class LlmClient implements AutoCloseable {
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                ProgressDisplay.startSpinner();
-                try {
-                    String responseBody = provider.call(prompt.getSystemPrompt(), prompt.getUserPrompt());
+                LlmResponse response = attemptSingleCall(prompt);
 
-                    if (responseBody == null || responseBody.isBlank()) {
-                        log.warn("LLM 返回空响应（attempt {}/{}）", attempt, maxAttempts);
-                        if (attempt < maxAttempts) {
-                            sleepQuietly(SERVER_ERROR_BASE_DELAY_MS);
-                            continue;
-                        }
-                        return new LlmResponse(List.of(), "LLM 返回空响应", null);
+                if (response.isRawText() && response.getRawText() != null && !response.getRawText().isBlank()) {
+                    if (!reduceRetries) {
+                        response = attemptFormatRetry(response);
+                    } else {
+                        log.info("Phase 1 已消耗 Token，跳过格式化重试，直接使用原始文本");
                     }
-
-                    LlmResponse response = LlmResponse.fromContent(responseBody);
-
-                    if (response.isRawText() && response.getRawText() != null && !response.getRawText().isBlank()) {
-                        if (!reduceRetries) {
-                            log.info("首次响应非 JSON，发起格式化重试...");
-                            try {
-                                String retryUserPrompt = String.format(JsonRetryPromptLoader.loadJsonRetryUserTemplate(), response.getRawText());
-                                String retryResponse = provider.call(JsonRetryPromptLoader.loadJsonRetrySystemPrompt(), retryUserPrompt);
-                                LlmResponse retryResult = LlmResponse.fromContent(retryResponse);
-                                if (!retryResult.isRawText()) {
-                                    log.info("格式化重试成功，获得有效 JSON 响应");
-                                    return retryResult;
-                                }
-                                log.warn("格式化重试仍未返回有效 JSON，使用原始文本");
-                            } catch (Exception retryEx) {
-                                log.warn("格式化重试失败：{}，使用原始文本", retryEx.getMessage());
-                            }
-                        } else {
-                            log.info("Phase 1 已消耗 Token，跳过格式化重试，直接使用原始文本");
-                        }
-                    }
-
-                    return response;
-                } finally {
-                    ProgressDisplay.stopSpinner();
                 }
+
+                return response;
             } catch (LlmApiException e) {
                 lastException = e;
                 int errorMaxAttempts = e.isRateLimitError() ? MAX_RETRIES : MAX_SERVER_ERROR_RETRIES;
@@ -231,6 +203,51 @@ public class LlmClient implements AutoCloseable {
         throw new LlmApiException("所有重试已耗尽", lastException);
     }
 
+    /**
+     * 执行一次 LLM 调用并解析响应。
+     *
+     * @throws LlmApiException  LLM API 返回错误时抛出
+     * @throws IOException       网络 I/O 错误
+     * @throws InterruptedException 线程被中断
+     */
+    private LlmResponse attemptSingleCall(PromptBuilder.PromptContent prompt)
+            throws LlmApiException, IOException, InterruptedException {
+        ProgressDisplay.startSpinner();
+        try {
+            String responseBody = provider.call(prompt.getSystemPrompt(), prompt.getUserPrompt());
+
+            if (responseBody == null || responseBody.isBlank()) {
+                log.warn("LLM 返回空响应");
+                return new LlmResponse(List.of(), "LLM 返回空响应", null);
+            }
+
+            return LlmResponse.fromContent(responseBody);
+        } finally {
+            ProgressDisplay.stopSpinner();
+        }
+    }
+
+    /**
+     * 尝试对原始文本响应进行 JSON 格式化重试。
+     * 如果重试成功返回结构化响应，否则返回原始文本响应。
+     */
+    private LlmResponse attemptFormatRetry(LlmResponse rawResponse) {
+        log.info("首次响应非 JSON，发起格式化重试...");
+        try {
+            String retryUserPrompt = String.format(JsonRetryPromptLoader.loadJsonRetryUserTemplate(), rawResponse.getRawText());
+            String retryResponse = provider.call(JsonRetryPromptLoader.loadJsonRetrySystemPrompt(), retryUserPrompt);
+            LlmResponse retryResult = LlmResponse.fromContent(retryResponse);
+            if (!retryResult.isRawText()) {
+                log.info("格式化重试成功，获得有效 JSON 响应");
+                return retryResult;
+            }
+            log.warn("格式化重试仍未返回有效 JSON，使用原始文本");
+        } catch (Exception retryEx) {
+            log.warn("格式化重试失败：{}，使用原始文本", retryEx.getMessage());
+        }
+        return rawResponse;
+    }
+
     private static void sleepQuietly(long delayMs) {
         try {
             Thread.sleep(delayMs);
@@ -244,3 +261,4 @@ public class LlmClient implements AutoCloseable {
         batchExecutor.close();
     }
 }
+

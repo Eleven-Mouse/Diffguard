@@ -36,11 +36,11 @@ public class ProgressDisplay {
         TerminalUI.println();
         TerminalUI.println("  " + CYAN + BOLD + "╭──────────────────────────────────────────────────╮" + RESET);
         TerminalUI.println("  " + CYAN + BOLD + "│" + RESET + "    (\\_/)           " + BOLD + "DiffGuard" + RESET
-                + "                    " + CYAN + BOLD + "│" + RESET);
+                + "                     " + CYAN + BOLD + "│" + RESET);
         TerminalUI.println("  " + CYAN + BOLD + "│" + RESET + "    (•.•)        " + DIM + "AI code review" + RESET
-                + "                  " + CYAN + BOLD + "│" + RESET);
+                + "                   " + CYAN + BOLD + "│" + RESET);
         TerminalUI.println("  " + CYAN + BOLD + "│" + RESET + "    / >⌨             " + GRAY + VERSION + RESET
-                + "                      " + CYAN + BOLD + "│" + RESET);
+                + "                       " + CYAN + BOLD + "│" + RESET);
         TerminalUI.println("  " + CYAN + BOLD + "╰──────────────────────────────────────────────────╯" + RESET);
         TerminalUI.println();
     }

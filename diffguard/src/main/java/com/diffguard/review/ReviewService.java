@@ -3,8 +3,8 @@ package com.diffguard.review;
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.DiffGuardException;
 import com.diffguard.llm.LlmClient;
-import com.diffguard.llm.tools.FileAccessSandbox;
-import com.diffguard.llm.tools.UnifiedToolProvider;
+import com.diffguard.agent.tools.FileAccessSandbox;
+import com.diffguard.agent.tools.UnifiedToolProvider;
 import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
@@ -71,7 +71,6 @@ public class ReviewService implements ReviewEngine {
      */
     public ReviewResult review(List<DiffFileEntry> diffEntries) throws DiffGuardException {
         ReviewResult result = new ReviewResult();
-        List<DiffFileEntry> uncachedEntries = new ArrayList<>();
 
         // 预计算审查上下文哈希，确保模型/规则/语言变化后不会命中旧缓存
         String contextHash = cache != null
@@ -83,66 +82,103 @@ public class ReviewService implements ReviewEngine {
                 : null;
 
         // 1. 缓存查询：分离已缓存和未缓存的文件
+        CacheLookupResult lookup = checkCacheAndPartition(diffEntries, contextHash);
+        for (ReviewIssue issue : lookup.cachedIssues()) {
+            result.addIssue(issue);
+        }
+        result.setTotalFilesReviewed(lookup.cacheHits());
+
+        if (lookup.cacheHits() > 0) {
+            log.debug("缓存命中 {} 个文件，{} 个文件需重新审查", lookup.cacheHits(), lookup.uncachedEntries().size());
+        }
+
+        // 2. 构建提示词并调用 LLM（仅未缓存的文件）
+        if (!lookup.uncachedEntries().isEmpty()) {
+            callLlmAndMerge(lookup.uncachedEntries(), contextHash, result, lookup.cacheHits());
+        }
+
+        return result;
+    }
+
+    /**
+     * 缓存查询：分离已缓存和未缓存的文件。
+     *
+     * @param diffEntries  待审查的差异文件列表
+     * @param contextHash  审查上下文哈希，用于区分不同配置的缓存
+     * @return 缓存查询结果
+     */
+    private CacheLookupResult checkCacheAndPartition(List<DiffFileEntry> diffEntries, String contextHash) {
+        List<ReviewIssue> cachedIssues = new ArrayList<>();
+        List<DiffFileEntry> uncachedEntries = new ArrayList<>();
         int cacheHits = 0;
+
         for (DiffFileEntry entry : diffEntries) {
             if (cache != null) {
                 String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent(), contextHash);
                 List<ReviewIssue> cached = cache.get(cacheKey);
                 if (cached != null) {
                     cacheHits++;
-                    for (ReviewIssue issue : cached) {
-                        result.addIssue(issue);
-                    }
-                    result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
+                    cachedIssues.addAll(cached);
                     continue;
                 }
             }
             uncachedEntries.add(entry);
         }
 
-        if (cacheHits > 0) {
-            log.debug("缓存命中 {} 个文件，{} 个文件需重新审查", cacheHits, uncachedEntries.size());
+        return new CacheLookupResult(cachedIssues, uncachedEntries, cacheHits);
+    }
+
+    /**
+     * 构建提示词、调用 LLM、合并结果并写入缓存。
+     *
+     * @param uncachedEntries 未命中缓存的文件列表
+     * @param contextHash     审查上下文哈希
+     * @param result          用于合并的审查结果对象
+     * @param cacheHits       已缓存的命中数
+     * @throws DiffGuardException 审查过程中的业务异常
+     */
+    private void callLlmAndMerge(List<DiffFileEntry> uncachedEntries, String contextHash,
+                                  ReviewResult result, int cacheHits) throws DiffGuardException {
+        if (closed) {
+            throw new IllegalStateException("ReviewService 已关闭");
+        }
+        log.info("开始审查 {} 个文件（共 {} 个批次）",
+                uncachedEntries.size(), new PromptBuilder(config, projectDir).buildPrompts(uncachedEntries).size());
+        PromptBuilder promptBuilder = new PromptBuilder(config, projectDir);
+        List<PromptBuilder.PromptContent> prompts = promptBuilder.buildPrompts(uncachedEntries);
+
+        LlmClient client = resolveClient(uncachedEntries);
+
+        ReviewResult freshResult = client.review(prompts);
+
+        // 合并结果
+        for (ReviewIssue issue : freshResult.getIssues()) {
+            result.addIssue(issue);
+        }
+        if (freshResult.getRawReport() != null) {
+            result.setRawReport(freshResult.getRawReport());
+        }
+        if (freshResult.getHasCriticalFlag() != null && freshResult.getHasCriticalFlag()) {
+            result.setHasCriticalFlag(true);
+        }
+        result.setTotalTokensUsed(result.getTotalTokensUsed() + freshResult.getTotalTokensUsed());
+        result.setTotalFilesReviewed(result.getTotalFilesReviewed() + freshResult.getTotalFilesReviewed());
+        result.setReviewDurationMs(freshResult.getReviewDurationMs());
+
+        // 写入缓存：将批量结果按文件拆分缓存
+        if (cache != null) {
+            cacheBatchResults(uncachedEntries, freshResult, contextHash);
         }
 
-        // 2. 构建提示词并调用 LLM（仅未缓存的文件）
-        if (!uncachedEntries.isEmpty()) {
-            if (closed) {
-                throw new IllegalStateException("ReviewService 已关闭");
-            }
-            log.info("开始审查 {} 个文件（共 {} 个批次）",
-                    uncachedEntries.size(), new PromptBuilder(config, projectDir).buildPrompts(uncachedEntries).size());
-            PromptBuilder promptBuilder = new PromptBuilder(config, projectDir);
-            List<PromptBuilder.PromptContent> prompts = promptBuilder.buildPrompts(uncachedEntries);
+        log.info("审查完成：{} 个文件，{} 个缓存命中，耗时 {}ms，Token {}",
+                result.getTotalFilesReviewed(), cacheHits,
+                result.getReviewDurationMs(), result.getTotalTokensUsed());
+    }
 
-            LlmClient client = resolveClient(uncachedEntries);
-
-            ReviewResult freshResult = client.review(prompts);
-
-            // 3. 合并结果
-            for (ReviewIssue issue : freshResult.getIssues()) {
-                result.addIssue(issue);
-            }
-            if (freshResult.getRawReport() != null) {
-                result.setRawReport(freshResult.getRawReport());
-            }
-            if (freshResult.getHasCriticalFlag() != null && freshResult.getHasCriticalFlag()) {
-                result.setHasCriticalFlag(true);
-            }
-            result.setTotalTokensUsed(result.getTotalTokensUsed() + freshResult.getTotalTokensUsed());
-            result.setTotalFilesReviewed(result.getTotalFilesReviewed() + freshResult.getTotalFilesReviewed());
-            result.setReviewDurationMs(freshResult.getReviewDurationMs());
-
-            // 4. 写入缓存：将批量结果按文件拆分缓存
-            if (cache != null) {
-                cacheBatchResults(uncachedEntries, freshResult, contextHash);
-            }
-
-            log.info("审查完成：{} 个文件，{} 个缓存命中，耗时 {}ms，Token {}",
-                    result.getTotalFilesReviewed(), cacheHits,
-                    result.getReviewDurationMs(), result.getTotalTokensUsed());
-        }
-
-        return result;
+    /**
+     * 缓存查询结果记录。
+     */
+    private record CacheLookupResult(List<ReviewIssue> cachedIssues, List<DiffFileEntry> uncachedEntries, int cacheHits) {
     }
 
     /**

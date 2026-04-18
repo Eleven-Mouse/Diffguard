@@ -125,7 +125,7 @@ public final class ReviewReportPrinter {
         TerminalUI.println("  " + GRAY + "  ┌──────────────────────────────────────────────────┐" + RESET);
         printStatRow("Files", String.valueOf(result.getTotalFilesReviewed()));
         printStatRow("Issues", formatIssueCount(total, critical, warning, info));
-        printStatRow("Duration", formatDuration(result.getReviewDurationMs()));
+        printStatRow("Duration", FormatUtils.formatDuration(result.getReviewDurationMs()));
         printStatRow("Tokens", String.valueOf(result.getTotalTokensUsed()));
         TerminalUI.println("  " + GRAY + "  └──────────────────────────────────────────────────┘" + RESET);
     }
@@ -184,9 +184,4 @@ public final class ReviewReportPrinter {
         return s.length() <= max ? s : "..." + s.substring(s.length() - max + 3);
     }
 
-    private static String formatDuration(long ms) {
-        if (ms <= 0) return "-";
-        if (ms < 1000) return ms + "ms";
-        return String.format("%.1fs", ms / 1000.0);
-    }
 }

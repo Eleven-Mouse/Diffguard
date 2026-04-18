@@ -18,8 +18,7 @@ import dev.langchain4j.service.V;
 @SystemMessage("{{systemPrompt}}")
 public interface ReActAgentService {
 
-    @UserMessage("请审查以下代码变更。你可以使用可用工具获取更多上下文信息，"
-            + "完成审查后直接给出结果。\n\n代码变更：\n{{diff}}")
+    @UserMessage(fromResource = "/prompt-templates/react-user.txt")
     Result<ReActReviewOutput> review(
             @V("systemPrompt") String systemPrompt,
             @V("diff") String diffContent);

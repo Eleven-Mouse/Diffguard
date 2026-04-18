@@ -3,7 +3,7 @@ package com.diffguard.agent.tools;
 import com.diffguard.agent.core.AgentContext;
 import com.diffguard.agent.core.AgentTool;
 import com.diffguard.agent.core.ToolResult;
-import com.diffguard.llm.tools.FileAccessSandbox;
+
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
