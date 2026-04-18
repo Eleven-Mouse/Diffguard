@@ -19,6 +19,7 @@
         <jgit.version>6.8.0.202311291450-r</jgit.version>
         <jackson.version>2.17.0</jackson.version>
         <langchain4j.version>1.13.0</langchain4j.version>
+        <javaparser.version>3.26.3</javaparser.version>
     </properties>
 
     <dependencies>
@@ -55,6 +56,13 @@
             <groupId>com.knuddels</groupId>
             <artifactId>jtokkit</artifactId>
             <version>1.0.0</version>
+        </dependency>
+
+        <!-- AST Parsing -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>${javaparser.version}</version>
         </dependency>
 
         <!-- Cache -->

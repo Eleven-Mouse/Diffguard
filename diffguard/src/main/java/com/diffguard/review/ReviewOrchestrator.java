@@ -104,6 +104,9 @@ public class ReviewOrchestrator implements AutoCloseable {
                 return;
             }
 
+            // AST enrichment (sidecar)
+            diffEntries = new com.diffguard.ast.ASTEnricher(localPath, config).enrich(diffEntries);
+
             // 5. 执行审查
             try (ReviewService reviewService = new ReviewService(config, localPath, false)) {
                 ReviewResult result = reviewService.review(diffEntries);

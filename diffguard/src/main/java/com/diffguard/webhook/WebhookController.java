@@ -7,21 +7,28 @@ import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+
 /**
  * Webhook 请求处理器。
- * 验证签名、解析 payload、过滤事件、异步派发审查任务。
+ * 频率限制、验证签名、解析 payload、过滤事件、异步派发审查任务。
  */
 public class WebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
 
+    /** 默认频率限制：每 IP 每分钟最多 30 次请求 */
+    static final int DEFAULT_RATE_LIMIT = 30;
+
     private final SignatureVerifier signatureVerifier;
     private final ReviewOrchestrator orchestrator;
+    private final RateLimiter rateLimiter;
 
     public WebhookController(ReviewConfig config) {
         String secret = config.getWebhook().resolveSecret();
         this.signatureVerifier = new SignatureVerifier(secret);
         this.orchestrator = new ReviewOrchestrator(config);
+        this.rateLimiter = new RateLimiter(DEFAULT_RATE_LIMIT, Duration.ofMinutes(1));
     }
 
     /**
@@ -30,12 +37,30 @@ public class WebhookController {
     WebhookController(SignatureVerifier signatureVerifier, ReviewOrchestrator orchestrator) {
         this.signatureVerifier = signatureVerifier;
         this.orchestrator = orchestrator;
+        this.rateLimiter = new RateLimiter(DEFAULT_RATE_LIMIT, Duration.ofMinutes(1));
+    }
+
+    /**
+     * 完整构造方法，支持自定义 RateLimiter（用于测试）。
+     */
+    WebhookController(SignatureVerifier signatureVerifier, ReviewOrchestrator orchestrator, RateLimiter rateLimiter) {
+        this.signatureVerifier = signatureVerifier;
+        this.orchestrator = orchestrator;
+        this.rateLimiter = rateLimiter;
     }
 
     public void handleWebhook(Context ctx) {
         String payload = ctx.body();
         String signature = ctx.header("X-Hub-Signature-256");
         String event = ctx.header("X-GitHub-Event");
+
+        // 0. 频率限制：支持 X-Forwarded-For 代理场景
+        String clientIp = resolveClientIp(ctx);
+        if (!rateLimiter.allowRequest(clientIp)) {
+            log.warn("请求被频率限制：IP={}", clientIp);
+            ctx.status(429).result("Too many requests");
+            return;
+        }
 
         // 1. 验证签名
         if (!signatureVerifier.verify(payload, signature)) {
@@ -84,5 +109,20 @@ public class WebhookController {
      */
     public void close() {
         orchestrator.close();
+    }
+
+    /**
+     * 解析客户端真实 IP，支持反向代理场景。
+     * 优先使用 X-Forwarded-For 头（取第一个 IP），回退到 Javalin 的 ctx.ip()。
+     */
+    static String resolveClientIp(Context ctx) {
+        String forwarded = ctx.header("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            String firstIp = forwarded.split(",")[0].trim();
+            if (!firstIp.isBlank()) {
+                return firstIp;
+            }
+        }
+        return ctx.ip();
     }
 }

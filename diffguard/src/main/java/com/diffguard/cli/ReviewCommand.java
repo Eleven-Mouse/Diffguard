@@ -106,6 +106,9 @@ public class ReviewCommand implements Runnable {
         int totalLines = diffEntries.stream().mapToInt(DiffFileEntry::getLineCount).sum();
         ProgressDisplay.printDiffCollected(diffEntries.size(), totalLines);
 
+        // AST enrichment (sidecar)
+        diffEntries = new com.diffguard.ast.ASTEnricher(projectDir, config).enrich(diffEntries);
+
         // 3. 执行审查
         boolean usePipeline = pipeline || config.getPipeline().isEnabled();
         ReviewResult result;

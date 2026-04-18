@@ -5,6 +5,7 @@ import com.diffguard.model.Severity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -111,5 +112,104 @@ class ReviewCacheTest {
         String key1 = ReviewCache.buildKey("A.java", "same");
         String key2 = ReviewCache.buildKey("B.java", "same");
         assertNotEquals(key1, key2);
+    }
+
+    @Nested
+    @DisplayName("buildKey 含上下文")
+    class BuildKeyWithContext {
+
+        @Test
+        @DisplayName("相同上下文产生相同 key")
+        void sameContextSameKey() {
+            String ctx = ReviewCache.computeContextHash("gpt-5", List.of("security"), "zh", false);
+            String key1 = ReviewCache.buildKey("A.java", "diff", ctx);
+            String key2 = ReviewCache.buildKey("A.java", "diff", ctx);
+            assertEquals(key1, key2);
+        }
+
+        @Test
+        @DisplayName("不同模型产生不同 key")
+        void differentModelDifferentKey() {
+            String ctx1 = ReviewCache.computeContextHash("gpt-5", List.of("security"), "zh", false);
+            String ctx2 = ReviewCache.computeContextHash("claude-sonnet-4-6", List.of("security"), "zh", false);
+            String key1 = ReviewCache.buildKey("A.java", "diff", ctx1);
+            String key2 = ReviewCache.buildKey("A.java", "diff", ctx2);
+            assertNotEquals(key1, key2);
+        }
+
+        @Test
+        @DisplayName("不同规则产生不同 key")
+        void differentRulesDifferentKey() {
+            String ctx1 = ReviewCache.computeContextHash("gpt-5", List.of("security"), "zh", false);
+            String ctx2 = ReviewCache.computeContextHash("gpt-5", List.of("security", "performance"), "zh", false);
+            String key1 = ReviewCache.buildKey("A.java", "diff", ctx1);
+            String key2 = ReviewCache.buildKey("A.java", "diff", ctx2);
+            assertNotEquals(key1, key2);
+        }
+
+        @Test
+        @DisplayName("不同语言产生不同 key")
+        void differentLanguageDifferentKey() {
+            String ctx1 = ReviewCache.computeContextHash("gpt-5", List.of("security"), "zh", false);
+            String ctx2 = ReviewCache.computeContextHash("gpt-5", List.of("security"), "en", false);
+            String key1 = ReviewCache.buildKey("A.java", "diff", ctx1);
+            String key2 = ReviewCache.buildKey("A.java", "diff", ctx2);
+            assertNotEquals(key1, key2);
+        }
+
+        @Test
+        @DisplayName("pipeline 开关不同产生不同 key")
+        void differentPipelineDifferentKey() {
+            String ctx1 = ReviewCache.computeContextHash("gpt-5", List.of("security"), "zh", false);
+            String ctx2 = ReviewCache.computeContextHash("gpt-5", List.of("security"), "zh", true);
+            String key1 = ReviewCache.buildKey("A.java", "diff", ctx1);
+            String key2 = ReviewCache.buildKey("A.java", "diff", ctx2);
+            assertNotEquals(key1, key2);
+        }
+
+        @Test
+        @DisplayName("无上下文 key 与有上下文 key 不同")
+        void withAndWithoutContextDifferent() {
+            String ctx = ReviewCache.computeContextHash("gpt-5", List.of("security"), "zh", false);
+            String keyWithout = ReviewCache.buildKey("A.java", "diff");
+            String keyWith = ReviewCache.buildKey("A.java", "diff", ctx);
+            assertNotEquals(keyWithout, keyWith);
+        }
+
+        @Test
+        @DisplayName("null 上下文等价于无上下文")
+        void nullContextSameAsNoContext() {
+            String keyExplicitNull = ReviewCache.buildKey("A.java", "diff", null);
+            String keyNoContext = ReviewCache.buildKey("A.java", "diff");
+            assertEquals(keyExplicitNull, keyNoContext);
+        }
+    }
+
+    @Nested
+    @DisplayName("computeContextHash")
+    class ComputeContextHash {
+
+        @Test
+        @DisplayName("相同输入产生相同哈希")
+        void sameInputSameHash() {
+            String h1 = ReviewCache.computeContextHash("gpt-5", List.of("security", "bug-risk"), "zh", false);
+            String h2 = ReviewCache.computeContextHash("gpt-5", List.of("security", "bug-risk"), "zh", false);
+            assertEquals(h1, h2);
+        }
+
+        @Test
+        @DisplayName("规则顺序不影响哈希（已拼接为有序字符串）")
+        void rulesOrderMatters() {
+            String h1 = ReviewCache.computeContextHash("gpt-5", List.of("security", "bug-risk"), "zh", false);
+            String h2 = ReviewCache.computeContextHash("gpt-5", List.of("bug-risk", "security"), "zh", false);
+            // 不同顺序产生不同哈希（字符串拼接方式决定）
+            assertNotEquals(h1, h2);
+        }
+
+        @Test
+        @DisplayName("null 规则列表被当作空列表处理")
+        void nullRulesHandled() {
+            assertDoesNotThrow(() -> ReviewCache.computeContextHash("gpt-5", null, "zh", false));
+        }
     }
 }

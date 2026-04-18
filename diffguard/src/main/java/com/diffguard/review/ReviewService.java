@@ -2,7 +2,6 @@ package com.diffguard.review;
 
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.DiffGuardException;
-import com.diffguard.exception.LlmApiException;
 import com.diffguard.llm.LlmClient;
 import com.diffguard.llm.tools.FileAccessSandbox;
 import com.diffguard.llm.tools.ReviewToolProvider;
@@ -66,11 +65,20 @@ public class ReviewService implements AutoCloseable {
         ReviewResult result = new ReviewResult();
         List<DiffFileEntry> uncachedEntries = new ArrayList<>();
 
+        // 预计算审查上下文哈希，确保模型/规则/语言变化后不会命中旧缓存
+        String contextHash = cache != null
+                ? ReviewCache.computeContextHash(
+                    config.getLlm().getModel(),
+                    config.getRules().getEnabled(),
+                    config.getReview().getLanguage(),
+                    config.getPipeline().isEnabled())
+                : null;
+
         // 1. 缓存查询：分离已缓存和未缓存的文件
         int cacheHits = 0;
         for (DiffFileEntry entry : diffEntries) {
             if (cache != null) {
-                String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent());
+                String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent(), contextHash);
                 List<ReviewIssue> cached = cache.get(cacheKey);
                 if (cached != null) {
                     cacheHits++;
@@ -118,7 +126,7 @@ public class ReviewService implements AutoCloseable {
 
             // 4. 写入缓存：将批量结果按文件拆分缓存
             if (cache != null) {
-                cacheBatchResults(uncachedEntries, freshResult);
+                cacheBatchResults(uncachedEntries, freshResult, contextHash);
             }
 
             log.info("审查完成：{} 个文件，{} 个缓存命中，耗时 {}ms，Token {}",
@@ -161,7 +169,7 @@ public class ReviewService implements AutoCloseable {
      * 将批量审查结果按文件拆分并写入缓存。
      * 即使多个文件被合并到一次 LLM 调用中，也会按文件分别缓存。
      */
-    private void cacheBatchResults(List<DiffFileEntry> entries, ReviewResult result) {
+    private void cacheBatchResults(List<DiffFileEntry> entries, ReviewResult result, String contextHash) {
         if (cache == null) return;
 
         // 分离跨文件/无文件 issue 和有明确文件的 issue
@@ -172,7 +180,7 @@ public class ReviewService implements AutoCloseable {
         if (entries.size() == 1) {
             // 单文件：直接缓存所有 issue
             DiffFileEntry entry = entries.get(0);
-            String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent());
+            String cacheKey = ReviewCache.buildKey(entry.getFilePath(), entry.getContent(), contextHash);
             cache.put(cacheKey, result.getIssues());
         } else {
             // 多文件：按文件路径将 issue 分组后分别缓存
@@ -188,7 +196,7 @@ public class ReviewService implements AutoCloseable {
                     fileIssues.addAll(crossFileIssues);
                     crossFileIssuesAssigned = true;
                 }
-                String cacheKey = ReviewCache.buildKey(filePath, entry.getContent());
+                String cacheKey = ReviewCache.buildKey(filePath, entry.getContent(), contextHash);
                 cache.put(cacheKey, fileIssues);
             }
         }

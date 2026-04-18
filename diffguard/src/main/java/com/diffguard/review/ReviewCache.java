@@ -70,20 +70,56 @@ public class ReviewCache {
     }
 
     /**
-     * 根据文件路径和差异内容生成缓存键。
+     * 根据文件路径和差异内容生成缓存键（不含审查上下文，向后兼容）。
      */
     public static String buildKey(String filePath, String diffContent) {
+        return buildKey(filePath, diffContent, null);
+    }
+
+    /**
+     * 根据文件路径、差异内容和审查上下文生成缓存键。
+     * 上下文包含模型名称、规则配置、语言、流水线模式等因子，
+     * 确保切换模型或规则后不会命中旧缓存。
+     *
+     * @param filePath     文件路径
+     * @param diffContent  diff 内容
+     * @param contextHash  审查上下文哈希（由 {@link #computeContextHash} 生成），可为 null
+     */
+    public static String buildKey(String filePath, String diffContent, String contextHash) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(diffContent.getBytes(StandardCharsets.UTF_8));
+            digest.update(filePath.getBytes(StandardCharsets.UTF_8));
+            digest.update(diffContent.getBytes(StandardCharsets.UTF_8));
+            if (contextHash != null && !contextHash.isEmpty()) {
+                digest.update(contextHash.getBytes(StandardCharsets.UTF_8));
+            }
+            byte[] hash = digest.digest();
             StringBuilder hexString = new StringBuilder();
             for (byte b : hash) {
                 hexString.append(String.format("%02x", b));
             }
-            return filePath + ":" + hexString;
+            return hexString.toString();
         } catch (NoSuchAlgorithmException e) {
-            return filePath + ":" + Integer.toHexString(diffContent.hashCode());
+            return Integer.toHexString((filePath + diffContent + (contextHash != null ? contextHash : "")).hashCode());
         }
+    }
+
+    /**
+     * 根据审查配置计算上下文哈希，用于区分不同模型/规则/语言下的审查结果。
+     *
+     * @param model        LLM 模型名称
+     * @param enabledRules 启用的审查规则列表
+     * @param language     审查语言
+     * @param pipelineEnabled 是否启用多阶段流水线
+     * @return 上下文哈希字符串
+     */
+    public static String computeContextHash(String model, List<String> enabledRules,
+                                            String language, boolean pipelineEnabled) {
+        String raw = model
+                + "|rules=" + String.join(",", enabledRules != null ? enabledRules : List.of())
+                + "|lang=" + (language != null ? language : "")
+                + "|pipeline=" + pipelineEnabled;
+        return sha256(raw);
     }
 
     /**
