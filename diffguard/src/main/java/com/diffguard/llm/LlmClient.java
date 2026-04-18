@@ -288,7 +288,16 @@ public class LlmClient implements AutoCloseable {
 
         ReviewOutput output = result.content();
         if (output == null) {
-            log.warn("AiServices 返回 null content，Token 已消耗但结果丢失");
+            String rawText = result.finalResponse() != null && result.finalResponse().aiMessage() != null
+                ? result.finalResponse().aiMessage().text() : null;
+            long tokens = result.tokenUsage() != null
+                ? result.tokenUsage().inputTokenCount() + result.tokenUsage().outputTokenCount() : -1;
+            String model = result.finalResponse() != null ? result.finalResponse().modelName() : "unknown";
+            log.warn("AiServices 返回 null content (model={}, tokens={}, rawText={})",
+                model, tokens, rawText != null ? rawText.length() + "chars" : "null");
+            if (rawText != null) {
+                return LlmResponse.fromContent(rawText);
+            }
             return null;
         }
 
