@@ -288,13 +288,7 @@ public class LlmClient implements AutoCloseable {
 
         ReviewOutput output = result.content();
         if (output == null) {
-            // Token 已消耗，尝试从原始 LLM 文本中提取结果，避免静默丢弃
-            if (result.aiMessage() != null && result.aiMessage().text() != null
-                    && !result.aiMessage().text().isBlank()) {
-                log.warn("AiServices 返回 null content，降级为原始文本解析（Token 已消耗）");
-                return LlmResponse.fromContent(result.aiMessage().text());
-            }
-            log.warn("AiServices 返回 null content 且无原始文本，Token 已消耗但结果丢失");
+            log.warn("AiServices 返回 null content，Token 已消耗但结果丢失");
             return null;
         }
 
