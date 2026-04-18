@@ -4,7 +4,7 @@ import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.DiffGuardException;
 import com.diffguard.llm.LlmClient;
 import com.diffguard.llm.tools.FileAccessSandbox;
-import com.diffguard.llm.tools.ReviewToolProvider;
+import com.diffguard.llm.tools.UnifiedToolProvider;
 import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
  * 实现 {@link AutoCloseable} 以管理内部 {@link LlmClient} 的生命周期。
  * 调用方应使用 try-with-resources 确保资源释放。
  */
-public class ReviewService implements AutoCloseable {
+public class ReviewService implements ReviewEngine {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewService.class);
 
@@ -52,6 +52,14 @@ public class ReviewService implements AutoCloseable {
         this.projectDir = projectDir;
         this.cache = noCache ? null : new ReviewCache(projectDir);
         this.injectedClient = llmClient;
+    }
+
+    /**
+     * {@link ReviewEngine} 统一入口。委托给现有的 {@link #review(List)} 方法。
+     */
+    @Override
+    public ReviewResult review(List<DiffFileEntry> diffEntries, Path projectDir) throws DiffGuardException {
+        return review(diffEntries);
     }
 
     /**
@@ -150,7 +158,7 @@ public class ReviewService implements AutoCloseable {
                     .map(DiffFileEntry::getFilePath)
                     .collect(Collectors.toSet());
             FileAccessSandbox sandbox = new FileAccessSandbox(projectDir, filePaths);
-            ownedClient.withTools(new ReviewToolProvider(sandbox));
+            ownedClient.withTools(new UnifiedToolProvider(projectDir, uncachedEntries, sandbox, 10));
         }
         return ownedClient;
     }

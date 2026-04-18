@@ -1,6 +1,6 @@
 package com.diffguard.cli;
 
-import com.diffguard.hook.GitHookInstaller;
+import com.diffguard.git.GitHookInstaller;
 import picocli.CommandLine;
 
 import java.nio.file.Path;

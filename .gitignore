@@ -13,3 +13,10 @@ Thumbs.db
 
 # Config (may contain API keys)
 .review-config.yml
+
+# Runtime artifacts
+*.class
+*.log
+*.jar
+hs_err_pid*.log
+.env

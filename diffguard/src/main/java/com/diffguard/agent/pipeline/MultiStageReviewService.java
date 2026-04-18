@@ -1,28 +1,25 @@
 package com.diffguard.agent.pipeline;
 
-import com.diffguard.model.IssueRecord;
-import com.diffguard.util.TokenEstimator;
+import com.diffguard.llm.tools.FileAccessSandbox;
+import com.diffguard.llm.tools.UnifiedToolProvider;
+import com.diffguard.model.DiffFileEntry;
+import com.diffguard.model.ReviewResult;
 import com.diffguard.agent.pipeline.model.AggregatedReview;
 import com.diffguard.agent.pipeline.model.DiffSummary;
-import com.diffguard.llm.tools.FileAccessSandbox;
-import com.diffguard.llm.tools.ReviewToolProvider;
-import com.diffguard.model.DiffFileEntry;
-import com.diffguard.model.ReviewIssue;
-import com.diffguard.model.ReviewResult;
-import com.diffguard.model.Severity;
+import com.diffguard.util.TokenEstimator;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 /**
  * 多阶段审查 Pipeline 编排器。
@@ -34,9 +31,10 @@ import java.util.stream.Collectors;
  * Pipeline 输出的 ReviewResult 与单次审查格式完全一致，
  * 对 CLI / Webhook / Cache 层透明。
  */
-public class MultiStageReviewService implements AutoCloseable {
+public class MultiStageReviewService implements com.diffguard.review.ReviewEngine {
 
     private static final Logger log = LoggerFactory.getLogger(MultiStageReviewService.class);
+    private static final int DEFAULT_MAX_TOTAL_TOKENS = 50000;
 
     private final DiffSummaryAgent summaryAgent;
     private final SecurityReviewer securityReviewer;
@@ -44,6 +42,8 @@ public class MultiStageReviewService implements AutoCloseable {
     private final QualityReviewer qualityReviewer;
     private final AggregationAgent aggregationAgent;
     private final ExecutorService parallelExecutor;
+    private final PipelineDiffHelper diffHelper = new PipelineDiffHelper();
+    private final PipelineResultConverter resultConverter = new PipelineResultConverter();
     private final AtomicInteger totalTokensUsed = new AtomicInteger(0);
 
     public MultiStageReviewService(ChatModel chatModel) {
@@ -60,12 +60,13 @@ public class MultiStageReviewService implements AutoCloseable {
      */
     public MultiStageReviewService(ChatModel chatModel, FileAccessSandbox sandbox) {
         this.summaryAgent = AiServices.create(DiffSummaryAgent.class, chatModel);
+        UnifiedToolProvider tools = new UnifiedToolProvider(sandbox.getProjectRoot(), List.of(), sandbox, 10);
         this.securityReviewer = AiServices.builder(SecurityReviewer.class)
-                .chatModel(chatModel).tools(new ReviewToolProvider(sandbox)).build();
+                .chatModel(chatModel).tools(tools).build();
         this.logicReviewer = AiServices.builder(LogicReviewer.class)
-                .chatModel(chatModel).tools(new ReviewToolProvider(sandbox)).build();
+                .chatModel(chatModel).tools(tools).build();
         this.qualityReviewer = AiServices.builder(QualityReviewer.class)
-                .chatModel(chatModel).tools(new ReviewToolProvider(sandbox)).build();
+                .chatModel(chatModel).tools(tools).build();
         this.aggregationAgent = AiServices.create(AggregationAgent.class, chatModel);
         this.parallelExecutor = Executors.newFixedThreadPool(3);
     }
@@ -87,68 +88,71 @@ public class MultiStageReviewService implements AutoCloseable {
         this.parallelExecutor = Executors.newFixedThreadPool(3);
     }
 
-    private static final int DEFAULT_MAX_TOTAL_TOKENS = 50000;
-
-    /**
-     * 执行多阶段审查 Pipeline。
-     *
-     * @param diffEntries 差异文件列表
-     * @param projectDir  项目目录（用于 Tool Use 文件访问）
-     * @return 与单次审查格式一致的 ReviewResult
-     */
-    public ReviewResult review(List<DiffFileEntry> diffEntries, java.nio.file.Path projectDir) {
+    @Override
+    public ReviewResult review(List<DiffFileEntry> diffEntries, Path projectDir) throws com.diffguard.exception.DiffGuardException {
         return review(diffEntries, projectDir, DEFAULT_MAX_TOTAL_TOKENS, null);
     }
 
     /**
      * 执行多阶段审查 Pipeline（带 token 限制和 provider 信息）。
-     *
-     * @param diffEntries    差异文件列表
-     * @param projectDir     项目目录
-     * @param maxTotalTokens diff 最大 token 数
-     * @param provider       LLM 供应商名称（用于 token 估算）
-     * @return 审查结果
      */
-    public ReviewResult review(List<DiffFileEntry> diffEntries, java.nio.file.Path projectDir,
+    public ReviewResult review(List<DiffFileEntry> diffEntries, Path projectDir,
                                int maxTotalTokens, String provider) {
         long startTime = System.currentTimeMillis();
-        String rawDiffs = concatenateDiffs(diffEntries);
+        String allDiffs = prepareDiffs(diffEntries, maxTotalTokens, provider);
 
-        // Token 限制检查：防止大 diff 超出模型上下文窗口
-        String allDiffs;
+        // Stage 1: 总结变更
+        DiffSummary summary = runStage1(allDiffs);
+        String summaryText = summary != null && summary.summary() != null
+                ? summary.summary() : "代码变更审查";
+
+        // Stage 2: 并行专项审查
+        ParallelReviewResult parallelResult = runStage2(summaryText, allDiffs);
+
+        // Stage 3: 聚合
+        AggregatedReview aggregated = runStage3(summaryText, parallelResult);
+
+        // 转换为 ReviewResult
+        ReviewResult result = resultConverter.convert(aggregated, diffEntries.size());
+        result.setReviewDurationMs(System.currentTimeMillis() - startTime);
+        log.info("[Pipeline] 完成：{} 个问题，耗时 {}ms",
+                result.getIssues().size(), result.getReviewDurationMs());
+        return result;
+    }
+
+    private String prepareDiffs(List<DiffFileEntry> diffEntries, int maxTotalTokens, String provider) {
+        String rawDiffs = diffHelper.concatenateDiffs(diffEntries);
         if (maxTotalTokens > 0 && provider != null) {
             int estimatedTokens = TokenEstimator.estimate(rawDiffs, provider);
             if (estimatedTokens > maxTotalTokens) {
                 log.warn("[Pipeline] Diff token 估算 {} 超过限制 {}，截断处理",
                         estimatedTokens, maxTotalTokens);
-                allDiffs = truncateToTokenLimit(rawDiffs, maxTotalTokens, provider);
-            } else {
-                allDiffs = rawDiffs;
+                return diffHelper.truncateToTokenLimit(rawDiffs, maxTotalTokens, provider);
             }
-        } else {
-            allDiffs = rawDiffs;
         }
+        return rawDiffs;
+    }
 
-        // Stage 1: 总结变更
+    private DiffSummary runStage1(String allDiffs) {
         log.info("[Pipeline] Stage 1: 分析变更摘要...");
-        long stage1Start = System.currentTimeMillis();
-        DiffSummary summary;
+        long start = System.currentTimeMillis();
         try {
-            Result<DiffSummary> summaryResult = summaryAgent.summarize(allDiffs);
-            trackTokens(summaryResult);
-            summary = summaryResult.content();
+            Result<DiffSummary> result = summaryAgent.summarize(allDiffs);
+            trackTokens(result);
+            log.info("[Pipeline] Stage 1 完成：耗时 {}ms", System.currentTimeMillis() - start);
+            return result.content();
         } catch (Exception e) {
             log.warn("[Pipeline] Stage 1 失败，使用简化摘要：{}", e.getMessage());
-            summary = new DiffSummary("代码变更审查", List.of(), List.of(), 3);
+            return new DiffSummary("代码变更审查", List.of(), List.of(), 3);
         }
-        log.info("[Pipeline] Stage 1 完成：耗时 {}ms", System.currentTimeMillis() - stage1Start);
+    }
 
-        String summaryText = summary != null && summary.summary() != null
-                ? summary.summary() : "代码变更审查";
+    private record ParallelReviewResult(String security, String logic, String quality) {}
 
-        // Stage 2: 并行专项审查
+    private ParallelReviewResult runStage2(String summaryText, String allDiffs) {
         log.info("[Pipeline] Stage 2: 并行专项审查（安全/逻辑/质量）...");
-        long stage2Start = System.currentTimeMillis();
+        long start = System.currentTimeMillis();
+
         CompletableFuture<String> securityFuture = CompletableFuture.supplyAsync(
                 () -> safeReview(securityReviewer, summaryText, allDiffs), parallelExecutor);
         CompletableFuture<String> logicFuture = CompletableFuture.supplyAsync(
@@ -156,13 +160,10 @@ public class MultiStageReviewService implements AutoCloseable {
         CompletableFuture<String> qualityFuture = CompletableFuture.supplyAsync(
                 () -> safeReview(qualityReviewer, summaryText, allDiffs), parallelExecutor);
 
-        String securityResult = null;
-        String logicResult = null;
-        String qualityResult = null;
-        CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-                securityFuture, logicFuture, qualityFuture);
+        String securityResult = null, logicResult = null, qualityResult = null;
         try {
-            allFutures.get(5, TimeUnit.MINUTES);
+            CompletableFuture.allOf(securityFuture, logicFuture, qualityFuture)
+                    .get(5, TimeUnit.MINUTES);
             securityResult = securityFuture.getNow(null);
             logicResult = logicFuture.getNow(null);
             qualityResult = qualityFuture.getNow(null);
@@ -177,37 +178,30 @@ public class MultiStageReviewService implements AutoCloseable {
             Thread.currentThread().interrupt();
             log.warn("[Pipeline] Stage 2 审查被中断");
         }
-        // 从已完成的 Future 中获取可用结果
-        securityResult = safeGetResult(securityFuture, securityResult);
-        logicResult = safeGetResult(logicFuture, logicResult);
-        qualityResult = safeGetResult(qualityFuture, qualityResult);
-        log.info("[Pipeline] Stage 2 完成：耗时 {}ms", System.currentTimeMillis() - stage2Start);
 
-        // Stage 3: 聚合
+        log.info("[Pipeline] Stage 2 完成：耗时 {}ms", System.currentTimeMillis() - start);
+        return new ParallelReviewResult(
+                safeGetResult(securityFuture, securityResult),
+                safeGetResult(logicFuture, logicResult),
+                safeGetResult(qualityFuture, qualityResult));
+    }
+
+    private AggregatedReview runStage3(String summaryText, ParallelReviewResult pr) {
         log.info("[Pipeline] Stage 3: 聚合审查结果...");
-        long stage3Start = System.currentTimeMillis();
-        AggregatedReview aggregated;
+        long start = System.currentTimeMillis();
         try {
-            // null 安全处理：防止 null 结果传入聚合 Agent
-            String secInput = securityResult != null ? securityResult : "（安全审查未返回结果）";
-            String logInput = logicResult != null ? logicResult : "（逻辑审查未返回结果）";
-            String qualInput = qualityResult != null ? qualityResult : "（质量审查未返回结果）";
+            String secInput = pr.security() != null ? pr.security() : "（安全审查未返回结果）";
+            String logInput = pr.logic() != null ? pr.logic() : "（逻辑审查未返回结果）";
+            String qualInput = pr.quality() != null ? pr.quality() : "（质量审查未返回结果）";
             Result<AggregatedReview> aggResult = aggregationAgent.aggregate(
                     summaryText, secInput, logInput, qualInput);
             trackTokens(aggResult);
-            aggregated = aggResult.content();
+            log.info("[Pipeline] Stage 3 完成：耗时 {}ms", System.currentTimeMillis() - start);
+            return aggResult.content();
         } catch (Exception e) {
             log.warn("[Pipeline] Stage 3 聚合失败，手动合并：{}", e.getMessage());
-            aggregated = null;
+            return null;
         }
-        log.info("[Pipeline] Stage 3 完成：耗时 {}ms", System.currentTimeMillis() - stage3Start);
-
-        // 转换为 ReviewResult
-        ReviewResult result = convertToReviewResult(aggregated, diffEntries.size());
-        result.setReviewDurationMs(System.currentTimeMillis() - startTime);
-        log.info("[Pipeline] 完成：{} 个问题，耗时 {}ms",
-                result.getIssues().size(), result.getReviewDurationMs());
-        return result;
     }
 
     private String safeReview(Object reviewer, String summary, String diff) {
@@ -249,57 +243,11 @@ public class MultiStageReviewService implements AutoCloseable {
         if (future.isDone() && !future.isCancelled()) {
             try {
                 return future.getNow(null);
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) {}
         }
         return null;
     }
 
-    private String concatenateDiffs(List<DiffFileEntry> entries) {
-        return entries.stream()
-                .map(e -> "--- 文件：" + e.getFilePath() + " ---\n" + e.getContent())
-                .collect(Collectors.joining("\n\n"));
-    }
-
-    private String truncateToTokenLimit(String content, int maxTokens, String provider) {
-        String truncated = content;
-        while (TokenEstimator.estimate(truncated, provider) > maxTokens && truncated.length() > 100) {
-            truncated = truncated.substring(0, truncated.length() * 2 / 3);
-        }
-        return truncated + "\n\n... (内容已截断，超出 token 限制)";
-    }
-
-    private ReviewResult convertToReviewResult(AggregatedReview aggregated, int fileCount) {
-        ReviewResult result = new ReviewResult();
-        result.setTotalFilesReviewed(fileCount);
-
-        if (aggregated == null) {
-            return result;
-        }
-
-        if (Boolean.TRUE.equals(aggregated.has_critical())) {
-            result.setHasCriticalFlag(true);
-        }
-
-        if (aggregated.issues() != null) {
-            for (IssueRecord ir : aggregated.issues()) {
-                ReviewIssue issue = new ReviewIssue();
-                issue.setSeverity(Severity.fromString(ir.severity()));
-                issue.setFile(ir.file() != null ? ir.file() : "");
-                issue.setLine(ir.line());
-                issue.setType(ir.type() != null ? ir.type() : "");
-                issue.setMessage(ir.message() != null ? ir.message() : "");
-                issue.setSuggestion(ir.suggestion() != null ? ir.suggestion() : "");
-                result.addIssue(issue);
-            }
-        }
-
-        return result;
-    }
-
-    /**
-     * 关闭线程池。
-     */
     @Override
     public void close() {
         parallelExecutor.shutdown();

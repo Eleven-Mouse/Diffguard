@@ -206,10 +206,14 @@ public class ReviewConfig {
         @JsonProperty("max_total_tokens")
         private int maxTotalTokens = 50000;
 
+        private String engine = "simple";
+
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
         public int getMaxTotalTokens() { return maxTotalTokens; }
         public void setMaxTotalTokens(int maxTotalTokens) { this.maxTotalTokens = maxTotalTokens; }
+        public String getEngine() { return engine; }
+        public void setEngine(String engine) { this.engine = engine; }
     }
 
     public PipelineConfig getPipeline() { return pipeline; }

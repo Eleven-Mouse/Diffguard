@@ -8,6 +8,8 @@ import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.MarkdownFormatter;
 import com.diffguard.output.ProgressDisplay;
+import com.diffguard.review.ReviewEngine;
+import com.diffguard.review.ReviewEngineFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -108,8 +110,10 @@ public class ReviewOrchestrator implements AutoCloseable {
             diffEntries = new com.diffguard.ast.ASTEnricher(localPath, config).enrich(diffEntries);
 
             // 5. 执行审查
-            try (ReviewService reviewService = new ReviewService(config, localPath, false)) {
-                ReviewResult result = reviewService.review(diffEntries);
+            ReviewEngineFactory.EngineType engineType =
+                    ReviewEngineFactory.resolveEngineType(config, false, false);
+            try (ReviewEngine engine = ReviewEngineFactory.create(engineType, config, localPath, diffEntries, false)) {
+                ReviewResult result = engine.review(diffEntries, localPath);
 
                 // 6. 格式化为 Markdown
                 String markdown = MarkdownFormatter.format(result);

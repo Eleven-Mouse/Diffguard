@@ -1,13 +1,9 @@
 package com.diffguard.agent.pipeline;
 
-import com.diffguard.model.IssueRecord;
-import dev.langchain4j.model.output.structured.Description;
 import dev.langchain4j.service.Result;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
-
-import java.util.List;
 
 /**
  * Stage 2：逻辑和 Bug 风险审查 Agent。

@@ -70,7 +70,7 @@ class MultiStageReviewServiceEdgeCaseTest {
 
         @Test
         @DisplayName("空 diff 列表 → 空 ReviewResult，零 issues")
-        void emptyDiffListReturnsEmptyResult() {
+        void emptyDiffListReturnsEmptyResult() throws Exception {
             when(mockSummaryAgent.summarize(anyString()))
                     .thenReturn(resultOf(makeSummary()));
             when(mockAggregationAgent.aggregate(anyString(), anyString(), anyString(), anyString()))
@@ -87,7 +87,7 @@ class MultiStageReviewServiceEdgeCaseTest {
 
         @Test
         @DisplayName("空 diff 列表 → reviewDurationMs > 0")
-        void emptyDiffStillTracksDuration() {
+        void emptyDiffStillTracksDuration() throws Exception {
             when(mockSummaryAgent.summarize(anyString()))
                     .thenReturn(resultOf(makeSummary()));
             when(mockAggregationAgent.aggregate(anyString(), anyString(), anyString(), anyString()))
@@ -110,7 +110,7 @@ class MultiStageReviewServiceEdgeCaseTest {
 
         @Test
         @DisplayName("issue 的 file 为 null → 转为空字符串")
-        void nullFileBecomesEmpty() {
+        void nullFileBecomesEmpty() throws Exception {
             AggregatedReview agg = new AggregatedReview(false, "总结",
                     List.of(new IssueRecord("WARNING", null, 1, "类型", "消息", "建议")),
                     List.of(), List.of());
@@ -134,7 +134,7 @@ class MultiStageReviewServiceEdgeCaseTest {
 
         @Test
         @DisplayName("issue 的 type/message/suggestion 为 null → 转为空字符串")
-        void nullTypeMessageSuggestionBecomeEmpty() {
+        void nullTypeMessageSuggestionBecomeEmpty() throws Exception {
             AggregatedReview agg = new AggregatedReview(false, "总结",
                     List.of(new IssueRecord("WARNING", "A.java", 1, null, null, null)),
                     List.of(), List.of());
@@ -169,7 +169,7 @@ class MultiStageReviewServiceEdgeCaseTest {
 
         @Test
         @DisplayName("三个审查全部失败 → Stage 3 仍被调用并返回聚合结果")
-        void allStage2FailStage3StillSucceeds() {
+        void allStage2FailStage3StillSucceeds() throws Exception {
             when(mockSummaryAgent.summarize(anyString())).thenReturn(resultOf(makeSummary()));
             when(mockSecurityReviewer.review(anyString(), anyString()))
                     .thenThrow(new RuntimeException("安全审查失败"));
@@ -189,7 +189,7 @@ class MultiStageReviewServiceEdgeCaseTest {
 
         @Test
         @DisplayName("三个审查全部失败 + Stage 3 失败 → 返回空结果")
-        void allStagesFailReturnsEmptyResult() {
+        void allStagesFailReturnsEmptyResult() throws Exception {
             when(mockSummaryAgent.summarize(anyString())).thenReturn(resultOf(makeSummary()));
             when(mockSecurityReviewer.review(anyString(), anyString()))
                     .thenThrow(new RuntimeException("失败"));
@@ -217,7 +217,7 @@ class MultiStageReviewServiceEdgeCaseTest {
 
         @Test
         @DisplayName("正常 Pipeline → reviewDurationMs > 0")
-        void durationRecorded() {
+        void durationRecorded() throws Exception {
             when(mockSummaryAgent.summarize(anyString())).thenReturn(resultOf(makeSummary()));
             when(mockSecurityReviewer.review(anyString(), anyString()))
                     .thenReturn(resultOf(new TargetedReviewResult("安全OK", List.of())));

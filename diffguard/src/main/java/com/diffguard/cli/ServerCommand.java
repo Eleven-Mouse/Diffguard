@@ -4,16 +4,12 @@ import com.diffguard.config.ConfigLoader;
 import com.diffguard.config.ReviewConfig;
 import com.diffguard.exception.ConfigException;
 import com.diffguard.webhook.WebhookServer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 
 import java.nio.file.Path;
 
 @CommandLine.Command(name = "server", description = "启动 Webhook 服务器接收 GitHub PR 事件")
 public class ServerCommand implements Runnable {
-
-    private static final Logger log = LoggerFactory.getLogger(ServerCommand.class);
 
     @CommandLine.Option(names = {"--port"}, description = "监听端口（默认从配置读取或 8080）")
     Integer port;

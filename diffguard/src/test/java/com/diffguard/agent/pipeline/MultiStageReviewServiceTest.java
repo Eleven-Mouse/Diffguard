@@ -74,7 +74,7 @@ class MultiStageReviewServiceTest {
 
         @Test
         @DisplayName("三阶段正常完成：总结 → 并行审查 → 聚合")
-        void fullPipelineSuccess() {
+        void fullPipelineSuccess() throws Exception {
             when(mockSummaryAgent.summarize(anyString()))
                     .thenReturn(resultOf(makeSummary()));
             when(mockSecurityReviewer.review(anyString(), anyString()))
@@ -98,7 +98,7 @@ class MultiStageReviewServiceTest {
 
         @Test
         @DisplayName("CRITICAL 问题正确传播")
-        void criticalIssuePropagation() {
+        void criticalIssuePropagation() throws Exception {
             when(mockSummaryAgent.summarize(anyString()))
                     .thenReturn(resultOf(makeSummary()));
             when(mockSecurityReviewer.review(anyString(), anyString()))
@@ -125,7 +125,7 @@ class MultiStageReviewServiceTest {
 
         @Test
         @DisplayName("Stage 1 失败时使用简化摘要继续")
-        void stage1FailureFallback() {
+        void stage1FailureFallback() throws Exception {
             when(mockSummaryAgent.summarize(anyString()))
                     .thenThrow(new RuntimeException("LLM 超时"));
             when(mockSecurityReviewer.review(anyString(), anyString()))
@@ -148,7 +148,7 @@ class MultiStageReviewServiceTest {
 
         @Test
         @DisplayName("单个 Stage 2 审查失败不影响其他")
-        void stage2PartialFailure() {
+        void stage2PartialFailure() throws Exception {
             when(mockSummaryAgent.summarize(anyString()))
                     .thenReturn(resultOf(makeSummary()));
             when(mockSecurityReviewer.review(anyString(), anyString()))
@@ -170,7 +170,7 @@ class MultiStageReviewServiceTest {
 
         @Test
         @DisplayName("Stage 3 聚合失败返回空结果")
-        void stage3FailureFallback() {
+        void stage3FailureFallback() throws Exception {
             when(mockSummaryAgent.summarize(anyString()))
                     .thenReturn(resultOf(makeSummary()));
             when(mockSecurityReviewer.review(anyString(), anyString()))
