@@ -46,7 +46,7 @@ public interface VectorStore {
     record SearchResult(String chunkId, float score) implements Comparable<SearchResult> {
         @Override
         public int compareTo(SearchResult other) {
-            return Float.compare(other.score, this.score);
+            return Float.compare(this.score, other.score);
         }
     }
 }

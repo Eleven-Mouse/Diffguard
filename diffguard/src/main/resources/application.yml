@@ -38,6 +38,12 @@ review:
   max_tokens_per_file: 4000
   language: zh
 
+# Code RAG Embedding 配置
+# embedding:
+#   provider: tfidf            # tfidf 或 openai
+#   model: text-embedding-3-small  # OpenAI embedding 模型
+#   dimensions: 1536           # 向量维度
+
 # Webhook 服务器配置（仅 server 模式需要）
 # webhook:
 #   port: 8080

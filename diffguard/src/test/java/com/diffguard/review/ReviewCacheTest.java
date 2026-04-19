@@ -198,12 +198,11 @@ class ReviewCacheTest {
         }
 
         @Test
-        @DisplayName("规则顺序不影响哈希（已拼接为有序字符串）")
-        void rulesOrderMatters() {
+        @DisplayName("规则顺序不影响哈希（排序后拼接）")
+        void rulesOrderDoesNotMatter() {
             String h1 = ReviewCache.computeContextHash("gpt-5", List.of("security", "bug-risk"), "zh", false);
             String h2 = ReviewCache.computeContextHash("gpt-5", List.of("bug-risk", "security"), "zh", false);
-            // 不同顺序产生不同哈希（字符串拼接方式决定）
-            assertNotEquals(h1, h2);
+            assertEquals(h1, h2);
         }
 
         @Test

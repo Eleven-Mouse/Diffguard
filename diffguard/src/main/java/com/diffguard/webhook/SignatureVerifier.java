@@ -34,8 +34,8 @@ public class SignatureVerifier {
      */
     public boolean verify(String payload, String signature) {
         if (secret == null || secret.isBlank()) {
-            log.warn("Webhook secret 未配置，跳过签名校验（仅限开发环境使用）");
-            return true;
+            log.error("Webhook secret 未配置，签名校验拒绝（请在配置中设置 webhook secret）");
+            return false;
         }
 
         if (signature == null || !signature.startsWith("sha256=")) {

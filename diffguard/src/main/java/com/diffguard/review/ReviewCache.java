@@ -78,11 +78,20 @@ public class ReviewCache {
     }
 
     /**
-     * @see CacheKeyGenerator#computeContextHash(String, List, String, boolean)
+     * @see CacheKeyGenerator#computeContextHash(String, List, String, boolean, String)
      */
     public static String computeContextHash(String model, List<String> enabledRules,
                                             String language, boolean pipelineEnabled) {
         return CacheKeyGenerator.computeContextHash(model, enabledRules, language, pipelineEnabled);
+    }
+
+    /**
+     * @see CacheKeyGenerator#computeContextHash(String, List, String, boolean, String)
+     */
+    public static String computeContextHash(String model, List<String> enabledRules,
+                                            String language, boolean pipelineEnabled,
+                                            String promptHash) {
+        return CacheKeyGenerator.computeContextHash(model, enabledRules, language, pipelineEnabled, promptHash);
     }
 
     // ========== 缓存操作 ==========

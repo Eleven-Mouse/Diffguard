@@ -36,7 +36,7 @@ public class InMemoryVectorStore implements VectorStore {
         }
 
         List<SearchResult> results = new ArrayList<>(heap);
-        results.sort(Comparator.naturalOrder());
+        results.sort(Comparator.reverseOrder());
         return results;
     }
 

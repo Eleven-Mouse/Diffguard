@@ -64,7 +64,7 @@ public class ReviewEngineFactory {
             }
             case MULTI_AGENT -> {
                 ChatModel chatModel = createChatModel(config);
-                yield new MultiAgentReviewOrchestrator(chatModel, projectDir);
+                yield new MultiAgentReviewOrchestrator(chatModel, projectDir, config);
             }
         };
     }

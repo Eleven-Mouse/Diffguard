@@ -1,6 +1,7 @@
 package com.diffguard.webhook;
 
 import com.diffguard.exception.WebhookException;
+import com.diffguard.util.JacksonMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -10,7 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class GitHubPayloadParser {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JacksonMapper.MAPPER;
 
     public static ParsedPullRequest parse(String payload) throws WebhookException {
         try {

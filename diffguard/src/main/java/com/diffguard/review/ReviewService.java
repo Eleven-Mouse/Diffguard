@@ -72,13 +72,15 @@ public class ReviewService implements ReviewEngine {
     public ReviewResult review(List<DiffFileEntry> diffEntries) throws DiffGuardException {
         ReviewResult result = new ReviewResult();
 
-        // 预计算审查上下文哈希，确保模型/规则/语言变化后不会命中旧缓存
+        // 预计算审查上下文哈希，确保模型/规则/语言/模板变化后不会命中旧缓存
+        String promptHash = computePromptHash();
         String contextHash = cache != null
                 ? ReviewCache.computeContextHash(
                     config.getLlm().getModel(),
                     config.getRules().getEnabled(),
                     config.getReview().getLanguage(),
-                    config.getPipeline().isEnabled())
+                    config.getPipeline().isEnabled(),
+                    promptHash)
                 : null;
 
         // 1. 缓存查询：分离已缓存和未缓存的文件
@@ -197,6 +199,21 @@ public class ReviewService implements ReviewEngine {
             ownedClient.withTools(new UnifiedToolProvider(projectDir, uncachedEntries, sandbox, 10));
         }
         return ownedClient;
+    }
+
+    /**
+     * 计算 prompt 模板哈希，确保模板变更后缓存失效。
+     */
+    private String computePromptHash() {
+        PromptBuilder pb = new PromptBuilder(config, projectDir);
+        List<PromptBuilder.PromptContent> samples = pb.buildPrompts(
+                java.util.List.of(new DiffFileEntry("dummy.java", "dummy diff content", 3)));
+        if (samples.isEmpty()) {
+            return null;
+        }
+        PromptBuilder.PromptContent sample = samples.get(0);
+        String combined = sample.getSystemPrompt() + sample.getUserPrompt();
+        return CacheKeyGenerator.sha256(combined);
     }
 
     @Override

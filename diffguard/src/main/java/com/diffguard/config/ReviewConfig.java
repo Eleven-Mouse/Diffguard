@@ -15,6 +15,7 @@ public class ReviewConfig {
     private ReviewOptions review = new ReviewOptions();
     private PipelineConfig pipeline = new PipelineConfig();
     private WebhookConfig webhook = null;
+    private EmbeddingConfig embedding = new EmbeddingConfig();
 
     public LlmConfig getLlm() {
         return llm;
@@ -56,6 +57,14 @@ public class ReviewConfig {
         this.webhook = webhook;
     }
 
+    public EmbeddingConfig getEmbedding() {
+        return embedding;
+    }
+
+    public void setEmbedding(EmbeddingConfig embedding) {
+        this.embedding = embedding;
+    }
+
     /**
      * 校验配置参数合法性。
      *
@@ -68,6 +77,14 @@ public class ReviewConfig {
         }
         if (review.maxTokensPerFile <= 0) {
             throw new IllegalArgumentException("review.max_tokens_per_file 必须大于 0，当前值：" + review.maxTokensPerFile);
+        }
+        if (embedding.isOpenAi()) {
+            if (embedding.getModel() == null || embedding.getModel().isBlank()) {
+                throw new IllegalArgumentException("embedding.model 不能为空 when provider is openai");
+            }
+            if (embedding.getDimensions() != null && embedding.getDimensions() <= 0) {
+                throw new IllegalArgumentException("embedding.dimensions 必须大于 0，当前值：" + embedding.getDimensions());
+            }
         }
     }
 
@@ -282,5 +299,41 @@ public class ReviewConfig {
         public void setFullName(String fullName) { this.fullName = fullName; }
         public String getLocalPath() { return localPath; }
         public void setLocalPath(String localPath) { this.localPath = localPath; }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class EmbeddingConfig {
+        private String provider = "tfidf";
+        private String model = "text-embedding-3-small";
+        private Integer dimensions = 1536;
+
+        public String getProvider() { return provider; }
+        public void setProvider(String provider) { this.provider = provider; }
+        public String getModel() { return model; }
+        public void setModel(String model) { this.model = model; }
+        public Integer getDimensions() { return dimensions; }
+        public void setDimensions(Integer dimensions) { this.dimensions = dimensions; }
+
+        public boolean isOpenAi() {
+            return "openai".equalsIgnoreCase(provider);
+        }
+
+        /**
+         * 解析 Embedding API Key，复用 LLM 的环境变量。
+         */
+        public String resolveApiKey(String llmApiKeyEnv) {
+            String key = System.getenv(llmApiKeyEnv != null ? llmApiKeyEnv : "DIFFGUARD_API_KEY");
+            return (key != null && !key.isBlank()) ? key.trim() : null;
+        }
+
+        /**
+         * 解析 Embedding API Base URL，复用 LLM 的 base_url 以兼容代理。
+         */
+        public String resolveBaseUrl(String llmBaseUrl) {
+            if (llmBaseUrl != null && !llmBaseUrl.isBlank()) {
+                return llmBaseUrl.endsWith("/") ? llmBaseUrl.substring(0, llmBaseUrl.length() - 1) : llmBaseUrl;
+            }
+            return "https://api.openai.com/v1";
+        }
     }
 }

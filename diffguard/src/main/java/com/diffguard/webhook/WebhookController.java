@@ -54,18 +54,18 @@ public class WebhookController {
         String signature = ctx.header("X-Hub-Signature-256");
         String event = ctx.header("X-GitHub-Event");
 
-        // 0. 频率限制：支持 X-Forwarded-For 代理场景
+        // 1. 验证签名（先于频率限制，避免未认证请求消耗限速配额）
+        if (!signatureVerifier.verify(payload, signature)) {
+            log.warn("Webhook 签名校验失败");
+            ctx.status(401).result("Invalid signature");
+            return;
+        }
+
+        // 2. 频率限制（签名验证通过后才计限速）
         String clientIp = resolveClientIp(ctx);
         if (!rateLimiter.allowRequest(clientIp)) {
             log.warn("请求被频率限制：IP={}", clientIp);
             ctx.status(429).result("Too many requests");
-            return;
-        }
-
-        // 1. 验证签名
-        if (!signatureVerifier.verify(payload, signature)) {
-            log.warn("Webhook 签名校验失败");
-            ctx.status(401).result("Invalid signature");
             return;
         }
 
@@ -112,17 +112,11 @@ public class WebhookController {
     }
 
     /**
-     * 解析客户端真实 IP，支持反向代理场景。
-     * 优先使用 X-Forwarded-For 头（取第一个 IP），回退到 Javalin 的 ctx.ip()。
+     * 解析客户端 IP。
+     * 使用 Javalin 的 ctx.ip()，由框架/反向代理层处理可信头解析。
+     * 不自行解析 X-Forwarded-For 以避免 IP 伪造。
      */
     static String resolveClientIp(Context ctx) {
-        String forwarded = ctx.header("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            String firstIp = forwarded.split(",")[0].trim();
-            if (!firstIp.isBlank()) {
-                return firstIp;
-            }
-        }
         return ctx.ip();
     }
 }

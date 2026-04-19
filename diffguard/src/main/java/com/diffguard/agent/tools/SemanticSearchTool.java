@@ -4,6 +4,7 @@ import com.diffguard.agent.core.AgentContext;
 import com.diffguard.agent.core.AgentTool;
 import com.diffguard.agent.core.ToolResult;
 import com.diffguard.coderag.CodeRAGService;
+import com.diffguard.config.ReviewConfig;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -22,6 +23,14 @@ public class SemanticSearchTool implements AgentTool {
 
     public SemanticSearchTool(CodeRAGService ragService) {
         this.ragService = ragService;
+    }
+
+    /**
+     * 根据配置创建语义搜索工具，自动选择 Embedding 提供者。
+     */
+    public SemanticSearchTool(Path projectDir, ReviewConfig config) {
+        this.ragService = new CodeRAGService(config);
+        this.ragService.indexProject(projectDir);
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.diffguard.agent.core.*;
 import com.diffguard.agent.strategy.ReviewStrategy;
 import com.diffguard.agent.strategy.ReviewStrategy.AgentType;
 import com.diffguard.agent.strategy.StrategyPlanner;
+import com.diffguard.config.ReviewConfig;
 import com.diffguard.model.DiffFileEntry;
 import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
@@ -34,17 +35,29 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
     private final Path projectDir;
     private final ExecutorService executor;
     private final int timeoutMinutes;
+    private final ReviewConfig config;
 
     public MultiAgentReviewOrchestrator(ChatModel chatModel, Path projectDir) {
-        this(chatModel, projectDir, 3);
+        this(chatModel, projectDir, 3, null);
     }
 
     public MultiAgentReviewOrchestrator(ChatModel chatModel, Path projectDir,
                                          int timeoutMinutes) {
+        this(chatModel, projectDir, timeoutMinutes, null);
+    }
+
+    public MultiAgentReviewOrchestrator(ChatModel chatModel, Path projectDir,
+                                         ReviewConfig config) {
+        this(chatModel, projectDir, 3, config);
+    }
+
+    private MultiAgentReviewOrchestrator(ChatModel chatModel, Path projectDir,
+                                          int timeoutMinutes, ReviewConfig config) {
         this.chatModel = chatModel;
         this.projectDir = projectDir;
         this.executor = Executors.newFixedThreadPool(3);
         this.timeoutMinutes = timeoutMinutes;
+        this.config = config;
     }
 
     @Override
@@ -131,15 +144,21 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
         double architectureWeight = strategy.getAgentWeights().getOrDefault(AgentType.ARCHITECTURE, 1.0);
 
         if (securityWeight > 0) {
-            SecurityReviewAgent security = SecurityReviewAgent.create(chatModel, agentProjectDir);
+            SecurityReviewAgent security = config != null
+                    ? SecurityReviewAgent.create(chatModel, agentProjectDir, config, strategy)
+                    : SecurityReviewAgent.create(chatModel, agentProjectDir, strategy);
             agents.add(new NamedAgent("Security", security::review));
         }
         if (performanceWeight > 0) {
-            PerformanceReviewAgent performance = PerformanceReviewAgent.create(chatModel, agentProjectDir);
+            PerformanceReviewAgent performance = config != null
+                    ? PerformanceReviewAgent.create(chatModel, agentProjectDir, config, strategy)
+                    : PerformanceReviewAgent.create(chatModel, agentProjectDir, strategy);
             agents.add(new NamedAgent("Performance", performance::review));
         }
         if (architectureWeight > 0) {
-            ArchitectureReviewAgent architecture = ArchitectureReviewAgent.create(chatModel, agentProjectDir);
+            ArchitectureReviewAgent architecture = config != null
+                    ? ArchitectureReviewAgent.create(chatModel, agentProjectDir, config, strategy)
+                    : ArchitectureReviewAgent.create(chatModel, agentProjectDir, strategy);
             agents.add(new NamedAgent("Architecture", architecture::review));
         }
 

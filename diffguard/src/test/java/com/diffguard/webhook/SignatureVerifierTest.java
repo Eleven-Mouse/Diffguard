@@ -72,17 +72,17 @@ class SignatureVerifierTest {
         }
 
         @Test
-        @DisplayName("secret 未配置 → 跳过校验，返回 true")
-        void noSecretSkipsVerification() {
+        @DisplayName("secret 未配置 → 拒绝请求（fail-closed）")
+        void noSecretRejectsRequest() {
             SignatureVerifier verifier = new SignatureVerifier(null);
-            assertTrue(verifier.verify("payload", null));
+            assertFalse(verifier.verify("payload", null));
         }
 
         @Test
-        @DisplayName("空白 secret → 跳过校验，返回 true")
-        void blankSecretSkipsVerification() {
+        @DisplayName("空白 secret → 拒绝请求（fail-closed）")
+        void blankSecretRejectsRequest() {
             SignatureVerifier verifier = new SignatureVerifier("   ");
-            assertTrue(verifier.verify("payload", null));
+            assertFalse(verifier.verify("payload", null));
         }
     }
 

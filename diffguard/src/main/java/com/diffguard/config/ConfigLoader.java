@@ -1,8 +1,11 @@
 package com.diffguard.config;
 
 import com.diffguard.exception.ConfigException;
+import com.diffguard.util.JacksonMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import java.io.File;
@@ -18,35 +21,67 @@ public class ConfigLoader {
 
     /**
      * 三层配置加载：项目级 → 用户主目录 → 内置默认值。
-     * 加载后自动校验配置合法性。
+     * 支持深度合并：上层配置覆盖内置默认值，未声明的字段保留默认值。
      */
     public static ReviewConfig load(Path projectDir) throws ConfigException {
-        ReviewConfig config;
+        ReviewConfig defaults = loadDefaults();
 
         // 1. 尝试项目级配置
         File projectConfig = projectDir.resolve(CONFIG_FILENAME).toFile();
         if (projectConfig.exists()) {
             try {
-                config = YAML_MAPPER.readValue(projectConfig, ReviewConfig.class);
+                ReviewConfig projectOverrides = YAML_MAPPER.readValue(projectConfig, ReviewConfig.class);
+                return validateAndReturn(mergeConfig(defaults, projectOverrides));
             } catch (IOException e) {
                 throw new ConfigException("解析项目配置失败：" + e.getMessage(), e);
             }
-            return validateAndReturn(config);
         }
 
         // 2. 尝试用户主目录配置
         File homeConfig = Path.of(System.getProperty("user.home"), CONFIG_FILENAME).toFile();
         if (homeConfig.exists()) {
             try {
-                config = YAML_MAPPER.readValue(homeConfig, ReviewConfig.class);
+                ReviewConfig homeOverrides = YAML_MAPPER.readValue(homeConfig, ReviewConfig.class);
+                return validateAndReturn(mergeConfig(defaults, homeOverrides));
             } catch (IOException e) {
                 throw new ConfigException("解析用户主目录配置失败：" + e.getMessage(), e);
             }
-            return validateAndReturn(config);
         }
 
-        // 3. 回退到内置默认配置
-        return loadDefaults();
+        return validateAndReturn(defaults);
+    }
+
+    /**
+     * 深度合并配置：overrides 中非 null 的字段覆盖 defaults 中的值。
+     * 嵌套对象递归合并，列表类型直接替换。
+     */
+    static ReviewConfig mergeConfig(ReviewConfig defaults, ReviewConfig overrides) {
+        try {
+            ObjectMapper mapper = JacksonMapper.MAPPER;
+            JsonNode defaultsNode = mapper.valueToTree(defaults);
+            JsonNode overridesNode = mapper.valueToTree(overrides);
+            JsonNode merged = deepMerge(defaultsNode, overridesNode);
+            return mapper.treeToValue(merged, ReviewConfig.class);
+        } catch (Exception e) {
+            return overrides;
+        }
+    }
+
+    private static JsonNode deepMerge(JsonNode base, JsonNode override) {
+        if (!override.isObject() || !base.isObject()) {
+            return override.isNull() ? base : override;
+        }
+        ObjectNode result = (ObjectNode) base.deepCopy();
+        override.fields().forEachRemaining(entry -> {
+            String key = entry.getKey();
+            JsonNode overrideVal = entry.getValue();
+            if (result.has(key) && result.get(key).isObject() && overrideVal.isObject()) {
+                result.set(key, deepMerge(result.get(key), overrideVal));
+            } else if (!overrideVal.isNull()) {
+                result.set(key, overrideVal);
+            }
+        });
+        return result;
     }
 
     /**

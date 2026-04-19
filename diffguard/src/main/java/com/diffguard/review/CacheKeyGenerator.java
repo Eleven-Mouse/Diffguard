@@ -48,10 +48,19 @@ public final class CacheKeyGenerator {
     }
 
     /**
-     * 根据审查配置计算上下文哈希，用于区分不同模型/规则/语言下的审查结果。
+     * 根据审查配置计算上下文哈希，用于区分不同模型/规则/语言/模板下的审查结果。
      */
     public static String computeContextHash(String model, List<String> enabledRules,
                                             String language, boolean pipelineEnabled) {
+        return computeContextHash(model, enabledRules, language, pipelineEnabled, null);
+    }
+
+    /**
+     * 根据审查配置和 prompt 模板内容计算上下文哈希。
+     */
+    public static String computeContextHash(String model, List<String> enabledRules,
+                                            String language, boolean pipelineEnabled,
+                                            String promptHash) {
         String normalizedRules = enabledRules == null ? ""
                 : enabledRules.stream()
                         .filter(Objects::nonNull)
@@ -63,7 +72,8 @@ public final class CacheKeyGenerator {
         String raw = (model != null ? model : "<unset>")
                 + "|rules=" + normalizedRules
                 + "|lang=" + (language != null ? language : "")
-                + "|pipeline=" + pipelineEnabled;
+                + "|pipeline=" + pipelineEnabled
+                + "|prompt=" + (promptHash != null ? promptHash : "");
         return sha256(raw);
     }
 

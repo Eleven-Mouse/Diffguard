@@ -165,28 +165,29 @@ class WebhookControllerTest {
     class RateLimiting {
 
         @Test
-        @DisplayName("超限请求返回 429，不执行签名验证")
-        void rateLimitReturns429() {
+        @DisplayName("签名验证先于频率限制执行")
+        void signatureVerifiedBeforeRateLimit() {
             RateLimiter strictLimiter = new RateLimiter(1, Duration.ofMinutes(1));
             WebhookController limitedController = new WebhookController(
                     mockVerifier, mockOrchestrator, strictLimiter);
 
+            when(mockVerifier.verify(anyString(), anyString())).thenReturn(true);
             when(mockContext.ip()).thenReturn("10.0.0.1");
             when(mockContext.body()).thenReturn("{}");
             when(mockContext.header("X-Hub-Signature-256")).thenReturn("sha256=abc");
-            when(mockContext.header("X-GitHub-Event")).thenReturn("pull_request");
+            when(mockContext.header("X-GitHub-Event")).thenReturn("ping");
 
-            // 第一次请求通过限流，到达签名验证
+            // 第一次请求通过签名验证和限流
             limitedController.handleWebhook(mockContext);
             verify(mockContext, never()).status(429);
             verify(mockVerifier, times(1)).verify(anyString(), anyString());
 
-            // 第二次请求被限流，签名验证不再被调用
+            // 第二次请求：签名验证先通过，然后被限流
             limitedController.handleWebhook(mockContext);
             verify(mockContext).status(429);
             verify(mockContext).result("Too many requests");
-            // 总共仍只调用了一次签名验证（第二次被限流拦截）
-            verify(mockVerifier, times(1)).verify(anyString(), anyString());
+            // 签名验证在限流之前，所以两次请求都会验证签名
+            verify(mockVerifier, times(2)).verify(anyString(), anyString());
         }
 
         @Test
@@ -218,24 +219,8 @@ class WebhookControllerTest {
     class ResolveClientIp {
 
         @Test
-        @DisplayName("无代理头时回退到 ctx.ip()")
-        void noProxyHeader() {
-            when(mockContext.header("X-Forwarded-For")).thenReturn(null);
-            when(mockContext.ip()).thenReturn("192.168.1.1");
-            assertEquals("192.168.1.1", WebhookController.resolveClientIp(mockContext));
-        }
-
-        @Test
-        @DisplayName("X-Forwarded-For 取第一个 IP")
-        void xForwardedForFirstIp() {
-            when(mockContext.header("X-Forwarded-For")).thenReturn("10.0.0.1, 172.16.0.1");
-            assertEquals("10.0.0.1", WebhookController.resolveClientIp(mockContext));
-        }
-
-        @Test
-        @DisplayName("空白 X-Forwarded-For 回退到 ctx.ip()")
-        void blankForwardedFor() {
-            when(mockContext.header("X-Forwarded-For")).thenReturn("  ");
+        @DisplayName("使用 ctx.ip() 获取客户端 IP")
+        void usesContextIp() {
             when(mockContext.ip()).thenReturn("192.168.1.1");
             assertEquals("192.168.1.1", WebhookController.resolveClientIp(mockContext));
         }

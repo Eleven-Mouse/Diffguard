@@ -2,6 +2,7 @@ package com.diffguard.coderag;
 
 import com.diffguard.ast.ASTAnalyzer;
 import com.diffguard.ast.model.ASTAnalysisResult;
+import com.diffguard.config.ReviewConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +43,36 @@ public class CodeRAGService {
     public CodeRAGService(EmbeddingProvider embeddingProvider, VectorStore vectorStore) {
         this.embeddingProvider = embeddingProvider;
         this.vectorStore = vectorStore;
+    }
+
+    /**
+     * 根据配置创建 CodeRAGService，自动选择 Embedding 提供者。
+     * <p>
+     * 配置 {@code embedding.provider: openai} 时使用 OpenAI Embedding API，
+     * 否则使用本地 TF-IDF。API Key 缺失或初始化失败时自动降级为 TF-IDF。
+     */
+    public CodeRAGService(ReviewConfig config) {
+        this.embeddingProvider = createEmbeddingProvider(config);
+        this.vectorStore = new InMemoryVectorStore();
+    }
+
+    private static EmbeddingProvider createEmbeddingProvider(ReviewConfig config) {
+        ReviewConfig.EmbeddingConfig embConfig = config.getEmbedding();
+
+        if (!embConfig.isOpenAi()) {
+            log.info("Code RAG 使用 TF-IDF embedding provider");
+            return new LocalTFIDFProvider();
+        }
+
+        log.info("Code RAG 初始化 OpenAI embedding provider: model={}", embConfig.getModel());
+        String apiKey = embConfig.resolveApiKey(config.getLlm().getApiKeyEnv());
+        String baseUrl = embConfig.resolveBaseUrl(config.getLlm().getBaseUrl());
+        int dimensions = embConfig.getDimensions() != null ? embConfig.getDimensions() : 1536;
+
+        return OpenAiEmbeddingProvider.createWithFallback(
+                apiKey, baseUrl, embConfig.getModel(), dimensions,
+                java.time.Duration.ofSeconds(config.getLlm().getTimeoutSeconds())
+        );
     }
 
     /**

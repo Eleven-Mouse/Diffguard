@@ -19,13 +19,13 @@ public class GetDiffContextTool implements AgentTool {
 
     @Override
     public ToolResult execute(String input, AgentContext context) {
-        String query = input.trim().strip().toLowerCase();
+        String query = input.trim();
 
-        if ("summary".equals(query)) {
+        if ("summary".equalsIgnoreCase(query)) {
             return ToolResult.ok(buildDiffSummary(context));
         }
 
-        // 尝试作为文件路径查询
+        // 尝试作为文件路径查询（保留原始大小写）
         var content = context.getDiffContent(query);
         if (content.isPresent()) {
             return ToolResult.ok("文件 " + query + " 的变更:\n" + content.get());
