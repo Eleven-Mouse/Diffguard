@@ -76,7 +76,9 @@ public class LangChain4jOpenAiAdapter implements LlmProvider {
 
         this.fallbackModel = fallbackBuilder.build();
 
-        log.debug("LangChain4j OpenAI 适配器初始化：model={}, baseUrl={}", config.getModel(), baseUrl);
+        log.info("LLM 适配器初始化：provider=openai, model={}, baseUrl={}, keyPrefix={}...",
+                config.getModel(), baseUrl,
+                apiKey != null && apiKey.length() >= 4 ? apiKey.substring(0, 4) + "***" : "N/A");
     }
 
     /**

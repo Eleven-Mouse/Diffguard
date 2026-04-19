@@ -1,12 +1,16 @@
 package com.diffguard.llm.provider;
 
 import com.diffguard.exception.LlmApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * LLM Provider 共享工具方法。
  * 集中异常翻译、状态码提取等跨 Provider 复用的逻辑。
  */
 public final class ProviderUtils {
+
+    private static final Logger log = LoggerFactory.getLogger(ProviderUtils.class);
 
     private ProviderUtils() {}
 
@@ -27,6 +31,12 @@ public final class ProviderUtils {
         String message = e.getMessage() != null ? e.getMessage() : defaultMessage;
         LlmApiException translated = new LlmApiException(statusCode, message);
         translated.initCause(e);
+
+        if (isQuotaError(translated)) {
+            log.error("LLM quota/billing 错误（statusCode={}）：{}", statusCode, message);
+            log.error("→ 请检查：1) 代理服务余额  2) API Key 是否匹配当前代理  3) 模型是否在当前套餐内");
+        }
+
         return translated;
     }
 

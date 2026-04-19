@@ -3,7 +3,7 @@
 
 llm:
   provider: openai
-  model: gpt-5
+  model: claude-sonnet-4-6
   max_tokens: 16384
   temperature: 0.3
   timeout_seconds: 240

@@ -43,7 +43,9 @@ public class LangChain4jClaudeAdapter implements LlmProvider {
                 .maxRetries(0)
                 .build();
 
-        log.debug("LangChain4j Claude 适配器初始化：model={}, baseUrl={}", config.getModel(), baseUrl);
+        log.info("LLM 适配器初始化：provider=claude, model={}, baseUrl={}, keyPrefix={}...",
+                config.getModel(), baseUrl,
+                apiKey != null && apiKey.length() >= 4 ? apiKey.substring(0, 4) + "***" : "N/A");
     }
 
     /**
