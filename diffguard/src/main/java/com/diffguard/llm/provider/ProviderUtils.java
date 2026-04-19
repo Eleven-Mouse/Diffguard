@@ -30,9 +30,15 @@ public final class ProviderUtils {
         return translated;
     }
 
+    /** quota/billing 相关错误关键字，用于检测不可重试的账户错误 */
+    private static final String[] QUOTA_KEYWORDS = {
+            "insufficient_user_quota", "insufficient_quota",
+            "billing", "plan_limit", "quota_exceeded"
+    };
+
     /**
      * 从异常消息中提取 HTTP 状态码。
-     * 匹配常见状态码模式（429, 500, 502, 503, 400, 529）。
+     * 匹配常见状态码模式（429, 402, 500, 502, 503, 400, 529）。
      *
      * @param e 异常
      * @return 提取到的状态码，未匹配则返回 -1
@@ -41,6 +47,7 @@ public final class ProviderUtils {
         String msg = e.getMessage();
         if (msg == null) return -1;
         if (msg.contains("429")) return 429;
+        if (msg.contains("402")) return 402;
         if (msg.contains("500")) return 500;
         if (msg.contains("502")) return 502;
         if (msg.contains("503")) return 503;
@@ -48,5 +55,25 @@ public final class ProviderUtils {
         if (msg.contains("529")) return 529; // Claude 特有的过载错误
         if (msg.contains("400")) return 400;
         return -1;
+    }
+
+    /**
+     * 检测异常是否为 quota/billing 错误。
+     * 这类错误不可重试，应立即终止后续请求。
+     */
+    public static boolean isQuotaError(Exception e) {
+        if (e instanceof LlmApiException lae && lae.isQuotaError()) return true;
+        Throwable current = e;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null) {
+                String lower = msg.toLowerCase();
+                for (String keyword : QUOTA_KEYWORDS) {
+                    if (lower.contains(keyword)) return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

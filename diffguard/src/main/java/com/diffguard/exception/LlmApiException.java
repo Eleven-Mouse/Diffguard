@@ -40,4 +40,9 @@ public class LlmApiException extends DiffGuardException {
     public boolean isRetryable() {
         return isRateLimitError() || isServerError();
     }
+
+    /** 是否为 quota/billing 错误（不可重试，应立即终止） */
+    public boolean isQuotaError() {
+        return statusCode == 402;
+    }
 }

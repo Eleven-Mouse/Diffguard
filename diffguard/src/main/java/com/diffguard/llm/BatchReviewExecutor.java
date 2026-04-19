@@ -1,6 +1,7 @@
 package com.diffguard.llm;
 
 import com.diffguard.exception.LlmApiException;
+import com.diffguard.llm.provider.ProviderUtils;
 import com.diffguard.model.ReviewIssue;
 import com.diffguard.model.ReviewResult;
 import com.diffguard.output.ProgressDisplay;
@@ -65,6 +66,7 @@ public class BatchReviewExecutor implements AutoCloseable {
         }
 
         int failedBatches = 0;
+        LlmApiException firstFatalError = null;
         long batchStartTime = System.currentTimeMillis();
         for (int i = 0; i < futures.size(); i++) {
             try {
@@ -81,8 +83,23 @@ public class BatchReviewExecutor implements AutoCloseable {
             } catch (ExecutionException e) {
                 failedBatches++;
                 Throwable cause = e.getCause();
-                log.warn("批次 {}/{} 审查失败：{}", i + 1, futures.size(),
-                        cause instanceof LlmApiException lae ? lae.getMessage() : cause.getMessage());
+                LlmApiException extracted = extractLlmApiException(cause);
+                String errorMsg = extracted != null ? extracted.getMessage()
+                        : (cause != null ? cause.getMessage() : "未知错误");
+                log.warn("批次 {}/{} 审查失败：{}", i + 1, futures.size(), errorMsg);
+
+                // 熔断：quota/billing 错误不可恢复，取消剩余批次
+                if (ProviderUtils.isQuotaError(e)) {
+                    firstFatalError = extracted != null ? extracted
+                            : new LlmApiException("API quota 错误：" + errorMsg);
+                    log.error("检测到 quota/billing 错误，取消剩余 {} 个批次", futures.size() - i - 1);
+                    cancelRemainingFutures(futures);
+                    failedBatches = futures.size();
+                    break;
+                }
+                if (firstFatalError == null && extracted != null) {
+                    firstFatalError = extracted;
+                }
             } catch (TimeoutException e) {
                 failedBatches++;
                 log.warn("批次 {}/{} 审查超时（{}秒），跳过该批次", i + 1, futures.size(), BATCH_TIMEOUT_SECONDS);
@@ -90,6 +107,9 @@ public class BatchReviewExecutor implements AutoCloseable {
         }
 
         if (failedBatches == futures.size()) {
+            if (firstFatalError != null) {
+                throw new LlmApiException("所有批次审查均失败（" + firstFatalError.getMessage() + "）", firstFatalError);
+            }
             throw new LlmApiException("所有批次审查均失败");
         }
         if (failedBatches > 0) {
@@ -114,6 +134,15 @@ public class BatchReviewExecutor implements AutoCloseable {
             }
         }
         result.setTotalFilesReviewed(result.getTotalFilesReviewed() + 1);
+    }
+
+    private static LlmApiException extractLlmApiException(Throwable t) {
+        Throwable current = t;
+        while (current != null) {
+            if (current instanceof LlmApiException lae) return lae;
+            current = current.getCause();
+        }
+        return null;
     }
 
     private void cancelRemainingFutures(List<Future<LlmResponse>> futures) {
