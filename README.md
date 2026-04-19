@@ -2,20 +2,22 @@
 
 # DiffGuard
 
-**AI-powered code review agent that guards your repository at commit time**
+**AI-Powered Code Review Agent — Guard Your Repository at Commit Time**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
 [![Build](https://img.shields.io/github/actions/workflow/status/kunxing/diffguard/ci.yml?branch=main)](https://github.com/kunxing/diffguard/actions)
 [![LangChain4j](https://img.shields.io/badge/LangChain4j-1.13.0-blue.svg)](https://github.com/langchain4j/langchain4j)
 
-[English](#) | [中文](#)
-
 </div>
 
 ---
 
+## Introduction
+
 DiffGuard 是一个基于 LLM 的代码审查 Agent。它通过 Git Hook 在 `pre-commit` / `pre-push` 阶段自动拦截代码变更，执行多维度 AI 审查，在发现严重问题时阻止提交。同时支持 GitHub Webhook 模式，在 Pull Request 中自动发表审查评论。
+
+代码审查是保障软件质量的关键环节，但人工审查受限于时间、专注度和经验覆盖面。DiffGuard 的目标不是替代人工审查，而是作为第一道自动防线——在提交阶段捕获安全漏洞、逻辑错误和性能问题，让审查者的精力集中在架构和业务逻辑上。
 
 不同于简单的 "diff + prompt" 工具，DiffGuard 构建了完整的代码理解管线：基于 JavaParser 的 AST 解析、方法级调用图、TF-IDF 语义检索（Code RAG），以及具备 Tool Calling 能力的 ReAct Agent 架构。多个专业 Agent（安全 / 性能 / 架构）可并行工作，自适应调整审查策略。
 
@@ -23,20 +25,20 @@ DiffGuard 是一个基于 LLM 的代码审查 Agent。它通过 Git Hook 在 `pr
 
 ## Features
 
-- **Git Hook 集成** -- `pre-commit` 和 `pre-push` 阶段自动触发审查，CRITICAL 问题阻止提交
-- **GitHub Webhook** -- 监听 PR 事件，自动审查代码并发表 GFM 评论，含签名验证和限流
-- **ReAct Agent** -- 基于 LangChain4j Function Calling 的 Reasoning-Action 循环，Agent 自主调用工具获取上下文
-- **Multi-Agent 并行审查** -- Security / Performance / Architecture 三个专业 Agent 并行执行，策略驱动的权重分配
-- **三阶段 Pipeline** -- Diff 摘要 → 并行专项审查（安全 / 逻辑 / 质量） → 聚合去重
-- **AST 代码解析** -- 基于 JavaParser 的真实 AST 分析，提取方法签名、调用关系、控制流、字段读写、数据流
-- **方法级调用图** -- 跨文件方法调用图（CodeGraph），支持 CALLS / EXTENDS / IMPLEMENTS / IMPORTS / CONTAINS 五种关系，BFS 影响分析
-- **Code RAG** -- 自实现 TF-IDF 向量检索，代码感知分词（camelCase / snake_case），多粒度切片（方法 / 类 / 文件）
-- **策略规划** -- 基于静态分析的 Diff Profiling，自动识别变更类型（Controller / DAO / Service / Config），动态调整审查重点和 Agent 权重
-- **6 个 Agent 工具** -- GetFileContent / GetDiffContext / GetMethodDefinition / GetCallGraph / GetRelatedFiles / SemanticSearch，含文件访问沙箱
-- **双 LLM 支持** -- OpenAI（GPT-5 / o3 系列）和 Anthropic Claude（Sonnet / Opus / Haiku），支持代理 API
-- **两级缓存** -- Caffeine 内存 + 磁盘持久化，SHA-256 键，24h TTL，Gzip 压缩
-- **鲁棒性设计** -- 两阶段 LLM Fallback（结构化输出 → 手动解析）、指数退避重试、代理错误检测、JSON 格式修复
-- **自定义 Prompt** -- 支持项目级模板覆盖，三级配置优先级（项目 → 用户 → 默认）
+- **Git Hook 集成** — `pre-commit` / `pre-push` 阶段自动触发审查，CRITICAL 问题阻止提交
+- **GitHub Webhook** — 监听 PR 事件，自动审查代码并发表 GFM 评论，含签名验证和限流
+- **ReAct Agent** — 基于 LangChain4j Function Calling 的 Reasoning-Action 循环，Agent 自主调用工具获取上下文
+- **Multi-Agent 并行审查** — Security / Performance / Architecture 三个专业 Agent 并行执行，策略驱动的权重分配
+- **三阶段 Pipeline** — Diff 摘要 → 并行专项审查（安全 / 逻辑 / 质量）→ 聚合去重
+- **AST 代码解析** — 基于 JavaParser 的真实 AST 分析，提取方法签名、调用关系、控制流、字段读写、数据流
+- **方法级调用图** — 跨文件方法调用图（CodeGraph），支持 CALLS / EXTENDS / IMPLEMENTS / IMPORTS / CONTAINS 五种关系，BFS 影响分析
+- **Code RAG** — 自实现 TF-IDF 向量检索，代码感知分词（camelCase / snake_case），多粒度切片（方法 / 类 / 文件）
+- **策略规划** — 基于静态分析的 Diff Profiling，自动识别变更类型（Controller / DAO / Service / Config），动态调整审查重点和 Agent 权重
+- **6 个 Agent 工具** — GetFileContent / GetDiffContext / GetMethodDefinition / GetCallGraph / GetRelatedFiles / SemanticSearch，含文件访问沙箱
+- **双 LLM 支持** — OpenAI（GPT-5 / o3 系列）和 Anthropic Claude（Sonnet / Opus / Haiku），支持代理 API
+- **两级缓存** — Caffeine 内存 + 磁盘持久化，SHA-256 键，24h TTL，Gzip 压缩
+- **鲁棒性设计** — 两阶段 LLM Fallback（结构化输出 → 手动解析）、指数退避重试、代理错误检测、JSON 格式修复
+- **自定义 Prompt** — 支持项目级模板覆盖，三级配置优先级（项目 → 用户 → 默认）
 
 ---
 
@@ -520,14 +522,14 @@ diffguard/src/main/java/com/diffguard/
 │   ├── ASTEnricher.java              #   AST 管线编排
 │   ├── ProjectASTAnalyzer.java       #   全项目 AST 分析
 │   └── model/                        #   AST 数据模型
-│       ├── ASTAnalysisResult.java    #   解析结果
-│       ├── MethodInfo.java           #   方法信息
-│       ├── ClassInfo.java            #   类信息
-│       ├── CallEdge.java             #   调用边
-│       ├── ResolvedCallEdge.java     #   带作用域的调用边
-│       ├── ControlFlowNode.java      #   控制流节点
-│       ├── DataFlowNode.java         #   数据流节点
-│       └── FieldAccessInfo.java      #   字段访问信息
+│       ├── ASTAnalysisResult.java
+│       ├── MethodInfo.java
+│       ├── ClassInfo.java
+│       ├── CallEdge.java
+│       ├── ResolvedCallEdge.java
+│       ├── ControlFlowNode.java
+│       ├── DataFlowNode.java
+│       └── FieldAccessInfo.java
 │
 ├── codegraph/                        # 代码知识图谱
 │   ├── CodeGraph.java                #   有向图（4 节点 + 5 边类型）
@@ -641,24 +643,6 @@ src/main/resources/prompt-templates/
     ├── security-system.txt           #   安全 Agent
     ├── performance-system.txt        #   性能 Agent
     └── architecture-system.txt       #   架构 Agent
-```
-
----
-
-## Development
-
-### 运行测试
-
-```bash
-cd diffguard
-mvn test
-```
-
-### 完整构建
-
-```bash
-cd diffguard
-mvn clean verify
 ```
 
 ### 主要依赖
