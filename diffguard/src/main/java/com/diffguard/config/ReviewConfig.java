@@ -61,10 +61,6 @@ public class ReviewConfig {
         return embedding;
     }
 
-    public void setEmbedding(EmbeddingConfig embedding) {
-        this.embedding = embedding;
-    }
-
     /**
      * 校验配置参数合法性。
      *
@@ -178,24 +174,17 @@ public class ReviewConfig {
     public static class RulesConfig {
         private List<String> enabled = List.of("security", "bug-risk", "code-style", "performance");
 
-        @JsonProperty("severity_threshold")
-        private String severityThreshold = "info";
-
         public List<String> getEnabled() { return enabled; }
-        public void setEnabled(List<String> enabled) { this.enabled = enabled; }
-        public String getSeverityThreshold() { return severityThreshold; }
-        public void setSeverityThreshold(String severityThreshold) { this.severityThreshold = severityThreshold; }
+
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class IgnoreConfig {
         private List<String> files = List.of("**/*.generated.java", "**/target/**");
-        private List<String> patterns = List.of(".*import statement.*");
 
         public List<String> getFiles() { return files; }
         public void setFiles(List<String> files) { this.files = files; }
-        public List<String> getPatterns() { return patterns; }
-        public void setPatterns(List<String> patterns) { this.patterns = patterns; }
+
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -209,28 +198,18 @@ public class ReviewConfig {
         private String language = "zh";
 
         public int getMaxDiffFiles() { return maxDiffFiles; }
-        public void setMaxDiffFiles(int maxDiffFiles) { this.maxDiffFiles = maxDiffFiles; }
+
         public int getMaxTokensPerFile() { return maxTokensPerFile; }
-        public void setMaxTokensPerFile(int maxTokensPerFile) { this.maxTokensPerFile = maxTokensPerFile; }
+
         public String getLanguage() { return language; }
-        public void setLanguage(String language) { this.language = language; }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class PipelineConfig {
         private boolean enabled = false;
 
-        @JsonProperty("max_total_tokens")
-        private int maxTotalTokens = 50000;
-
-        private String engine = "simple";
-
         public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public int getMaxTotalTokens() { return maxTotalTokens; }
-        public void setMaxTotalTokens(int maxTotalTokens) { this.maxTotalTokens = maxTotalTokens; }
-        public String getEngine() { return engine; }
-        public void setEngine(String engine) { this.engine = engine; }
+
     }
 
     public PipelineConfig getPipeline() { return pipeline; }
@@ -250,14 +229,7 @@ public class ReviewConfig {
         private List<RepoMapping> repos = List.of();
 
         public int getPort() { return port; }
-        public void setPort(int port) { this.port = port; }
-        public String getSecret() { return secret; }
-        public void setSecret(String secret) { this.secret = secret; }
-        public String getSecretEnv() { return secretEnv; }
-        public void setSecretEnv(String secretEnv) { this.secretEnv = secretEnv; }
-        public String getGithubTokenEnv() { return githubTokenEnv; }
-        public void setGithubTokenEnv(String githubTokenEnv) { this.githubTokenEnv = githubTokenEnv; }
-        public List<RepoMapping> getRepos() { return repos; }
+
         public void setRepos(List<RepoMapping> repos) { this.repos = repos; }
 
         public String resolveSecret() {
@@ -312,7 +284,6 @@ public class ReviewConfig {
         public String getModel() { return model; }
         public void setModel(String model) { this.model = model; }
         public Integer getDimensions() { return dimensions; }
-        public void setDimensions(Integer dimensions) { this.dimensions = dimensions; }
 
         public boolean isOpenAi() {
             return "openai".equalsIgnoreCase(provider);

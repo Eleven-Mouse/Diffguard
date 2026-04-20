@@ -5,10 +5,6 @@ package com.diffguard.exception;
  */
 public class WebhookException extends DiffGuardException {
 
-    public WebhookException(String message) {
-        super(message);
-    }
-
     public WebhookException(String message, Throwable cause) {
         super(message, cause);
     }

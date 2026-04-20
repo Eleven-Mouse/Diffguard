@@ -48,16 +48,6 @@ public class MultiStageReviewService implements com.diffguard.review.ReviewEngin
     private final PipelineResultConverter resultConverter = new PipelineResultConverter();
     private final AtomicInteger totalTokensUsed = new AtomicInteger(0);
 
-    public MultiStageReviewService(ChatModel chatModel) {
-        this.summaryAgent = AiServices.create(DiffSummaryAgent.class, chatModel);
-        this.securityReviewer = AiServices.create(SecurityReviewer.class, chatModel);
-        this.logicReviewer = AiServices.create(LogicReviewer.class, chatModel);
-        this.qualityReviewer = AiServices.create(QualityReviewer.class, chatModel);
-        this.aggregationAgent = AiServices.create(AggregationAgent.class, chatModel);
-        this.executorManager = new ExecutorManager();
-        this.parallelExecutor = executorManager.createFixedPool(3, "pipeline-review");
-    }
-
     /**
      * 带 Tool Use 的构造方法。
      */

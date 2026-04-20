@@ -29,11 +29,4 @@ public class ResolvedCallEdge {
     public String getCalleeMethod() { return calleeMethod; }
     public int getLineNumber() { return lineNumber; }
 
-    /**
-     * 生成可读的描述，如：UserService.processOrder -> OrderDAO.save
-     */
-    public String toQualifiedString() {
-        String scope = calleeScope.isEmpty() ? "" : calleeScope + ".";
-        return callerClass + "." + callerMethod + " -> " + scope + calleeMethod;
-    }
 }

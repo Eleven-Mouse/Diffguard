@@ -30,9 +30,7 @@ public class ReActAgent {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
 
-    private final ChatModel chatModel;
     private final Map<String, AgentTool> tools;
-    private final int maxIterations;
     private final String systemPrompt;
     private final Function<AgentFunctionToolProvider, ReActAgentService> serviceFactory;
 
@@ -41,13 +39,11 @@ public class ReActAgent {
      */
     public ReActAgent(ChatModel chatModel, List<AgentTool> tools,
                       String systemPrompt, int maxIterations) {
-        this.chatModel = chatModel;
         this.tools = new LinkedHashMap<>();
         for (AgentTool tool : tools) {
             this.tools.put(tool.name(), tool);
         }
         this.systemPrompt = systemPrompt;
-        this.maxIterations = maxIterations;
         this.serviceFactory = tp -> AiServices.builder(ReActAgentService.class)
                 .chatModel(chatModel)
                 .tools(tp)
@@ -59,13 +55,11 @@ public class ReActAgent {
      */
     public ReActAgent(List<AgentTool> tools, String systemPrompt, int maxIterations,
                Function<AgentFunctionToolProvider, ReActAgentService> serviceFactory) {
-        this.chatModel = null;
         this.tools = new LinkedHashMap<>();
         for (AgentTool tool : tools) {
             this.tools.put(tool.name(), tool);
         }
         this.systemPrompt = systemPrompt;
-        this.maxIterations = maxIterations;
         this.serviceFactory = serviceFactory;
     }
 

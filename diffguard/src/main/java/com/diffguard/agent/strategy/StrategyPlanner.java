@@ -44,13 +44,6 @@ public class StrategyPlanner {
         return strategy;
     }
 
-    /**
-     * 获取 diff 画像（用于调试或日志）。
-     */
-    public static DiffProfile getProfile(List<DiffFileEntry> diffEntries) {
-        return DiffProfiler.profile(diffEntries);
-    }
-
     private static ReviewStrategy selectStrategy(DiffProfile profile) {
         ReviewStrategy.Builder builder = ReviewStrategy.builder()
                 .name("auto-detected")

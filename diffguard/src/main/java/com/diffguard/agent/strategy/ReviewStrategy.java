@@ -57,12 +57,13 @@ public class ReviewStrategy {
 
         public Builder name(String v) { name = v; return this; }
         public Builder description(String v) { description = v; return this; }
-        public Builder agentWeight(AgentType agent, double weight) {
+        public void agentWeight(AgentType agent, double weight) {
             agentWeights.put(agent, weight);
-            return this;
         }
-        public Builder focusArea(String v) { focusAreas.add(v); return this; }
-        public Builder additionalRule(String v) { additionalRules.add(v); return this; }
+        public void focusArea(String v) { focusAreas.add(v);
+        }
+        public void additionalRule(String v) { additionalRules.add(v);
+        }
         public Builder priority(int v) { priority = v; return this; }
         public ReviewStrategy build() { return new ReviewStrategy(this); }
     }

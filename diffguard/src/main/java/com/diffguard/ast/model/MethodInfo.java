@@ -40,7 +40,6 @@ public class MethodInfo {
     public String getName() { return name; }
     public String getReturnType() { return returnType; }
     public List<String> getParameterTypes() { return parameterTypes; }
-    public List<String> getParameterNames() { return parameterNames; }
     public int getStartLine() { return startLine; }
     public int getEndLine() { return endLine; }
     public String getVisibility() { return visibility; }

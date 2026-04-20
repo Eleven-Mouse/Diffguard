@@ -42,11 +42,6 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
     }
 
     public MultiAgentReviewOrchestrator(ChatModel chatModel, Path projectDir,
-                                         int timeoutMinutes) {
-        this(chatModel, projectDir, timeoutMinutes, null);
-    }
-
-    public MultiAgentReviewOrchestrator(ChatModel chatModel, Path projectDir,
                                          ReviewConfig config) {
         this(chatModel, projectDir, 3, config);
     }
@@ -165,18 +160,6 @@ public class MultiAgentReviewOrchestrator implements com.diffguard.review.Review
         log.info("启用 {} 个 Agent: {}", agents.size(),
                 agents.stream().map(NamedAgent::name).collect(Collectors.joining(", ")));
         return agents;
-    }
-
-    /**
-     * 向后兼容的无策略版本。
-     */
-    protected List<NamedAgent> createAgents(Path agentProjectDir) {
-        return createAgents(agentProjectDir, ReviewStrategy.builder()
-                .name("default")
-                .agentWeight(AgentType.SECURITY, 1.0)
-                .agentWeight(AgentType.PERFORMANCE, 1.0)
-                .agentWeight(AgentType.ARCHITECTURE, 1.0)
-                .build());
     }
 
     private ReviewResult aggregateResults(Map<String, AgentResponse> responses,
