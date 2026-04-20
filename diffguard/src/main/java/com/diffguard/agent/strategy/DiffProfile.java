@@ -42,12 +42,6 @@ public class DiffProfile {
     }
 
     public int getTotalFiles() { return totalFiles; }
-    public int getTotalLines() { return totalLines; }
-    public int getTotalTokens() { return totalTokens; }
-    public Map<FileCategory, Integer> getCategoryDistribution() { return categoryDistribution; }
-    public List<String> getFilePaths() { return filePaths; }
-    public List<String> getClassNames() { return classNames; }
-    public List<String> getChangedOperations() { return changedOperations; }
     public boolean hasDatabaseOperations() { return hasDatabaseOperations; }
     public boolean hasSecuritySensitiveCode() { return hasSecuritySensitiveCode; }
     public boolean hasConcurrencyCode() { return hasConcurrencyCode; }
@@ -87,18 +81,19 @@ public class DiffProfile {
         public Builder totalFiles(int v) { totalFiles = v; return this; }
         public Builder totalLines(int v) { totalLines = v; return this; }
         public Builder totalTokens(int v) { totalTokens = v; return this; }
-        public Builder addCategory(FileCategory cat, int count) {
+        public void addCategory(FileCategory cat, int count) {
             categoryDistribution.merge(cat, count, Integer::sum);
-            return this;
         }
         public Builder filePath(String v) { filePaths.add(v); return this; }
         public Builder className(String v) { classNames.add(v); return this; }
-        public Builder changedOperation(String v) { changedOperations.add(v); return this; }
+        public void changedOperation(String v) { changedOperations.add(v);
+        }
         public Builder hasDatabaseOperations(boolean v) { hasDatabaseOperations = v; return this; }
         public Builder hasSecuritySensitiveCode(boolean v) { hasSecuritySensitiveCode = v; return this; }
         public Builder hasConcurrencyCode(boolean v) { hasConcurrencyCode = v; return this; }
         public Builder hasExternalApiCalls(boolean v) { hasExternalApiCalls = v; return this; }
-        public Builder overallRisk(RiskLevel v) { overallRisk = v; return this; }
+        public void overallRisk(RiskLevel v) { overallRisk = v;
+        }
         public DiffProfile build() { return new DiffProfile(this); }
     }
 }

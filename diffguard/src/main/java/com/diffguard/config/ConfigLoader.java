@@ -71,7 +71,7 @@ public class ConfigLoader {
         if (!override.isObject() || !base.isObject()) {
             return override.isNull() ? base : override;
         }
-        ObjectNode result = (ObjectNode) base.deepCopy();
+        ObjectNode result = base.deepCopy();
         override.fields().forEachRemaining(entry -> {
             String key = entry.getKey();
             JsonNode overrideVal = entry.getValue();

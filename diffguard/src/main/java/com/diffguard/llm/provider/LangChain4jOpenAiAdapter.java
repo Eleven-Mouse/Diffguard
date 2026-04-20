@@ -82,15 +82,6 @@ public class LangChain4jOpenAiAdapter implements LlmProvider {
     }
 
     /**
-     * 包内可见构造方法，用于测试注入 mock ChatModel。
-     */
-    LangChain4jOpenAiAdapter(ChatModel primaryModel, ChatModel fallbackModel, TokenTracker tokenTracker) {
-        this.primaryModel = primaryModel;
-        this.fallbackModel = fallbackModel;
-        this.tokenTracker = tokenTracker;
-    }
-
-    /**
      * 返回用于 AiServices 的 ChatModel 实例。
      */
     public ChatModel getChatModel() {

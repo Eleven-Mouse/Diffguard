@@ -24,17 +24,6 @@ public class DiffCollectionException extends DiffGuardException {
         this.repositoryPath = null;
     }
 
-    public DiffCollectionException(String message, String fromRef, String toRef, String repositoryPath) {
-        super(message);
-        this.fromRef = fromRef;
-        this.toRef = toRef;
-        this.repositoryPath = repositoryPath;
-    }
-
-    public String getFromRef() { return fromRef; }
-    public String getToRef() { return toRef; }
-    public String getRepositoryPath() { return repositoryPath; }
-
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder("DiffCollectionException");

@@ -91,7 +91,7 @@ public class LlmClient implements AutoCloseable {
         }
     }
 
-    LlmClient(LlmProvider provider, ReviewConfig config) {
+    LlmClient(LlmProvider provider) {
         this.provider = provider;
         this.structuredOutputHandler = null;
         this.chatModelForAiServices = null;

@@ -23,6 +23,5 @@ public class DataFlowNode {
     public String getVariableName() { return variableName; }
     public String getVariableType() { return variableType; }
     public String getFlowType() { return flowType; }
-    public String getContainingMethod() { return containingMethod; }
-    public int getLineNumber() { return lineNumber; }
+
 }

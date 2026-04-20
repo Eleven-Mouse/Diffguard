@@ -91,7 +91,7 @@ class LlmClientTest {
         void jsonObjectParsed() throws Exception {
             when(mockProvider.call(anyString(), anyString())).thenReturn(validJsonResponse());
 
-            try (LlmClient client = new LlmClient(mockProvider, config)) {
+            try (LlmClient client = new LlmClient(mockProvider)) {
                 ReviewResult result = client.review(List.of(makePrompt()));
                 assertEquals(1, result.getIssues().size());
                 assertEquals("Test.java", result.getIssues().get(0).getFile());
@@ -104,7 +104,7 @@ class LlmClientTest {
         void criticalIssueParsed() throws Exception {
             when(mockProvider.call(anyString(), anyString())).thenReturn(criticalJsonResponse());
 
-            try (LlmClient client = new LlmClient(mockProvider, config)) {
+            try (LlmClient client = new LlmClient(mockProvider)) {
                 ReviewResult result = client.review(List.of(makePrompt()));
                 assertTrue(result.hasCriticalIssues());
                 assertEquals(Severity.CRITICAL, result.getIssues().get(0).getSeverity());
@@ -119,7 +119,7 @@ class LlmClientTest {
                     .thenReturn(rawText)
                     .thenReturn(validJsonResponse());
 
-            try (LlmClient client = new LlmClient(mockProvider, config)) {
+            try (LlmClient client = new LlmClient(mockProvider)) {
                 ReviewResult result = client.review(List.of(makePrompt()));
                 // 重试成功，应返回结构化结果
                 assertEquals(1, result.getIssues().size());
@@ -140,7 +140,7 @@ class LlmClientTest {
             PromptBuilder.PromptContent p2 = new PromptBuilder.PromptContent(
                     "sys", "user2", "zh", "", "B.java", "diff B");
 
-            try (LlmClient client = new LlmClient(mockProvider, config)) {
+            try (LlmClient client = new LlmClient(mockProvider)) {
                 ReviewResult result = client.review(List.of(p1, p2));
                 assertEquals(2, result.getIssues().size());
                 verify(mockProvider, times(2)).call(anyString(), anyString());
@@ -152,7 +152,7 @@ class LlmClientTest {
         void singlePromptSequential() throws Exception {
             when(mockProvider.call(anyString(), anyString())).thenReturn(validJsonResponse());
 
-            try (LlmClient client = new LlmClient(mockProvider, config)) {
+            try (LlmClient client = new LlmClient(mockProvider)) {
                 client.review(List.of(makePrompt()));
                 verify(mockProvider, times(1)).call(anyString(), anyString());
             }
@@ -170,7 +170,7 @@ class LlmClientTest {
                     .thenThrow(new LlmApiException(429, "rate limited"))
                     .thenReturn(validJsonResponse());
 
-            try (LlmClient client = new LlmClient(mockProvider, config)) {
+            try (LlmClient client = new LlmClient(mockProvider)) {
                 ReviewResult result = client.review(List.of(makePrompt()));
                 assertEquals(1, result.getIssues().size());
             }
@@ -182,7 +182,7 @@ class LlmClientTest {
             when(mockProvider.call(anyString(), anyString()))
                     .thenThrow(new LlmApiException(401, "unauthorized"));
 
-            try (LlmClient client = new LlmClient(mockProvider, config)) {
+            try (LlmClient client = new LlmClient(mockProvider)) {
                 assertThrows(LlmApiException.class, () -> client.review(List.of(makePrompt())));
             }
         }
@@ -193,7 +193,7 @@ class LlmClientTest {
             when(mockProvider.call(anyString(), anyString()))
                     .thenThrow(new LlmApiException(429, "rate limited"));
 
-            try (LlmClient client = new LlmClient(mockProvider, config)) {
+            try (LlmClient client = new LlmClient(mockProvider)) {
                 assertThrows(LlmApiException.class, () -> client.review(List.of(makePrompt())));
                 verify(mockProvider, atLeast(3)).call(anyString(), anyString());
             }
@@ -207,7 +207,7 @@ class LlmClientTest {
         @Test
         @DisplayName("close() 正常关闭不抛异常")
         void closeNoException() {
-            LlmClient client = new LlmClient(mockProvider, config);
+            LlmClient client = new LlmClient(mockProvider);
             assertDoesNotThrow(client::close);
         }
     }

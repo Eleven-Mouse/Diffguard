@@ -194,7 +194,7 @@ public class ASTAnalyzer {
             });
 
             // 提取字段访问
-            extractFieldAccess(md, methodName, builder);
+            extractFieldAccess(md, builder);
 
             // 提取数据流
             extractDataFlow(md, methodName, builder);
@@ -219,15 +219,14 @@ public class ASTAnalyzer {
         return "";
     }
 
-    private void extractFieldAccess(MethodDeclaration md, String methodName,
-                                     ASTAnalysisResult.Builder builder) {
+    private void extractFieldAccess(MethodDeclaration md,
+                                    ASTAnalysisResult.Builder builder) {
         md.findAll(FieldAccessExpr.class).forEach(fa -> {
             fa.getRange().ifPresent(range -> {
                 builder.fieldAccess(new FieldAccessInfo(
                         fa.getNameAsString(),
-                        "read",
-                        methodName,
-                        range.begin.line));
+                        "read"
+                ));
             });
         });
 
@@ -237,9 +236,8 @@ public class ASTAnalyzer {
                 fa.getRange().ifPresent(range -> {
                     builder.fieldAccess(new FieldAccessInfo(
                             fa.getNameAsString(),
-                            "write",
-                            methodName,
-                            range.begin.line));
+                            "write"
+                    ));
                 });
             }
         });

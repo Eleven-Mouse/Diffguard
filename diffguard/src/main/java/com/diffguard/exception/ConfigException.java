@@ -21,26 +21,6 @@ public class ConfigException extends DiffGuardException {
         this.field = null;
     }
 
-    public ConfigException(String message, String configPath, Throwable cause) {
-        super(message, cause);
-        this.configPath = configPath;
-        this.field = null;
-    }
-
-    public ConfigException(String message, String configPath, String field, Throwable cause) {
-        super(message, cause);
-        this.configPath = configPath;
-        this.field = field;
-    }
-
-    public String getConfigPath() {
-        return configPath;
-    }
-
-    public String getField() {
-        return field;
-    }
-
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder("ConfigException");

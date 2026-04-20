@@ -49,14 +49,6 @@ public class LangChain4jClaudeAdapter implements LlmProvider {
     }
 
     /**
-     * 包内可见构造方法，用于测试注入 mock ChatModel。
-     */
-    LangChain4jClaudeAdapter(ChatModel model, TokenTracker tokenTracker) {
-        this.model = model;
-        this.tokenTracker = tokenTracker;
-    }
-
-    /**
      * 返回用于 AiServices 的 ChatModel 实例。
      */
     public ChatModel getChatModel() {

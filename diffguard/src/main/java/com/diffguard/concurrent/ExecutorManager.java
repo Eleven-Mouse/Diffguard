@@ -32,31 +32,6 @@ public class ExecutorManager implements AutoCloseable {
         return executor;
     }
 
-    /**
-     * 创建单线程调度执行器。
-     */
-    public ScheduledExecutorService createScheduledPool(String name) {
-        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(namedThreadFactory(name));
-        managedExecutors.add(executor);
-        return executor;
-    }
-
-    /**
-     * 创建可伸缩线程池（用于 Webhook 等场景）。
-     */
-    public ExecutorService createBoundedPool(int coreSize, int maxSize,
-                                              int queueCapacity, String name) {
-        ExecutorService executor = new ThreadPoolExecutor(
-                coreSize, maxSize,
-                60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(queueCapacity),
-                namedThreadFactory(name),
-                new ThreadPoolExecutor.CallerRunsPolicy()
-        );
-        managedExecutors.add(executor);
-        return executor;
-    }
-
     private ThreadFactory namedThreadFactory(String name) {
         return r -> {
             Thread t = new Thread(r, name + "-" + threadCounter.incrementAndGet());
