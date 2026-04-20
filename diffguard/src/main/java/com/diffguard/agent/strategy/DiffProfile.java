@@ -92,8 +92,7 @@ public class DiffProfile {
         public Builder hasSecuritySensitiveCode(boolean v) { hasSecuritySensitiveCode = v; return this; }
         public Builder hasConcurrencyCode(boolean v) { hasConcurrencyCode = v; return this; }
         public Builder hasExternalApiCalls(boolean v) { hasExternalApiCalls = v; return this; }
-        public void overallRisk(RiskLevel v) { overallRisk = v;
-        }
+        public Builder overallRisk(RiskLevel v) { overallRisk = v; return this; }
         public DiffProfile build() { return new DiffProfile(this); }
     }
 }
