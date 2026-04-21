@@ -51,10 +51,12 @@ public class LangChain4jOpenAiAdapter implements LlmProvider {
             primaryBuilder.temperature(config.getTemperature());
         }
 
-        // 主模型：启用 JSON response_format
-        this.primaryModel = primaryBuilder
-                .responseFormat("json_object")
-                .build();
+        // 主模型：仅对 OpenAI 原生模型启用 JSON response_format
+        // Claude 模型通过代理时不支持此参数，代理会返回空 content
+        if (!modelLower.contains("claude")) {
+            primaryBuilder.responseFormat("json_object");
+        }
+        this.primaryModel = primaryBuilder.build();
 
         // 降级模型：不带 response_format（用于代理兼容）
         var fallbackBuilder = OpenAiChatModel.builder()
