@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "command": "$JAVA_HOME/bin/java.exe -jar diffguard/target/diffguard-1.0.0.jar review --staged 1>&2 && printf '{\"continue\":true}' || printf '{\"continue\":false,\"stopReason\":\"DiffGuard detected critical issues - commit blocked.\"}'",
+            "timeout": 120,
+            "statusMessage": "Running DiffGuard code review..."
+          }
+        ]
+      }
+    ]
+  }
+}

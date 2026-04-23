@@ -4,16 +4,23 @@
 
 **AI-Powered Code Review Agent — Guard Your Repository at Commit Time**
 
+**基于 LLM 的智能代码审查 Agent — 在提交时守护你的代码仓库**
+
+[English](#english) | [中文](#中文)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
 [![Build](https://img.shields.io/github/actions/workflow/status/kunxing/diffguard/ci.yml?branch=main)](https://github.com/kunxing/diffguard/actions)
 [![LangChain4j](https://img.shields.io/badge/LangChain4j-1.13.0-blue.svg)](https://github.com/langchain4j/langchain4j)
+[![Lines of Code](https://img.shields.io/badge/LOC-~30k-informational.svg)]()
 
 </div>
 
 ---
 
-## Introduction
+## 中文
+
+### 项目简介
 
 DiffGuard 是一个基于 LLM 的代码审查 Agent。它通过 Git Hook 在 `pre-commit` / `pre-push` 阶段自动拦截代码变更，执行多维度 AI 审查，在发现严重问题时阻止提交。同时支持 GitHub Webhook 模式，在 Pull Request 中自动发表审查评论。
 
@@ -21,120 +28,95 @@ DiffGuard 是一个基于 LLM 的代码审查 Agent。它通过 Git Hook 在 `pr
 
 不同于简单的 "diff + prompt" 工具，DiffGuard 构建了完整的代码理解管线：基于 JavaParser 的 AST 解析、方法级调用图、TF-IDF 语义检索（Code RAG），以及具备 Tool Calling 能力的 ReAct Agent 架构。多个专业 Agent（安全 / 性能 / 架构）可并行工作，自适应调整审查策略。
 
----
+### 核心特性
 
-## Features
-
-- **Git Hook 集成** — `pre-commit` / `pre-push` 阶段自动触发审查，CRITICAL 问题阻止提交
-- **GitHub Webhook** — 监听 PR 事件，自动审查代码并发表 GFM 评论，含签名验证和限流
-- **ReAct Agent** — 基于 LangChain4j Function Calling 的 Reasoning-Action 循环，Agent 自主调用工具获取上下文
-- **Multi-Agent 并行审查** — Security / Performance / Architecture 三个专业 Agent 并行执行，策略驱动的权重分配
-- **三阶段 Pipeline** — Diff 摘要 → 并行专项审查（安全 / 逻辑 / 质量）→ 聚合去重
-- **AST 代码解析** — 基于 JavaParser 的真实 AST 分析，提取方法签名、调用关系、控制流、字段读写、数据流
-- **方法级调用图** — 跨文件方法调用图（CodeGraph），支持 CALLS / EXTENDS / IMPLEMENTS / IMPORTS / CONTAINS 五种关系，BFS 影响分析
-- **Code RAG** — 自实现 TF-IDF 向量检索，代码感知分词（camelCase / snake_case），多粒度切片（方法 / 类 / 文件）
-- **策略规划** — 基于静态分析的 Diff Profiling，自动识别变更类型（Controller / DAO / Service / Config），动态调整审查重点和 Agent 权重
-- **6 个 Agent 工具** — GetFileContent / GetDiffContext / GetMethodDefinition / GetCallGraph / GetRelatedFiles / SemanticSearch，含文件访问沙箱
-- **双 LLM 支持** — OpenAI（GPT-5 / o3 系列）和 Anthropic Claude（Sonnet / Opus / Haiku），支持代理 API
-- **两级缓存** — Caffeine 内存 + 磁盘持久化，SHA-256 键，24h TTL，Gzip 压缩
-- **鲁棒性设计** — 两阶段 LLM Fallback（结构化输出 → 手动解析）、指数退避重试、代理错误检测、JSON 格式修复
-- **自定义 Prompt** — 支持项目级模板覆盖，三级配置优先级（项目 → 用户 → 默认）
-
----
-
-## Architecture
-
-```
-                              ┌─────────────────────────────────────┐
-                              │            CLI (picocli)            │
-                              │  review / install / server / uninstall │
-                              └──────┬────────────────────┬─────────┘
-                                     │                    │
-                         ┌───────────▼──────┐    ┌────────▼────────┐
-                         │   Git Diff (JGit) │    │  Webhook Server  │
-                         │   DiffCollector   │    │    (Javalin)     │
-                         └───────┬──────────┘    └───────┬──────────┘
-                                 │                        │
-                                 └─────────┬──────────────┘
-                                           │
-                              ┌────────────▼────────────┐
-                              │     Strategy Planner    │
-                              │  DiffProfiler (regex)   │
-                              │  → DiffProfile          │
-                              │  → ReviewStrategy       │
-                              └────────────┬────────────┘
-                                           │
-                              ┌────────────▼────────────┐
-                              │   AST Enrichment        │
-                              │   JavaParser + Cache    │
-                              │   → Enriched Diff       │
-                              └────────────┬────────────┘
-                                           │
-                    ┌───────────────────────▼───────────────────────┐
-                    │              Review Engine                     │
-                    │                                              │
-                    │  ┌─────────┐  ┌──────────┐  ┌────────────┐  │
-                    │  │ Simple  │  │ Pipeline │  │ Multi-Agent│  │
-                    │  │ (1 LLM) │  │ (3-stage)│  │ (3 Agents) │  │
-                    │  └─────────┘  └──────────┘  └────────────┘  │
-                    └───────────────────────┬───────────────────────┘
-                                           │
-                    ┌───────────────────────▼───────────────────────┐
-                    │           Agent Tools (ReAct Loop)            │
-                    │                                               │
-                    │  ┌───────────┐ ┌──────────┐ ┌──────────────┐ │
-                    │  │ CodeGraph │ │ Code RAG │ │  ASTAnalyzer │ │
-                    │  │ (CallGraph│ │ (TF-IDF  │ │  (JavaParser)│ │
-                    │  │  BFS)     │ │  Vector) │ │              │ │
-                    │  └───────────┘ └──────────┘ └──────────────┘ │
-                    └───────────────────────┬───────────────────────┘
-                                           │
-                    ┌───────────────────────▼───────────────────────┐
-                    │         LLM Layer (LangChain4j)               │
-                    │                                               │
-                    │  AiServices · Function Calling                │
-                    │  Structured Output · Retry · Batch            │
-                    │  OpenAI / Claude / Proxy                      │
-                    └───────────────────────┬───────────────────────┘
-                                           │
-                    ┌───────────────────────▼───────────────────────┐
-                    │      Review Cache + Output                    │
-                    │  Caffeine + Disk · Markdown · Terminal UI     │
-                    └───────────────────────────────────────────────┘
-```
-
-### 模块说明
-
-| 模块 | 说明 |
+| 特性 | 描述 |
 |------|------|
-| **CLI** | picocli 命令行入口，支持 review / install / uninstall / server 四个子命令 |
-| **Git Diff** | 基于 JGit 的 diff 采集，支持 staged diff 和 ref-to-ref diff |
-| **Strategy** | 静态分析 Diff 内容（正则匹配 DB / 安全 / 并发 / API 模式），生成审查策略 |
-| **AST** | JavaParser 解析变更文件，提取方法、调用边、控制流、数据流，构建 diff-aware 上下文 |
-| **CodeGraph** | 方法级有向图（4 种节点 + 5 种边），跨文件调用解析，BFS 影响分析 |
-| **Code RAG** | TF-IDF 向量化 + 余弦相似度检索，多粒度代码切片（方法 / 类 / 文件） |
-| **Agent Core** | ReAct 循环引擎，LangChain4j Function Calling 驱动，6 个 @Tool 方法 |
-| **Pipeline** | 三阶段流水线：摘要 → 并行专项审查 → 聚合去重 |
-| **Multi-Agent** | 三个专业 ReAct Agent 并行执行，Strategy Planner 动态分配权重 |
-| **LLM** | 双供应商适配器（OpenAI / Claude），结构化输出 + Fallback + 重试 |
-| **Cache** | Caffeine 内存 + 磁盘两层缓存，SHA-256 键，Gzip 压缩 |
-| **Webhook** | Javalin HTTP 服务器，HMAC-SHA256 签名验证，限流，GitHub API 评论 |
+| **Git Hook 集成** | `pre-commit` / `pre-push` 阶段自动触发审查，CRITICAL 问题阻止提交 |
+| **GitHub Webhook** | 监听 PR 事件，自动审查代码并发表 GFM 评论，含签名验证和限流 |
+| **ReAct Agent** | 基于 LangChain4j Function Calling 的 Reasoning-Action 循环，Agent 自主调用工具获取上下文 |
+| **Multi-Agent 并行审查** | Security / Performance / Architecture 三个专业 Agent 并行执行，策略驱动的权重分配 |
+| **三阶段 Pipeline** | Diff 摘要 → 并行专项审查（安全 / 逻辑 / 质量）→ 聚合去重 |
+| **AST 代码解析** | 基于 JavaParser 的真实 AST 分析，提取方法签名、调用关系、控制流、字段读写、数据流 |
+| **方法级调用图** | 跨文件方法调用图（CodeGraph），支持 CALLS / EXTENDS / IMPLEMENTS / IMPORTS / CONTAINS 五种关系 |
+| **Code RAG** | 自实现 TF-IDF 向量检索，代码感知分词（camelCase / snake_case），多粒度切片（方法 / 类 / 文件） |
+| **策略规划** | 基于静态分析的 Diff Profiling，自动识别变更类型（Controller / DAO / Service / Config），动态调整审查重点和 Agent 权重 |
+| **6 个 Agent 工具** | GetFileContent / GetDiffContext / GetMethodDefinition / GetCallGraph / GetRelatedFiles / SemanticSearch，含文件访问沙箱 |
+| **双 LLM 支持** | OpenAI 和 Anthropic Claude，支持代理 API |
+| **两级缓存** | Caffeine 内存 + 磁盘持久化，SHA-256 键，24h TTL，Gzip 压缩 |
+| **鲁棒性设计** | 两阶段 LLM Fallback、指数退避重试、代理错误检测、JSON 格式修复 |
+| **自定义 Prompt** | 支持项目级模板覆盖，三级配置优先级（项目 → 用户 → 默认） |
 
----
+### 架构图
 
-## AI Workflow
+```mermaid
+graph TB
+    subgraph "Entry"
+        CLI["CLI (picocli)<br/>review / install / server / uninstall"]
+    end
 
-DiffGuard 提供三种审查模式，按深度递增：
+    subgraph "Input"
+        GD["Git Diff (JGit)<br/>DiffCollector"]
+        WH["Webhook Server<br/>(Javalin)"]
+    end
 
-### Simple 模式
+    subgraph "Analysis"
+        SP["Strategy Planner<br/>DiffProfiler → DiffProfile<br/>→ ReviewStrategy"]
+        AST["AST Enrichment<br/>JavaParser + Cache"]
+    end
+
+    subgraph "Review Engine"
+        S["Simple<br/>(1 LLM call)"]
+        P["Pipeline<br/>(3-stage)"]
+        MA["Multi-Agent<br/>(3 Agents)"]
+    end
+
+    subgraph "Agent Tools"
+        CG["CodeGraph<br/>(Call Graph BFS)"]
+        CR["Code RAG<br/>(TF-IDF Vector)"]
+        AA["ASTAnalyzer<br/>(JavaParser)"]
+    end
+
+    subgraph "LLM Layer"
+        LLM["LangChain4j<br/>AiServices · Function Calling<br/>Structured Output · Retry · Batch<br/>OpenAI / Claude / Proxy"]
+    end
+
+    subgraph "Output"
+        CACHE["Review Cache<br/>Caffeine + Disk"]
+        OUT["Output<br/>Markdown · Terminal UI"]
+    end
+
+    CLI --> GD
+    CLI --> WH
+    GD --> SP
+    WH --> SP
+    SP --> AST
+    AST --> S
+    AST --> P
+    AST --> MA
+    S --> LLM
+    P --> LLM
+    MA --> LLM
+    LLM --> CG
+    LLM --> CR
+    LLM --> AA
+    LLM --> CACHE
+    CACHE --> OUT
+```
+
+### 三种审查模式
+
+#### Simple 模式
+
+单次 LLM 调用，适合快速审查。
 
 ```
 Git Diff → Prompt 构建 → LLM 调用 → JSON 解析 → ReviewResult
 ```
 
-单次 LLM 调用，适合快速审查。
+#### Pipeline 模式 (`--pipeline`)
 
-### Pipeline 模式 (`--pipeline`)
+Stage 1 生成变更摘要，Stage 2 三个专项 Reviewer 并行工作（共享摘要上下文），Stage 3 聚合去重。
 
 ```
                         ┌─ SecurityReviewer ─┐
@@ -143,9 +125,9 @@ Git Diff → DiffSummary ─┼─ LogicReviewer     ─┼→ AggregationAgent 
                               并行执行
 ```
 
-Stage 1 生成变更摘要，Stage 2 三个专项 Reviewer 并行工作（共享摘要上下文），Stage 3 聚合去重。
+#### Multi-Agent 模式 (`--multi-agent`)
 
-### Multi-Agent 模式 (`--multi-agent`)
+Strategy Planner 先分析变更特征，动态调整每个 Agent 的权重和关注点。每个 Agent 是独立的 ReAct 循环，可自主调用 6 个代码分析工具。
 
 ```
                          ┌─ SecurityAgent (ReAct + Tools) ─┐
@@ -154,25 +136,22 @@ DiffProfile → Strategy ──┼─ PerformanceAgent (ReAct + Tools) ─┼→
                                    并行执行
 ```
 
-Strategy Planner 先分析变更特征，动态调整每个 Agent 的权重和关注点。每个 Agent 是独立的 ReAct 循环，可自主调用 6 个代码分析工具。
+#### ReAct Agent 循环
 
-### ReAct Agent 循环
+```mermaid
+sequenceDiagram
+    participant Agent as ReAct Agent
+    participant LLM as LLM
+    participant Tool as Agent Tools
 
-```
-┌─────────────────────────────────────────────┐
-│  System Prompt + Diff Content                │
-│       │                                      │
-│       ▼                                      │
-│  LLM 推理 ──→ 决定调用 Tool ──→ 执行 Tool     │
-│       │                      │               │
-│       │  ◀── Observation ────┘               │
-│       │                                      │
-│       ▼                                      │
-│  继续推理 / 输出最终结果                       │
-│       │                                      │
-│       ▼                                      │
-│  ReActReviewOutput (JSON)                    │
-└─────────────────────────────────────────────┘
+    Agent->>LLM: System Prompt + Diff Content
+    loop Reasoning-Action Loop
+        LLM->>Agent: 推理 + Tool Call 决策
+        Agent->>Tool: 执行 Tool (get_file_content, get_call_graph...)
+        Tool-->>Agent: Observation
+        Agent->>LLM: 推理结果 + Observation
+    end
+    LLM-->>Agent: ReActReviewOutput (JSON)
 ```
 
 Agent 可调用的 6 个工具：
@@ -186,17 +165,32 @@ Agent 可调用的 6 个工具：
 | `get_related_files` | 查找依赖文件、继承关系、接口实现 |
 | `semantic_search` | Code RAG 语义检索，查找相关代码片段 |
 
----
+### 技术栈
 
-## Installation
+| 分类 | 技术 |
+|------|------|
+| **语言** | Java 21 |
+| **CLI 框架** | picocli 4.7.5 |
+| **Git 操作** | JGit 6.8.0 |
+| **LLM 集成** | LangChain4j 1.13.0 (OpenAI + Anthropic Claude) |
+| **AST 解析** | JavaParser 3.26.3 |
+| **缓存** | Caffeine 3.1.8 |
+| **Web 服务器** | Javalin 5.6.3 |
+| **序列化** | Jackson 2.17.0 (JSON + YAML) |
+| **Token 计数** | jtokkit 1.0.0 |
+| **构建工具** | Maven + maven-shade-plugin (Fat JAR) |
+| **测试** | JUnit 5.10.2 + Mockito 5.11.0 |
+| **CI** | GitHub Actions |
 
-### 环境要求
+### 快速开始
+
+#### 环境要求
 
 - Java 21+
 - Maven 3.8+
 - Git 仓库
 
-### 构建
+#### 安装
 
 ```bash
 git clone https://github.com/kunxing/diffguard.git
@@ -206,7 +200,7 @@ mvn clean package -DskipTests
 
 构建产物：`diffguard/target/diffguard-1.0.0.jar`
 
-### 设置 API Key
+#### 设置 API Key
 
 ```bash
 # OpenAI
@@ -216,11 +210,9 @@ export DIFFGUARD_API_KEY="sk-..."
 export DIFFGUARD_API_KEY="sk-ant-..."
 ```
 
----
+### 使用示例
 
-## Usage
-
-### 安装 Git Hooks
+#### 安装 Git Hooks
 
 ```bash
 # 安装 pre-commit + pre-push
@@ -235,7 +227,7 @@ java -jar diffguard-1.0.0.jar install --pre-push
 
 安装后，每次 `git commit` 或 `git push` 时自动触发代码审查。发现 CRITICAL 级别问题时，提交将被阻止。
 
-### 手动审查
+#### 手动审查
 
 ```bash
 # 审查暂存区变更（git diff --cached）
@@ -244,10 +236,10 @@ java -jar diffguard-1.0.0.jar review --staged
 # 审查两个 Git 引用之间的变更
 java -jar diffguard-1.0.0.jar review --from HEAD~3 --to HEAD
 
-# 使用 Pipeline 模式
+# 使用 Pipeline 模式（三阶段专项审查）
 java -jar diffguard-1.0.0.jar review --staged --pipeline
 
-# 使用 Multi-Agent 模式
+# 使用 Multi-Agent 模式（多 Agent 并行审查）
 java -jar diffguard-1.0.0.jar review --staged --multi-agent
 
 # 跳过阻止（即使发现 CRITICAL 问题也允许提交）
@@ -257,7 +249,7 @@ java -jar diffguard-1.0.0.jar review --staged --force
 java -jar diffguard-1.0.0.jar review --staged --no-cache
 ```
 
-### Webhook 服务器
+#### Webhook 服务器
 
 ```bash
 # 启动 Webhook 服务器
@@ -273,13 +265,13 @@ java -jar diffguard-1.0.0.jar server --port 8080 --config /path/to/config.yml
 - **Content type**: `application/json`
 - **Events**: Pull requests
 
-### 卸载 Git Hooks
+#### 卸载 Git Hooks
 
 ```bash
 java -jar diffguard-1.0.0.jar uninstall
 ```
 
-### CLI 命令参考
+#### CLI 命令参考
 
 | 命令 | 说明 |
 |------|------|
@@ -288,7 +280,7 @@ java -jar diffguard-1.0.0.jar uninstall
 | `uninstall` | 卸载 Git Hooks |
 | `server` | 启动 Webhook 服务器 |
 
-#### `review` 选项
+**`review` 选项：**
 
 | 选项 | 说明 |
 |------|------|
@@ -301,9 +293,7 @@ java -jar diffguard-1.0.0.jar uninstall
 | `--pipeline` | 使用三阶段 Pipeline 模式 |
 | `--multi-agent` | 使用 Multi-Agent 模式 |
 
----
-
-## Example Review Output
+### 审查输出示例
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
@@ -344,19 +334,8 @@ java -jar diffguard-1.0.0.jar uninstall
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 
-┌─ INFO ──────────────────────────────────────────────────────────┐
-│                                                                  │
-│  File: src/main/java/com/example/model/Order.java               │
-│  Line: 15                                                       │
-│  Type: code_quality                                             │
-│                                                                  │
-│  Message:                                                        │
-│    使用 Java 14+ record 可以简化这个不可变数据类的定义。          │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Verdict: BLOCKED     Issues: 1 CRITICAL, 1 WARNING, 1 INFO
+  Verdict: BLOCKED     Issues: 1 CRITICAL, 1 WARNING, 0 INFO
   Files: 3             Tokens: 4,231         Duration: 3.2s
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -368,9 +347,7 @@ Webhook 模式下输出 GFM 格式评论到 GitHub PR：
 > | CRITICAL | OrderService.java | 87 | sql_injection | SQL 拼接使用字符串直接拼接用户输入... |
 > | WARNING | HttpHelper.java | 34 | resource_leak | HttpURLConnection 在异常路径下未关闭... |
 
----
-
-## Configuration
+### 配置
 
 在项目根目录创建 `.review-config.yml`：
 
@@ -390,7 +367,6 @@ rules:
     - bug-risk                  # Bug 风险（空指针、并发、资源泄漏等）
     - code-style                # 代码风格（命名、重复、复杂度等）
     - performance               # 性能问题（不必要的对象创建、低效循环等）
-  severity_threshold: info      # 最低报告级别: info / warning / critical
 
 ignore:
   files:                        # 忽略的文件 glob 模式
@@ -406,7 +382,7 @@ review:
   language: zh                  # 审查输出语言
 ```
 
-### Webhook 配置
+#### Webhook 配置
 
 ```yaml
 webhook:
@@ -418,13 +394,13 @@ webhook:
       local_path: "/path/to/local/repo"
 ```
 
-### 配置加载优先级
+#### 配置加载优先级
 
 ```
---config 命令行参数 > .review-config.yml (项目目录) > ~/.review-config.yml (用户目录) > application.yml (内置)
+--config 命令行参数 > .review-config.yml (项目目录) > ~/.review-config.yml (用户目录) > 内置默认值
 ```
 
-### 环境变量
+#### 环境变量
 
 | 变量 | 必需 | 说明 |
 |------|------|------|
@@ -432,7 +408,7 @@ webhook:
 | `DIFFGUARD_WEBHOOK_SECRET` | Webhook | GitHub Webhook HMAC 签名密钥 |
 | `DIFFGUARD_GITHUB_TOKEN` | Webhook | GitHub Personal Access Token（发表 PR 评论） |
 
-### 自定义 Prompt 模板
+#### 自定义 Prompt 模板
 
 在项目目录下创建 `.diffguard/prompts/system.txt` 和 `.diffguard/prompts/user.txt` 可覆盖内置模板：
 
@@ -449,7 +425,7 @@ webhook:
 {{DIFF_CONTENT}}
 ```
 
-### 支持的 LLM 模型
+#### 支持的 LLM 模型
 
 **OpenAI 系列**
 
@@ -471,9 +447,7 @@ webhook:
 
 支持通过 `base_url` 配置使用兼容 API 的代理服务。
 
----
-
-## Project Structure
+### 项目结构
 
 ```
 diffguard/src/main/java/com/diffguard/
@@ -595,7 +569,7 @@ diffguard/src/main/java/com/diffguard/
 │
 ├── review/                           # 审查服务
 │   ├── ReviewEngine.java             #   审查引擎接口
-│   ├── ReviewEngineFactory.java      #   引程工厂
+│   ├── ReviewEngineFactory.java      #   引擎工厂
 │   ├── ReviewService.java            #   审查编排（缓存 + LLM）
 │   ├── ReviewOrchestrator.java       #   Webhook 异步审查
 │   ├── ReviewCache.java              #   两层缓存
@@ -624,7 +598,7 @@ diffguard/src/main/java/com/diffguard/
     └── TokenEstimator.java           #   Token 计数（jtokkit）
 ```
 
-### Prompt 模板
+**Prompt 模板：**
 
 ```
 src/main/resources/prompt-templates/
@@ -634,18 +608,18 @@ src/main/resources/prompt-templates/
 ├── json-retry-system.txt             # JSON 修复系统提示
 ├── json-retry-user.txt               # JSON 修复用户提示
 ├── pipeline/                         # Pipeline 模式模板
-│   ├── diff-summary-system.txt       #   摘要生成
-│   ├── security-system.txt           #   安全审查
-│   ├── logic-system.txt              #   逻辑审查
-│   ├── quality-system.txt            #   质量审查
-│   └── aggregation-system.txt        #   结果聚合
+│   ├── diff-summary-system.txt
+│   ├── security-system.txt / -user.txt
+│   ├── logic-system.txt
+│   ├── quality-system.txt
+│   └── aggregation-system.txt
 └── reviewagents/                     # Multi-Agent 模板
-    ├── security-system.txt           #   安全 Agent
-    ├── performance-system.txt        #   性能 Agent
-    └── architecture-system.txt       #   架构 Agent
+    ├── security-system.txt
+    ├── performance-system.txt
+    └── architecture-system.txt
 ```
 
-### 主要依赖
+**主要依赖：**
 
 | 依赖 | 版本 | 用途 |
 |------|------|------|
@@ -660,9 +634,7 @@ src/main/resources/prompt-templates/
 | JUnit 5 | 5.10.2 | 测试框架 |
 | Mockito | 5.11.0 | Mock 框架 |
 
----
-
-## Roadmap
+### Roadmap
 
 - [ ] 替换为神经网络 Code Embedding（CodeBERT / OpenAI Embedding API）
 - [ ] 向量存储持久化（SQLite / RocksDB）+ 增量索引
@@ -675,9 +647,7 @@ src/main/resources/prompt-templates/
 - [ ] IDE 插件（VS Code / IntelliJ）
 - [ ] GitLab / Bitbucket Webhook 支持
 
----
-
-## Contributing
+### Contributing
 
 1. Fork 本仓库
 2. 创建功能分支 (`git checkout -b feature/your-feature`)
@@ -686,15 +656,571 @@ src/main/resources/prompt-templates/
 5. 推送分支 (`git push origin feature/your-feature`)
 6. 创建 Pull Request
 
-### 代码规范
+#### 代码规范
 
 - Java 21，使用 record / sealed class / pattern matching 等现代语法
 - 遵循现有包结构和命名约定
 - 新增功能需附带测试
 - Commit message 遵循 [Conventional Commits](https://www.conventionalcommits.org/)
 
+### License
+
+[MIT](LICENSE)
+
 ---
 
-## License
+## English
+
+### Introduction
+
+DiffGuard is an LLM-powered code review agent. It integrates with Git hooks (`pre-commit` / `pre-push`) to automatically intercept code changes, perform multi-dimensional AI review, and block commits when critical issues are found. It also supports a GitHub Webhook mode that automatically posts review comments on Pull Requests.
+
+Code review is critical for software quality, but manual reviews are limited by time, focus, and experience. DiffGuard aims to be the first line of automated defense — catching security vulnerabilities, logic errors, and performance issues at commit time, so reviewers can focus on architecture and business logic.
+
+Unlike simple "diff + prompt" tools, DiffGuard builds a complete code understanding pipeline: JavaParser-based AST analysis, method-level call graphs, TF-IDF semantic retrieval (Code RAG), and a ReAct Agent architecture with Tool Calling. Multiple specialized agents (Security / Performance / Architecture) work in parallel with adaptive strategy planning.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Git Hook Integration** | Auto-trigger review at `pre-commit` / `pre-push` stage; block commits on CRITICAL issues |
+| **GitHub Webhook** | Listen for PR events, auto-review code and post GFM comments with signature verification and rate limiting |
+| **ReAct Agent** | Reasoning-Action loop powered by LangChain4j Function Calling; agents autonomously invoke tools for context |
+| **Multi-Agent Parallel Review** | Security / Performance / Architecture agents run in parallel with strategy-driven weight allocation |
+| **3-Stage Pipeline** | Diff Summary → Parallel specialized review (Security / Logic / Quality) → Aggregation and deduplication |
+| **AST Analysis** | Real JavaParser-based AST analysis extracting method signatures, call edges, control flow, field access, and data flow |
+| **Method-Level Call Graph** | Cross-file call graph (CodeGraph) with CALLS / EXTENDS / IMPLEMENTS / IMPORTS / CONTAINS edge types |
+| **Code RAG** | Self-implemented TF-IDF vector retrieval with code-aware tokenization (camelCase / snake_case) and multi-granularity slicing |
+| **Strategy Planning** | Diff Profiling via static analysis to identify change types (Controller / DAO / Service / Config) and dynamically adjust review focus |
+| **6 Agent Tools** | GetFileContent / GetDiffContext / GetMethodDefinition / GetCallGraph / GetRelatedFiles / SemanticSearch with file access sandbox |
+| **Dual LLM Support** | OpenAI and Anthropic Claude with proxy API support |
+| **Two-Layer Cache** | Caffeine in-memory + disk persistence, SHA-256 keys, 24h TTL, Gzip compression |
+| **Robustness** | Two-phase LLM fallback, exponential backoff retry, proxy error detection, JSON format repair |
+| **Custom Prompts** | Project-level template override with 3-tier config priority (project → user → default) |
+
+### Architecture
+
+```mermaid
+graph TB
+    subgraph "Entry"
+        CLI["CLI (picocli)<br/>review / install / server / uninstall"]
+    end
+
+    subgraph "Input"
+        GD["Git Diff (JGit)<br/>DiffCollector"]
+        WH["Webhook Server<br/>(Javalin)"]
+    end
+
+    subgraph "Analysis"
+        SP["Strategy Planner<br/>DiffProfiler → DiffProfile<br/>→ ReviewStrategy"]
+        AST["AST Enrichment<br/>JavaParser + Cache"]
+    end
+
+    subgraph "Review Engine"
+        S["Simple<br/>(1 LLM call)"]
+        P["Pipeline<br/>(3-stage)"]
+        MA["Multi-Agent<br/>(3 Agents)"]
+    end
+
+    subgraph "Agent Tools"
+        CG["CodeGraph<br/>(Call Graph BFS)"]
+        CR["Code RAG<br/>(TF-IDF Vector)"]
+        AA["ASTAnalyzer<br/>(JavaParser)"]
+    end
+
+    subgraph "LLM Layer"
+        LLM["LangChain4j<br/>AiServices · Function Calling<br/>Structured Output · Retry · Batch<br/>OpenAI / Claude / Proxy"]
+    end
+
+    subgraph "Output"
+        CACHE["Review Cache<br/>Caffeine + Disk"]
+        OUT["Output<br/>Markdown · Terminal UI"]
+    end
+
+    CLI --> GD
+    CLI --> WH
+    GD --> SP
+    WH --> SP
+    SP --> AST
+    AST --> S
+    AST --> P
+    AST --> MA
+    S --> LLM
+    P --> LLM
+    MA --> LLM
+    LLM --> CG
+    LLM --> CR
+    LLM --> AA
+    LLM --> CACHE
+    CACHE --> OUT
+```
+
+### Three Review Modes
+
+#### Simple Mode
+
+Single LLM call for quick review.
+
+```
+Git Diff → Prompt Build → LLM Call → JSON Parse → ReviewResult
+```
+
+#### Pipeline Mode (`--pipeline`)
+
+Stage 1 generates a diff summary, Stage 2 runs three specialized reviewers in parallel (sharing summary context), Stage 3 aggregates and deduplicates.
+
+```
+                        ┌─ SecurityReviewer ─┐
+Git Diff → DiffSummary ─┼─ LogicReviewer     ─┼→ AggregationAgent → ReviewResult
+                        └─ QualityReviewer  ─┘
+                              Parallel
+```
+
+#### Multi-Agent Mode (`--multi-agent`)
+
+Strategy Planner analyzes change characteristics, dynamically adjusting each agent's weight and focus. Each agent is an independent ReAct loop that can invoke 6 code analysis tools.
+
+```
+                         ┌─ SecurityAgent (ReAct + Tools) ─┐
+DiffProfile → Strategy ──┼─ PerformanceAgent (ReAct + Tools) ─┼→ Aggregate → ReviewResult
+                         └─ ArchitectureAgent (ReAct + Tools) ─┘
+                                      Parallel
+```
+
+#### ReAct Agent Loop
+
+```mermaid
+sequenceDiagram
+    participant Agent as ReAct Agent
+    participant LLM as LLM
+    participant Tool as Agent Tools
+
+    Agent->>LLM: System Prompt + Diff Content
+    loop Reasoning-Action Loop
+        LLM->>Agent: Reasoning + Tool Call Decision
+        Agent->>Tool: Execute Tool (get_file_content, get_call_graph...)
+        Tool-->>Agent: Observation
+        Agent->>LLM: Reasoning Result + Observation
+    end
+    LLM-->>Agent: ReActReviewOutput (JSON)
+```
+
+Available tools:
+
+| Tool | Description |
+|------|-------------|
+| `get_file_content` | Read project source files (sandboxed) |
+| `get_diff_context` | Get diff summary or specific file diff content |
+| `get_method_definition` | Parse Java files, extract method signatures, class hierarchy, call edges |
+| `get_call_graph` | Query call graph: callers / callees / impact analysis |
+| `get_related_files` | Find dependency files, inheritance relations, interface implementations |
+| `semantic_search` | Code RAG semantic search for related code snippets |
+
+### Tech Stack
+
+| Category | Technology |
+|----------|-----------|
+| **Language** | Java 21 |
+| **CLI Framework** | picocli 4.7.5 |
+| **Git Operations** | JGit 6.8.0 |
+| **LLM Integration** | LangChain4j 1.13.0 (OpenAI + Anthropic Claude) |
+| **AST Parsing** | JavaParser 3.26.3 |
+| **Caching** | Caffeine 3.1.8 |
+| **Web Server** | Javalin 5.6.3 |
+| **Serialization** | Jackson 2.17.0 (JSON + YAML) |
+| **Token Counting** | jtokkit 1.0.0 |
+| **Build Tool** | Maven + maven-shade-plugin (Fat JAR) |
+| **Testing** | JUnit 5.10.2 + Mockito 5.11.0 |
+| **CI** | GitHub Actions |
+
+### Getting Started
+
+#### Prerequisites
+
+- Java 21+
+- Maven 3.8+
+- Git repository
+
+#### Installation
+
+```bash
+git clone https://github.com/kunxing/diffguard.git
+cd diffguard/diffguard
+mvn clean package -DskipTests
+```
+
+Build output: `diffguard/target/diffguard-1.0.0.jar`
+
+#### Set API Key
+
+```bash
+# OpenAI
+export DIFFGUARD_API_KEY="sk-..."
+
+# Or Anthropic Claude
+export DIFFGUARD_API_KEY="sk-ant-..."
+```
+
+### Usage
+
+#### Install Git Hooks
+
+```bash
+# Install pre-commit + pre-push
+java -jar diffguard-1.0.0.jar install
+
+# Install pre-commit only
+java -jar diffguard-1.0.0.jar install --pre-commit
+
+# Install pre-push only
+java -jar diffguard-1.0.0.jar install --pre-push
+```
+
+After installation, every `git commit` or `git push` automatically triggers a code review. CRITICAL issues block the commit.
+
+#### Manual Review
+
+```bash
+# Review staged changes (git diff --cached)
+java -jar diffguard-1.0.0.jar review --staged
+
+# Review changes between two Git refs
+java -jar diffguard-1.0.0.jar review --from HEAD~3 --to HEAD
+
+# Use Pipeline mode (3-stage specialized review)
+java -jar diffguard-1.0.0.jar review --staged --pipeline
+
+# Use Multi-Agent mode (parallel agent review)
+java -jar diffguard-1.0.0.jar review --staged --multi-agent
+
+# Skip blocking (allow commit even with CRITICAL issues)
+java -jar diffguard-1.0.0.jar review --staged --force
+
+# Disable cache
+java -jar diffguard-1.0.0.jar review --staged --no-cache
+```
+
+#### Webhook Server
+
+```bash
+# Start webhook server
+java -jar diffguard-1.0.0.jar server
+
+# Specify port and config
+java -jar diffguard-1.0.0.jar server --port 8080 --config /path/to/config.yml
+```
+
+Configure in GitHub repo Settings → Webhooks:
+
+- **Payload URL**: `http://your-server:8080/webhook/github`
+- **Content type**: `application/json`
+- **Events**: Pull requests
+
+#### Uninstall Git Hooks
+
+```bash
+java -jar diffguard-1.0.0.jar uninstall
+```
+
+#### CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `review` | Review code changes |
+| `install` | Install Git Hooks |
+| `uninstall` | Uninstall Git Hooks |
+| `server` | Start Webhook server |
+
+**`review` options:**
+
+| Option | Description |
+|--------|-------------|
+| `--staged` | Review staged changes |
+| `--from <ref>` | Source Git ref |
+| `--to <ref>` | Target Git ref |
+| `--force` | Skip blocking (ignore CRITICAL) |
+| `--config <path>` | Specify config file path |
+| `--no-cache` | Disable result cache |
+| `--pipeline` | Use 3-stage Pipeline mode |
+| `--multi-agent` | Use Multi-Agent mode |
+
+### Example Output
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║                      DiffGuard Review Report                    ║
+╚══════════════════════════════════════════════════════════════════╝
+
+┌─ CRITICAL ──────────────────────────────────────────────────────┐
+│                                                                  │
+│  File: src/main/java/com/example/service/OrderService.java      │
+│  Line: 87                                                       │
+│  Type: sql_injection                                            │
+│                                                                  │
+│  Message:                                                        │
+│    SQL string concatenation using user input — SQL injection    │
+│    risk. The orderId parameter is not parameterized. An          │
+│    attacker could execute arbitrary SQL via crafted input.       │
+│                                                                  │
+│  Suggestion:                                                     │
+│    Use PreparedStatement instead of string concatenation:        │
+│    String sql = "SELECT * FROM orders WHERE id = ?";             │
+│    stmt.setString(1, orderId);                                   │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+┌─ WARNING ───────────────────────────────────────────────────────┐
+│                                                                  │
+│  File: src/main/java/com/example/util/HttpHelper.java           │
+│  Line: 34                                                       │
+│  Type: resource_leak                                             │
+│                                                                  │
+│  Message:                                                        │
+│    HttpURLConnection not properly closed on error paths,        │
+│    potentially causing connection leaks.                         │
+│                                                                  │
+│  Suggestion:                                                     │
+│    Use try-with-resources or ensure                              │
+│    connection.disconnect() in a finally block.                   │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Verdict: BLOCKED     Issues: 1 CRITICAL, 1 WARNING, 0 INFO
+  Files: 3             Tokens: 4,231         Duration: 3.2s
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+In Webhook mode, reviews are posted as GFM comments on GitHub PRs:
+
+> | Severity | File | Line | Type | Message |
+> |----------|------|------|------|---------|
+> | CRITICAL | OrderService.java | 87 | sql_injection | SQL string concatenation using user input... |
+> | WARNING | HttpHelper.java | 34 | resource_leak | HttpURLConnection not properly closed... |
+
+### Configuration
+
+Create `.review-config.yml` in the project root:
+
+```yaml
+llm:
+  provider: openai              # openai or claude
+  model: gpt-5                  # Model name
+  max_tokens: 16384             # Max response tokens
+  temperature: 0.3              # Sampling temperature (0-2)
+  timeout_seconds: 240          # HTTP timeout (seconds)
+  api_key_env: DIFFGUARD_API_KEY # API Key env variable name
+  # base_url: https://api.your-proxy.com/v1  # Custom API endpoint
+
+rules:
+  enabled:
+    - security                  # Security (SQL injection, XSS, hardcoded keys)
+    - bug-risk                  # Bug risk (NPE, concurrency, resource leak)
+    - code-style                # Code style (naming, duplication, complexity)
+    - performance               # Performance (unnecessary objects, inefficient loops)
+
+ignore:
+  files:                        # File glob patterns to skip
+    - "**/*.generated.java"
+    - "**/target/**"
+    - "**/node_modules/**"
+  patterns:                     # Regex patterns to filter issues
+    - ".*import statement.*"
+
+review:
+  max_diff_files: 20            # Max files per review
+  max_tokens_per_file: 4000     # Max tokens per file
+  language: en                  # Review output language
+```
+
+#### Webhook Configuration
+
+```yaml
+webhook:
+  port: 8080
+  secret_env: DIFFGUARD_WEBHOOK_SECRET
+  github_token_env: DIFFGUARD_GITHUB_TOKEN
+  repos:
+    - full_name: "owner/repo"
+      local_path: "/path/to/local/repo"
+```
+
+#### Config Priority
+
+```
+--config CLI flag > .review-config.yml (project dir) > ~/.review-config.yml (user dir) > Built-in defaults
+```
+
+#### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DIFFGUARD_API_KEY` | Yes | LLM API key |
+| `DIFFGUARD_WEBHOOK_SECRET` | Webhook | GitHub Webhook HMAC signing secret |
+| `DIFFGUARD_GITHUB_TOKEN` | Webhook | GitHub Personal Access Token (for posting PR comments) |
+
+#### Custom Prompt Templates
+
+Create `.diffguard/prompts/system.txt` and `.diffguard/prompts/user.txt` in the project directory to override built-in templates:
+
+```plaintext
+# system.txt
+You are a professional code reviewer...
+
+# user.txt
+Review the following code changes.
+Review language: {{LANGUAGE}}
+Enabled rules: {{RULES}}
+Changed file: {{FILE_PATH}}
+Code changes (diff format):
+{{DIFF_CONTENT}}
+```
+
+#### Supported LLM Models
+
+**OpenAI Series**
+
+| Model | Description |
+|-------|-------------|
+| `gpt-5` | GPT-5 |
+| `gpt-5-codex` | GPT-5 Codex |
+| `gpt-5.1` / `gpt-5.2` | GPT-5.x series |
+| `o3-mini` / `o3` | o3 reasoning models |
+| `o1` / `o1-mini` | o1 reasoning models |
+
+**Anthropic Claude Series**
+
+| Model | Description |
+|-------|-------------|
+| `claude-sonnet-4-6` | Claude Sonnet 4.6 |
+| `claude-opus-4-6` | Claude Opus 4.6 |
+| `claude-haiku-4-5` | Claude Haiku 4.5 |
+
+Proxy APIs are supported via the `base_url` configuration.
+
+### Project Structure
+
+```
+diffguard/src/main/java/com/diffguard/
+├── DiffGuard.java                    # Application entry point
+│
+├── agent/                            # AI Agent system
+│   ├── core/                         # ReAct Agent core
+│   │   ├── ReActAgent.java           #   ReAct loop engine
+│   │   ├── ReActAgentService.java    #   LangChain4j AiServices interface
+│   │   ├── AgentContext.java         #   Session state (thread-safe)
+│   │   ├── AgentResponse.java        #   Agent output
+│   │   ├── StepRecord.java           #   Reasoning step record
+│   │   └── AgentTool.java            #   Tool interface
+│   ├── pipeline/                     # 3-stage review pipeline
+│   │   ├── MultiStageReviewService.java  # Pipeline orchestrator
+│   │   ├── DiffSummaryAgent.java     #   Stage 1: Change summary
+│   │   ├── SecurityReviewer.java     #   Stage 2: Security review
+│   │   ├── LogicReviewer.java        #   Stage 2: Logic review
+│   │   ├── QualityReviewer.java      #   Stage 2: Quality review
+│   │   └── AggregationAgent.java     #   Stage 3: Aggregation
+│   ├── reviewagents/                 # Specialized review agents
+│   │   ├── MultiAgentReviewOrchestrator.java  # Multi-Agent orchestrator
+│   │   ├── SecurityReviewAgent.java  #   Security agent
+│   │   ├── PerformanceReviewAgent.java  # Performance agent
+│   │   └── ArchitectureReviewAgent.java   # Architecture agent
+│   ├── strategy/                     # Review strategy planning
+│   │   ├── DiffProfiler.java         #   Diff static analysis
+│   │   ├── DiffProfile.java          #   Change profile
+│   │   ├── StrategyPlanner.java      #   Strategy planner
+│   │   └── ReviewStrategy.java       #   Review strategy
+│   └── tools/                        # Agent toolset
+│       ├── AgentFunctionToolProvider.java  # @Tool adapter
+│       ├── GetFileContentTool.java   #   File content reader
+│       ├── GetDiffContextTool.java    #   Diff context
+│       ├── GetMethodDefinitionTool.java   # Method definition parser
+│       ├── GetCallGraphTool.java      #   Call graph query
+│       ├── GetRelatedFilesTool.java   #   Related file finder
+│       ├── SemanticSearchTool.java    #   Semantic search
+│       ├── FileAccessSandbox.java     #   File access sandbox
+│       └── ToolRegistry.java         #   Tool registry
+│
+├── ast/                              # AST parsing engine
+│   ├── ASTAnalyzer.java              #   JavaParser core
+│   ├── ASTCache.java                 #   Caffeine cache
+│   ├── ASTContextBuilder.java        #   Diff-aware context builder
+│   ├── ASTEnricher.java              #   AST pipeline orchestrator
+│   ├── ProjectASTAnalyzer.java       #   Project-wide AST analysis
+│   └── model/                        #   AST data models
+│
+├── codegraph/                        # Code knowledge graph
+│   ├── CodeGraph.java                #   Directed graph (4 nodes + 5 edge types)
+│   ├── CodeGraphBuilder.java         #   Four-pass builder
+│   ├── GraphNode.java                #   Graph node
+│   └── GraphEdge.java                #   Graph edge
+│
+├── coderag/                          # Code RAG
+│   ├── CodeRAGService.java           #   RAG pipeline orchestrator
+│   ├── CodeSlicer.java               #   Multi-granularity code slicer
+│   ├── LocalTFIDFProvider.java       #   TF-IDF vectorizer (self-implemented)
+│   ├── InMemoryVectorStore.java      #   In-memory vector store
+│   ├── EmbeddingProvider.java        #   Embedding interface
+│   ├── VectorStore.java              #   Vector store interface
+│   └── CodeChunk.java                #   Code chunk
+│
+├── cli/                              # CLI commands
+├── config/                           # Configuration management
+├── git/                              # Git operations
+├── llm/                              # LLM client layer
+├── model/                            # Data models
+├── output/                           # Output formatting
+├── prompt/                           # Prompt templates
+├── review/                           # Review service
+├── webhook/                          # Webhook server
+├── exception/                        # Exception hierarchy
+├── concurrent/                       # Concurrency management
+└── util/                             # Utilities
+```
+
+**Key Dependencies:**
+
+| Dependency | Version | Purpose |
+|------------|---------|---------|
+| [picocli](https://picocli.info/) | 4.7.5 | CLI framework |
+| [JGit](https://www.eclipse.org/jgit/) | 6.8.0 | Git operations |
+| [Jackson](https://github.com/FasterXML/jackson) | 2.17.0 | JSON / YAML processing |
+| [LangChain4j](https://github.com/langchain4j/langchain4j) | 1.13.0 | LLM integration + Agent framework |
+| [JavaParser](https://javaparser.org/) | 3.26.3 | Java AST parsing |
+| [Caffeine](https://github.com/ben-manes/caffeine) | 3.1.8 | High-performance cache |
+| [Javalin](https://javalin.io/) | 5.6.3 | Lightweight HTTP server |
+| [jtokkit](https://github.com/knuddelsgmbh/jtokkit) | 1.0.0 | Token counting |
+| JUnit 5 | 5.10.2 | Testing framework |
+| Mockito | 5.11.0 | Mock framework |
+
+### Roadmap
+
+- [ ] Neural Code Embedding (CodeBERT / OpenAI Embedding API)
+- [ ] Vector store persistence (SQLite / RocksDB) + incremental indexing
+- [ ] Reflection mechanism (Agent output validation: verify issue-referenced code lines actually exist)
+- [ ] Simplified type inference (Spring @Autowired injection type resolution)
+- [ ] Inter-agent collaboration (Blackboard pattern, shared reasoning intermediate results)
+- [ ] Observability (Micrometer + Prometheus metrics)
+- [ ] Docker deployment (Dockerfile + docker-compose)
+- [ ] Multi-language AST support (Python / Go)
+- [ ] IDE plugins (VS Code / IntelliJ)
+- [ ] GitLab / Bitbucket Webhook support
+
+### Contributing
+
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Commit your changes (`git commit -m 'feat: add your feature'`)
+4. Ensure tests pass (`mvn verify`)
+5. Push the branch (`git push origin feature/your-feature`)
+6. Create a Pull Request
+
+#### Code Conventions
+
+- Java 21 with modern syntax (record / sealed class / pattern matching)
+- Follow existing package structure and naming conventions
+- New features must include tests
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
+
+### License
 
 [MIT](LICENSE)
