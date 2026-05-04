@@ -16,6 +16,10 @@ public class ReviewConfig {
     private PipelineConfig pipeline = new PipelineConfig();
     private WebhookConfig webhook = null;
     private EmbeddingConfig embedding = new EmbeddingConfig();
+    private AgentServiceConfig agentService = null;
+    private MessageQueueConfig messageQueue = new MessageQueueConfig();
+    private DatabaseConfigHolder database = new DatabaseConfigHolder();
+    private RedisConfig redis = new RedisConfig();
 
     public LlmConfig getLlm() {
         return llm;
@@ -59,6 +63,26 @@ public class ReviewConfig {
 
     public EmbeddingConfig getEmbedding() {
         return embedding;
+    }
+
+    public AgentServiceConfig getAgentService() {
+        return agentService;
+    }
+
+    public void setAgentService(AgentServiceConfig agentService) {
+        this.agentService = agentService;
+    }
+
+    public MessageQueueConfig getMessageQueue() {
+        return messageQueue;
+    }
+
+    public DatabaseConfigHolder getDatabase() {
+        return database;
+    }
+
+    public RedisConfig getRedis() {
+        return redis;
     }
 
     /**
@@ -305,6 +329,101 @@ public class ReviewConfig {
                 return llmBaseUrl.endsWith("/") ? llmBaseUrl.substring(0, llmBaseUrl.length() - 1) : llmBaseUrl;
             }
             return "https://api.openai.com/v1";
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class AgentServiceConfig {
+        private String url = "http://localhost:8000";
+
+        @JsonProperty("timeout_seconds")
+        private int timeoutSeconds = 300;
+
+        @JsonProperty("tool_server_port")
+        private int toolServerPort = 9090;
+
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+        public int getTimeoutSeconds() { return timeoutSeconds; }
+        public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
+        public int getToolServerPort() { return toolServerPort; }
+        public void setToolServerPort(int toolServerPort) { this.toolServerPort = toolServerPort; }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MessageQueueConfig {
+        private boolean enabled = false;
+        private String host = "localhost";
+        private int port = 5672;
+        private String user = "guest";
+        private String password = "guest";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getHost() { return host; }
+        public void setHost(String host) { this.host = host; }
+        public int getPort() { return port; }
+        public void setPort(int port) { this.port = port; }
+        public String getUser() { return user; }
+        public void setUser(String user) { this.user = user; }
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+
+        public String resolveHost() {
+            String env = System.getenv("RABBITMQ_HOST");
+            return (env != null && !env.isBlank()) ? env.trim() : host;
+        }
+
+        public int resolvePort() {
+            String env = System.getenv("RABBITMQ_PORT");
+            return (env != null && !env.isBlank()) ? Integer.parseInt(env.trim()) : port;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class DatabaseConfigHolder {
+        private boolean enabled = false;
+        private String host = "localhost";
+        private int port = 3306;
+        private String name = "diffguard";
+        private String user = "diffguard";
+        private String password = "diffguard123";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getHost() { return host; }
+        public void setHost(String host) { this.host = host; }
+        public int getPort() { return port; }
+        public void setPort(int port) { this.port = port; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getUser() { return user; }
+        public void setUser(String user) { this.user = user; }
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+
+        public String resolveHost() {
+            String env = System.getenv("MYSQL_HOST");
+            return (env != null && !env.isBlank()) ? env.trim() : host;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class RedisConfig {
+        private boolean enabled = false;
+        private String host = "localhost";
+        private int port = 6379;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getHost() { return host; }
+        public void setHost(String host) { this.host = host; }
+        public int getPort() { return port; }
+        public void setPort(int port) { this.port = port; }
+
+        public String resolveHost() {
+            String env = System.getenv("REDIS_HOST");
+            return (env != null && !env.isBlank()) ? env.trim() : host;
         }
     }
 }

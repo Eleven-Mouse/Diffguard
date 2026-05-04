@@ -1,27 +1,24 @@
 package com.diffguard.review;
 
-import com.diffguard.agent.pipeline.MultiStageReviewService;
-import com.diffguard.agent.reviewagents.MultiAgentReviewOrchestrator;
+import com.diffguard.agent.python.PythonReviewEngine;
 import com.diffguard.config.ReviewConfig;
-import com.diffguard.llm.provider.LangChain4jClaudeAdapter;
-import com.diffguard.llm.provider.LangChain4jOpenAiAdapter;
-import com.diffguard.llm.provider.TokenTracker;
-import com.diffguard.agent.tools.FileAccessSandbox;
+import com.diffguard.messaging.RabbitMQConfig;
+import com.diffguard.messaging.ReviewTaskMessage;
+import com.diffguard.messaging.ReviewTaskPublisher;
 import com.diffguard.model.DiffFileEntry;
-import dev.langchain4j.model.chat.ChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 审查引擎工厂。
  * <p>
  * 根据配置和 CLI 标志创建对应的 {@link ReviewEngine} 实例。
+ * SIMPLE 模式使用 Java 本地实现，PIPELINE 和 MULTI_AGENT 委托给 Python Agent 服务。
+ * 支持 RabbitMQ 异步模式：任务发送到消息队列，由 Python Consumer 消费。
  */
 public class ReviewEngineFactory {
 
@@ -43,14 +40,7 @@ public class ReviewEngineFactory {
     }
 
     /**
-     * 创建审查引擎实例。
-     *
-     * @param type       引擎类型
-     * @param config     审查配置
-     * @param projectDir 项目目录
-     * @param diffEntries 差异文件列表（用于构建沙箱）
-     * @param noCache    是否禁用缓存
-     * @return 审查引擎实例
+     * 创建审查引擎实例（同步模式，保留向后兼容）。
      */
     public static ReviewEngine create(EngineType type, ReviewConfig config,
                                        Path projectDir, List<DiffFileEntry> diffEntries,
@@ -58,35 +48,67 @@ public class ReviewEngineFactory {
         return switch (type) {
             case SIMPLE -> new ReviewService(config, projectDir, noCache);
             case PIPELINE -> {
-                ChatModel chatModel = createChatModel(config);
-                FileAccessSandbox sandbox = createSandbox(projectDir, diffEntries);
-                yield new MultiStageReviewService(chatModel, sandbox);
+                String toolServerUrl = resolveToolServerUrl(config);
+                log.info("Using Python Agent service for PIPELINE mode (tool server: {})", toolServerUrl);
+                yield new PythonReviewEngine("PIPELINE", config, toolServerUrl);
             }
             case MULTI_AGENT -> {
-                ChatModel chatModel = createChatModel(config);
-                yield new MultiAgentReviewOrchestrator(chatModel, projectDir, config);
+                String toolServerUrl = resolveToolServerUrl(config);
+                log.info("Using Python Agent service for MULTI_AGENT mode (tool server: {})", toolServerUrl);
+                yield new PythonReviewEngine("MULTI_AGENT", config, toolServerUrl);
             }
         };
     }
 
-    private static ChatModel createChatModel(ReviewConfig config) {
-        AtomicInteger totalTokens = new AtomicInteger(0);
-        TokenTracker tracker = tokens -> {
-            int total = totalTokens.addAndGet(tokens);
-            log.debug("Token usage: +{} (total: {})", tokens, total);
-        };
-        String providerName = config.getLlm().getProvider().toLowerCase();
-        if ("claude".equals(providerName)) {
-            return new LangChain4jClaudeAdapter(config.getLlm(), tracker).getChatModel();
-        } else {
-            return new LangChain4jOpenAiAdapter(config.getLlm(), tracker).getChatModel();
+    /**
+     * 异步模式：通过 RabbitMQ 发送任务，返回 CompletableFuture。
+     * 如果 RabbitMQ 不可用，自动降级到同步模式。
+     */
+    public static CompletableFuture<ReviewEngine> createAsync(
+            EngineType type, ReviewConfig config,
+            Path projectDir, List<DiffFileEntry> diffEntries,
+            boolean noCache) {
+
+        ReviewConfig.MessageQueueConfig mqConfig = config.getMessageQueue();
+        if (mqConfig == null || !mqConfig.isEnabled()) {
+            // 没有启用消息队列，降级到同步
+            log.info("Message queue not enabled, falling back to sync mode");
+            return CompletableFuture.completedFuture(
+                    create(type, config, projectDir, diffEntries, noCache));
         }
+
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                RabbitMQConfig rabbitMQ = RabbitMQConfig.fromEnv();
+                ReviewTaskPublisher publisher = new ReviewTaskPublisher(rabbitMQ);
+                String mode = switch (type) {
+                    case PIPELINE -> "PIPELINE";
+                    case MULTI_AGENT -> "MULTI_AGENT";
+                    case SIMPLE -> "SIMPLE";
+                };
+                String toolServerUrl = resolveToolServerUrl(config);
+                ReviewTaskMessage message = new ReviewTaskMessage(
+                        mode, config, diffEntries,
+                        projectDir.toString(), toolServerUrl, false);
+                String taskId = publisher.publish(message);
+                log.info("Async review task submitted: id={}, mode={}", taskId, mode);
+                return new AsyncReviewEngine(taskId, config);
+            } catch (Exception e) {
+                log.warn("RabbitMQ unavailable, falling back to sync: {}", e.getMessage());
+                return create(type, config, projectDir, diffEntries, noCache);
+            }
+        });
     }
 
-    private static FileAccessSandbox createSandbox(Path projectDir, List<DiffFileEntry> diffEntries) {
-        Set<String> filePaths = diffEntries.stream()
-                .map(DiffFileEntry::getFilePath)
-                .collect(Collectors.toSet());
-        return new FileAccessSandbox(projectDir, filePaths);
+    static String resolveToolServerUrl(ReviewConfig config) {
+        String host = System.getenv("DIFFGUARD_TOOL_SERVER_HOST");
+        if (host == null || host.isBlank()) {
+            host = "localhost";
+        }
+        int port = 9090;
+        if (config.getAgentService() != null) {
+            port = config.getAgentService().getToolServerPort();
+        }
+        return "http://" + host + ":" + port;
     }
 }
