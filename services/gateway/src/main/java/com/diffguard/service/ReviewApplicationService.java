@@ -74,10 +74,14 @@ public class ReviewApplicationService {
                 engineType, config, projectDir, diffEntries, noCache)) {
             return engine.review(diffEntries, projectDir);
         } catch (LlmApiException e) {
-            log.error("LLM 调用失败，状态码：{}", e.getStatusCode(), e);
+            System.err.println("  LLM 调用失败（状态码 " + e.getStatusCode() + "）：" + e.getMessage());
             return null;
         } catch (DiffGuardException e) {
-            log.error("审查过程出错", e);
+            System.err.println("  审查过程出错：" + e.getMessage());
+            return null;
+        } catch (Exception e) {
+            System.err.println("  未预期的错误：" + e.getMessage());
+            e.printStackTrace(System.err);
             return null;
         }
     }
