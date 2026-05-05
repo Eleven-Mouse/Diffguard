@@ -187,7 +187,7 @@ class ReviewTaskRepositoryTest {
             String longMessage = "x".repeat(5000);
             repository.updateError("task-11", longMessage);
 
-            verify(preparedStatement).setString(1, argThat(msg ->
+            verify(preparedStatement).setString(eq(1), argThat(msg ->
                     msg != null && msg.length() <= 4000));
         }
 

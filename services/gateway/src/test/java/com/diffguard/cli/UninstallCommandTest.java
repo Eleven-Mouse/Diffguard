@@ -139,7 +139,7 @@ class UninstallCommandTest {
             // Create a non-DiffGuard hook
             Path hooksDir = gitRepo.resolve(".git/hooks");
             Path customHook = hooksDir.resolve("pre-commit");
-            String customContent = "#!/bin/sh\n# Custom hook - not DiffGuard\necho custom";
+            String customContent = "#!/bin/sh\n# Custom hook - my own script\necho custom";
             Files.writeString(customHook, customContent);
 
             GitHookInstaller.uninstall(gitRepo);

@@ -34,8 +34,8 @@ class ConfigLoaderTest {
 
             assertNotNull(config);
             assertNotNull(config.getLlm());
-            // application.yml 中配置的是 openai provider
-            assertEquals("openai", config.getLlm().getProvider());
+            // application.yml 中配置的是 claude provider
+            assertEquals("claude", config.getLlm().getProvider());
         }
 
         @Test
@@ -119,8 +119,8 @@ class ConfigLoaderTest {
             ReviewConfig config = ConfigLoader.load(tempDir);
 
             assertNotNull(config);
-            // application.yml 中默认 provider 是 openai
-            assertEquals("openai", config.getLlm().getProvider());
+            // application.yml 中默认 provider 是 claude
+            assertEquals("claude", config.getLlm().getProvider());
         }
 
         @Test
