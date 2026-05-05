@@ -25,7 +25,7 @@ jobs:
           cache: maven
 
       - name: Build & Test
-        working-directory: diffguard
+        working-directory: services/gateway
         run: mvn -B verify
 
       - name: Upload test results
@@ -33,4 +33,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-java-${{ matrix.java-version }}
-          path: diffguard/target/surefire-reports/
+          path: services/gateway/target/surefire-reports/

@@ -1,0 +1,129 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: diffguard
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-diffguard123}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - diffguard-net
+
+  mysql:
+    image: mysql:8.4
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-diffguard_root}
+      MYSQL_DATABASE: diffguard
+      MYSQL_USER: diffguard
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-diffguard123}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./services/gateway/src/main/resources/db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - diffguard-net
+
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - diffguard-net
+
+  diffguard-gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"    # webhook server
+      - "9090:9090"    # tool server
+      - "9091:9091"    # metrics (prometheus)
+    environment:
+      - DIFFGUARD_AGENT_URL=http://diffguard-agent:8000
+      - DIFFGUARD_API_KEY=${DIFFGUARD_API_KEY:-}
+      - DIFFGUARD_WEBHOOK_SECRET=${DIFFGUARD_WEBHOOK_SECRET:-}
+      - DIFFGUARD_GITHUB_TOKEN=${DIFFGUARD_GITHUB_TOKEN:-}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=diffguard
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-diffguard123}
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DB=diffguard
+      - MYSQL_USER=diffguard
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-diffguard123}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ${PROJECT_DIR:-.}:/project:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      diffguard-agent:
+        condition: service_healthy
+    networks:
+      - diffguard-net
+
+  diffguard-agent:
+    build:
+      context: ./services/agent
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - JAVA_TOOL_SERVER_URL=http://diffguard-gateway:9090
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=diffguard
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-diffguard123}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - diffguard-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  rabbitmq_data:
+  mysql_data:
+  redis_data:
+
+networks:
+  diffguard-net:
+    driver: bridge

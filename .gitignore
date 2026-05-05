@@ -6,12 +6,15 @@
 # Build
 diffguard/target/
 diffguard/dependency-reduced-pom.xml
+services/gateway/target/
+**/target/
 
 # OS
 .DS_Store
 Thumbs.db
 
 # Config (may contain API keys)
+application.yml
 .review-config.yml
 
 # Runtime artifacts
