@@ -17,8 +17,7 @@
     </appender>
 
     <logger name="com.diffguard" level="INFO"/>
-    <logger name="io.javalin" level="INFO"/>
-    <logger name="org.eclipse.jetty" level="INFO"/>
+    <logger name="io.javalin" level="WARN"/>
     <logger name="com.rabbitmq" level="WARN"/>
 
     <root level="INFO">
