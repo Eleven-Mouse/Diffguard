@@ -143,7 +143,7 @@ class ReviewResultRepositoryTest {
 
             repository.saveResult("task-5", result);
 
-            verify(preparedStatement).setString(4, argThat(s -> s != null && s.length() <= 500));
+            verify(preparedStatement).setString(eq(4), argThat(s -> s != null && s.length() <= 500));
         }
     }
 

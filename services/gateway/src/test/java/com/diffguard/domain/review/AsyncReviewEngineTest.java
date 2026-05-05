@@ -91,6 +91,10 @@ class AsyncReviewEngineTest {
         @Test
         @DisplayName("数据库未启用时抛出异常")
         void databaseNotEnabledThrows() {
+            ReviewConfig.LlmConfig llmConfig = new ReviewConfig.LlmConfig();
+            llmConfig.setTimeoutSeconds(30);
+            when(config.getLlm()).thenReturn(llmConfig);
+
             ReviewConfig.DatabaseConfigHolder dbConfig = mock(ReviewConfig.DatabaseConfigHolder.class);
             when(dbConfig.isEnabled()).thenReturn(false);
             when(config.getDatabase()).thenReturn(dbConfig);

@@ -270,7 +270,7 @@ class RuleEngineTest {
         @DisplayName("多条规则同时触发")
         void multipleRulesTriggered() {
             String content = "Runtime.getRuntime().exec(cmd);\n" +
-                    "String query = \"SELECT * FROM users WHERE id = \" + userId;";
+                    "String query = \" + userId + \" FROM users WHERE id = 1;";
             List<ReviewIssue> issues = engine.scan(List.of(entry("Service.java", content)));
 
             assertTrue(issues.size() >= 2, "Should have at least 2 issues from different rules");
@@ -279,7 +279,7 @@ class RuleEngineTest {
         @Test
         @DisplayName("多个文件分别扫描")
         void multipleFilesScanned() {
-            String sqlContent = "String query = \"SELECT * FROM t WHERE id = \" + id;";
+            String sqlContent = "String query = \" + id + \" FROM t WHERE id = 1;";
             String safeContent = "int x = 1;";
             List<ReviewIssue> issues = engine.scan(List.of(
                     entry("A.java", sqlContent),
