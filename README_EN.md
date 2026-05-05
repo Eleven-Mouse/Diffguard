@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/images/logo.svg" alt="DiffGuard" width="120" height="120" />
-</p>
-
 <h1 align="center">DiffGuard</h1>
 
 <p align="center">
