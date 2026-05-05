@@ -40,7 +40,7 @@ public class DiffGuardMain implements Runnable {
      */
     public static int execute(String[] args) {
         DiffGuardMain main = new DiffGuardMain();
-        int exitCode = new CommandLine(main).execute(args);
-        return exitCode != 0 ? exitCode : main.getExitCode();
+        new CommandLine(main).execute(args);
+        return main.getExitCode();
     }
 }

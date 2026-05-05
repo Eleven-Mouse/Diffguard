@@ -77,7 +77,7 @@ class PromptBuilderTest {
             String userPrompt = prompts.get(0).getUserPrompt();
             // 默认配置启用 security, bug-risk, code-style, performance
             assertTrue(userPrompt.contains("安全"));
-            assertTrue(userPrompt.contains("逻辑"));
+            assertTrue(userPrompt.contains("逻辑错误"));
             assertTrue(userPrompt.contains("代码质量"));
             assertTrue(userPrompt.contains("性能"));
         }
@@ -89,7 +89,7 @@ class PromptBuilderTest {
             DiffFileEntry entry = makeEntry("A.java", "content");
             List<PromptBuilder.PromptContent> prompts = builder.buildPrompts(List.of(entry));
 
-            assertFalse(prompts.get(0).getUserPrompt().isEmpty());
+            assertTrue(prompts.get(0).getUserPrompt().contains("zh"));
         }
 
         @Test
@@ -122,6 +122,7 @@ class PromptBuilderTest {
 
             String sys = prompts.get(0).getSystemPrompt();
             assertFalse(sys.isBlank());
+            assertTrue(sys.contains("JSON"));
         }
     }
 

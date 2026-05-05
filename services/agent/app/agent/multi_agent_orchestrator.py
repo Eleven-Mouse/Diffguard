@@ -12,7 +12,7 @@ import logging
 
 from app.agent.base import AgentReviewResult
 from app.agent.memory import AgentMemory
-from app.agent.utils import create_llm as _create_llm
+from app.agent.pipeline_orchestrator import _create_llm
 from app.agent.registry import AgentRegistry
 from app.agent.strategy_planner import StrategyPlanner
 from app.models.schemas import (
