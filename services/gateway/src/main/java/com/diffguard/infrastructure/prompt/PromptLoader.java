@@ -26,9 +26,6 @@ public final class PromptLoader {
      * @return 模板内容
      */
     public static String load(String resourcePath, String fallback) {
-        if (resourcePath == null || resourcePath.isEmpty()) {
-            return fallback;
-        }
         try (InputStream is = PromptLoader.class.getResourceAsStream(resourcePath)) {
             if (is == null) {
                 log.warn("Prompt 模板未找到: {}，使用回退内容", resourcePath);

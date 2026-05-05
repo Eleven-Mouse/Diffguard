@@ -46,10 +46,6 @@ public class BatchReviewExecutor implements AutoCloseable {
                                       Function<PromptBuilder.PromptContent, LlmResponse> singlePromptRunner) throws LlmApiException {
         ReviewResult result = new ReviewResult();
 
-        if (prompts.isEmpty()) {
-            return result;
-        }
-
         List<Future<LlmResponse>> futures = new ArrayList<>();
         for (int i = 0; i < prompts.size(); i++) {
             final int idx = i;

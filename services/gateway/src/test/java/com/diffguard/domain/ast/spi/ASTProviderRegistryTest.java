@@ -106,10 +106,10 @@ class ASTProviderRegistryTest {
         @Test
         @DisplayName("注册自定义 Provider 后可获取")
         void registerAndRetrieve() {
-            // Create a mock provider for Rust
-            LanguageASTProvider rustProvider = new LanguageASTProvider() {
+            // Create a mock provider for Python
+            LanguageASTProvider pythonProvider = new LanguageASTProvider() {
                 @Override
-                public Language language() { return Language.RUST; }
+                public Language language() { return Language.PYTHON; }
 
                 @Override
                 public List<ASTNodeInfo> parse(String sourceCode, String filePath) {
@@ -127,8 +127,8 @@ class ASTProviderRegistryTest {
                 }
             };
 
-            ASTProviderRegistry.register(rustProvider);
-            Optional<LanguageASTProvider> found = ASTProviderRegistry.getProvider(Language.RUST);
+            ASTProviderRegistry.register(pythonProvider);
+            Optional<LanguageASTProvider> found = ASTProviderRegistry.getProvider(Language.PYTHON);
 
             assertTrue(found.isPresent());
 

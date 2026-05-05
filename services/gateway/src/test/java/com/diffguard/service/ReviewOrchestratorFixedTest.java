@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.file.Path;
@@ -18,7 +18,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-
+import static org.mockito.Answers.CALLS_REAL_METHODS;
 
 /**
  * Fixed tests for {@link ReviewOrchestrator} that properly handle
@@ -88,35 +88,11 @@ class ReviewOrchestratorFixedTest {
      * subsequent calls do not need the env var.
      */
     private ReviewOrchestrator createOrchestrator(ReviewConfig config) {
-        setEnvironmentVariable("DIFFGUARD_GITHUB_TOKEN", TEST_GITHUB_TOKEN);
-        try {
-            return new ReviewOrchestrator(config, mockGithubClient);
-        } catch (Exception e) {
-            // If construction fails due to missing token, still try with the mock
-            throw e;
-        }
-    }
+        try (MockedStatic<System> systemMock = mockStatic(System.class, CALLS_REAL_METHODS)) {
+            systemMock.when(() -> System.getenv("DIFFGUARD_GITHUB_TOKEN"))
+                    .thenReturn(TEST_GITHUB_TOKEN);
 
-    private static void setEnvironmentVariable(String key, String value) {
-        try {
-            Class<?> processEnvironmentClass = Class.forName("java.util.Collections$UnmodifiableMap");
-            java.lang.reflect.Field field = System.getenv().getClass().getDeclaredField("m");
-            field.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            java.util.Map<String, String> mutableEnv = (java.util.Map<String, String>) field.get(System.getenv());
-            mutableEnv.put(key, value);
-        } catch (Exception e) {
-            try {
-                Class<?> processEnvironmentClass2 = Class.forName("java.lang.ProcessEnvironment");
-                java.lang.reflect.Field theCaseInsensitiveEnvironmentField = processEnvironmentClass2
-                        .getDeclaredField("theCaseInsensitiveEnvironment");
-                theCaseInsensitiveEnvironmentField.setAccessible(true);
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, String> ciEnv = (java.util.Map<String, String>) theCaseInsensitiveEnvironmentField.get(null);
-                ciEnv.put(key, value);
-            } catch (Exception e2) {
-                throw new RuntimeException("Failed to set environment variable for testing", e2);
-            }
+            return new ReviewOrchestrator(config, mockGithubClient);
         }
     }
 

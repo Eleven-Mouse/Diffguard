@@ -3,7 +3,6 @@ package com.diffguard.service;
 import com.diffguard.infrastructure.config.ReviewConfig;
 import com.diffguard.adapter.webhook.GitHubApiClient;
 import com.diffguard.adapter.webhook.GitHubPayloadParser;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -27,34 +26,6 @@ class ReviewOrchestratorProcessAsyncTest {
 
     @TempDir
     Path tempDir;
-
-    @BeforeEach
-    void setUp() {
-        setEnvironmentVariable("DIFFGUARD_GITHUB_TOKEN", "test-token");
-    }
-
-    private static void setEnvironmentVariable(String key, String value) {
-        try {
-            Class<?> processEnvironmentClass = Class.forName("java.util.Collections$UnmodifiableMap");
-            java.lang.reflect.Field field = System.getenv().getClass().getDeclaredField("m");
-            field.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            java.util.Map<String, String> mutableEnv = (java.util.Map<String, String>) field.get(System.getenv());
-            mutableEnv.put(key, value);
-        } catch (Exception e) {
-            try {
-                Class<?> processEnvironmentClass2 = Class.forName("java.lang.ProcessEnvironment");
-                java.lang.reflect.Field theCaseInsensitiveEnvironmentField = processEnvironmentClass2
-                        .getDeclaredField("theCaseInsensitiveEnvironment");
-                theCaseInsensitiveEnvironmentField.setAccessible(true);
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, String> ciEnv = (java.util.Map<String, String>) theCaseInsensitiveEnvironmentField.get(null);
-                ciEnv.put(key, value);
-            } catch (Exception e2) {
-                throw new RuntimeException("Failed to set environment variable for testing", e2);
-            }
-        }
-    }
 
     private GitHubPayloadParser.ParsedPullRequest makePr(String repo, int number) {
         return new GitHubPayloadParser.ParsedPullRequest("opened", repo, number, "main", "feature", "abc123");

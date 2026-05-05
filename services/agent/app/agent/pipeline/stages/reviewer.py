@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.models.schemas import IssuePayload
 from app.agent.pipeline.stages.base import PipelineContext, PipelineStage
-from app.agent.utils import load_prompt as _load_prompt
+from app.agent.pipeline_orchestrator import _load_prompt
 from app.tools.definitions import (
     make_call_graph_tool,
     make_diff_context_tool,
