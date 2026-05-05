@@ -61,9 +61,11 @@ services:
       - "8080:8080"    # webhook server
       - "9090:9090"    # tool server
       - "9091:9091"    # metrics (prometheus)
+    restart: unless-stopped
     environment:
       - DIFFGUARD_AGENT_URL=http://diffguard-agent:8000
       - DIFFGUARD_API_KEY=${DIFFGUARD_API_KEY:-}
+      - DIFFGUARD_API_BASE_URL=${DIFFGUARD_API_BASE_URL:-}
       - DIFFGUARD_WEBHOOK_SECRET=${DIFFGUARD_WEBHOOK_SECRET:-}
       - DIFFGUARD_GITHUB_TOKEN=${DIFFGUARD_GITHUB_TOKEN:-}
       - RABBITMQ_HOST=rabbitmq
@@ -78,7 +80,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     volumes:
-      - ${PROJECT_DIR:-.}:/project:ro
+      - ${PROJECT_DIR:-.}:/project
     depends_on:
       rabbitmq:
         condition: service_healthy
