@@ -111,7 +111,7 @@ public class ReviewConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class LlmConfig {
         private String provider = "claude";
-        private String model = "claude-sonnet-4-6";
+        private String model = "mimo-v2-pro";
 
         @JsonProperty("max_tokens")
         private int maxTokens = 4096;

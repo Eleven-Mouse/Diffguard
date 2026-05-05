@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/images/logo.svg" alt="DiffGuard" width="120" height="120" />
-</p>
+
 
 <h1 align="center">DiffGuard</h1>
 
@@ -152,9 +150,10 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
 ### 环境要求
 
 - **Java 21**（Temurin 发行版推荐）
-- **Python 3.11+**
+- **Maven 3.9+**
+- **Python 3.11+**（仅 Agent 服务需要）
 - **Git**
-- **LLM API Key**（OpenAI 或 Anthropic）
+- **LLM API Key**（OpenAI 或 Anthropic，也支持兼容接口）
 
 ### 30 秒体验（CLI 模式）
 
@@ -166,12 +165,20 @@ cd diffguard
 # 2. 构建网关
 cd services/gateway && mvn clean package -DskipTests && cd ../..
 
-# 3. 设置 API Key
-export DIFFGUARD_API_KEY="sk-your-api-key-here"
+# 3. 设置环境变量
+## Linux / macOS
+export DIFFGUARD_API_KEY="your-api-key-here"
+export DIFFGUARD_API_BASE_URL="https://your-api-endpoint/v1"   # 可选，自定义 API 端点
+
+## Windows PowerShell
+$env:DIFFGUARD_API_KEY = "your-api-key-here"
+$env:DIFFGUARD_API_BASE_URL = "https://your-api-endpoint/v1"   # 可选，自定义 API 端点
 
 # 4. 在任意 Git 项目中执行审查
 java -jar services/gateway/target/diffguard-1.0.0.jar review --staged
 ```
+
+> **提示：** 如果使用自定义 API 端点（代理/转发），代码会在 `DIFFGUARD_API_BASE_URL` 后拼接 `/messages`，请确保地址正确。例如 Anthropic 兼容接口应设为 `https://your-proxy.com/anthropic/v1`。
 
 ---
 
@@ -184,14 +191,33 @@ java -jar services/gateway/target/diffguard-1.0.0.jar review --staged
 cd services/gateway
 mvn clean package
 
-# 安装 Git Hook（pre-commit + pre-push）
+# 设置环境变量（以 PowerShell 为例）
+$env:DIFFGUARD_API_KEY = "your-api-key"
+$env:DIFFGUARD_API_BASE_URL = "https://your-api-endpoint/v1"  # 可选
+
+# 审查暂存区变更（git add 后执行）
+java -jar target/diffguard-1.0.0.jar review --staged
+
+# 审查两个分支之间的差异
+java -jar target/diffguard-1.0.0.jar review --from main --to feature-branch
+
+# Pipeline 多维度审查
+java -jar target/diffguard-1.0.0.jar review --staged --pipeline
+
+# Multi-Agent 深度审查
+java -jar target/diffguard-1.0.0.jar review --staged --multi-agent
+
+# 有严重问题也强制通过
+java -jar target/diffguard-1.0.0.jar review --staged --force
+
+# 安装 Git Hook（pre-commit + pre-push，自动审查）
 java -jar target/diffguard-1.0.0.jar install
 
 # 卸载 Hook
 java -jar target/diffguard-1.0.0.jar uninstall
 ```
 
-安装后，每次 `git commit` 或 `git push` 将自动触发代码审查。
+安装 Git Hook 后，每次 `git commit` 或 `git push` 将自动触发代码审查。
 
 ### 方式二：Docker Compose 部署（Server 模式）
 
@@ -226,34 +252,33 @@ DiffGuard 采用 **三层配置合并** 策略：内置默认 → 项目级 `app
 ```yaml
 # LLM 配置
 llm:
-  provider: openai                          # openai | claude
-  model: claude-haiku-4-5-20251001
-  maxTokens: 16384
+  provider: claude                          # openai | claude
+  model: mimo-v2-pro                        # 模型名称，根据你的 API 提供商选择
+  max_tokens: 16384
   temperature: 0.3
-  timeout: 240
-  apiKeyEnv: DIFFGUARD_API_KEY              # 从环境变量读取，不存储明文
-  baseUrl: ""                               # 自定义 API 端点（支持代理）
+  timeout_seconds: 240
+  api_key_env: DIFFGUARD_API_KEY            # 从环境变量读取，不存储明文
+  base_url_env: DIFFGUARD_API_BASE_URL      # 自定义 API 端点（支持代理）
 
 # 规则配置
 rules:
   enabled: [security, bug-risk, code-style, performance]
-  threshold: info
+  severity_threshold: info
 
 # 审查选项
 review:
-  maxDiffFiles: 20                          # 单次审查最大文件数
-  maxTokensPerFile: 4000                    # 单文件最大 Token 数
+  max_diff_files: 20                        # 单次审查最大文件数
+  max_tokens_per_file: 4000                 # 单文件最大 Token 数
   language: zh                              # 输出语言
-  pipelineMode: false                       # 启用 Pipeline 模式
-  multiAgentMode: false                     # 启用 Multi-Agent 模式
 
 # Webhook 服务（Server 模式）
-webhook:
-  port: 8080
-  secretEnv: DIFFGUARD_WEBHOOK_SECRET
-  githubTokenEnv: DIFFGUARD_GITHUB_TOKEN
-  repoMappings:
-    "owner/repo": "/path/to/local/repo"
+# webhook:
+#   port: 8080
+#   secret_env: DIFFGUARD_WEBHOOK_SECRET
+#   github_token_env: DIFFGUARD_GITHUB_TOKEN
+#   repos:
+#     - full_name: "owner/repo"
+#       local_path: "/path/to/local/repo"
 ```
 
 ### 环境变量
@@ -261,9 +286,11 @@ webhook:
 | 变量名 | 用途 | 必需 |
 |--------|------|------|
 | `DIFFGUARD_API_KEY` | LLM API Key | 是 |
-| `DIFFGUARD_API_BASE_URL` | 自定义 API 端点 | 否 |
+| `DIFFGUARD_API_BASE_URL` | 自定义 API 端点（代码会在此地址后拼接 `/messages`） | 使用代理时必需 |
 | `DIFFGUARD_WEBHOOK_SECRET` | GitHub Webhook 签名密钥 | Server 模式 |
 | `DIFFGUARD_GITHUB_TOKEN` | GitHub API Token（用于发布 PR 评论） | Server 模式 |
+
+> **Windows 用户：** 可通过系统设置将 `DIFFGUARD_API_KEY` 和 `DIFFGUARD_API_BASE_URL` 添加为用户环境变量，免去每次手动设置。也可将 JDK 的 `bin` 目录加入系统 PATH，简化 `java` 命令调用。
 
 ### Agent 策略配置
 

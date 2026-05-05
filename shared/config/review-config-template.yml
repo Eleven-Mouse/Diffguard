@@ -1,9 +1,8 @@
 # DiffGuard 配置文件
-# 将此文件放置在项目根目录下，命名为 application.yml
 
 llm:
-  provider: openai
-  model: claude-haiku-4-5-20251001
+  provider: claude
+  model: mimo-v2-pro
   max_tokens: 16384
   temperature: 0.3
   timeout_seconds: 240
