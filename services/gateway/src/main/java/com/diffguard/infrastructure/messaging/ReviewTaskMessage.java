@@ -1,10 +1,10 @@
 package com.diffguard.infrastructure.messaging;
 
+import com.diffguard.infrastructure.common.JacksonMapper;
 import com.diffguard.infrastructure.config.ReviewConfig;
 import com.diffguard.domain.review.model.DiffFileEntry;
 import com.diffguard.service.ReviewEngineFactory.EngineType;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -16,7 +16,8 @@ import java.util.UUID;
  */
 public class ReviewTaskMessage {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
+            JacksonMapper.MAPPER;
 
     private final String taskId;
     private final String mode;
@@ -89,7 +90,7 @@ public class ReviewTaskMessage {
             ObjectNode llmNode = MAPPER.createObjectNode();
             llmNode.put("provider", llm.getProvider());
             llmNode.put("model", llm.getModel());
-            llmNode.put("api_key", llm.resolveApiKey());
+            llmNode.put("api_key_env", llm.getApiKeyEnv());
             llmNode.put("base_url", llm.resolveBaseUrl());
             llmNode.put("max_tokens", llm.getMaxTokens());
             llmNode.put("temperature", llm.getTemperature());

@@ -1,6 +1,7 @@
 package com.diffguard.domain.agent.python;
 
 import com.diffguard.infrastructure.config.ReviewConfig;
+import com.diffguard.infrastructure.resilience.ResilienceService;
 import com.diffguard.exception.DiffGuardException;
 import com.diffguard.domain.review.model.DiffFileEntry;
 import com.diffguard.domain.review.model.ReviewIssue;
@@ -28,6 +29,7 @@ public class PythonReviewEngine implements ReviewEngine {
     private final ReviewConfig config;
     private final String mode;
     private final String toolServerUrl;
+    private final ResilienceService resilience;
 
     public PythonReviewEngine(String mode, ReviewConfig config, String toolServerUrl) {
         String agentUrl = resolveAgentUrl(config);
@@ -35,10 +37,26 @@ public class PythonReviewEngine implements ReviewEngine {
         this.config = config;
         this.mode = mode;
         this.toolServerUrl = toolServerUrl;
+        this.resilience = new ResilienceService();
     }
 
     @Override
     public ReviewResult review(List<DiffFileEntry> diffEntries, Path projectDir) throws DiffGuardException {
+        try {
+            return resilience.executeAgentCall(() -> {
+                try {
+                    return doReview(diffEntries, projectDir);
+                } catch (DiffGuardException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof DiffGuardException dge) throw dge;
+            throw new DiffGuardException("Python agent call failed (circuit breaker may be open)", e);
+        }
+    }
+
+    private ReviewResult doReview(List<DiffFileEntry> diffEntries, Path projectDir) throws DiffGuardException {
         long startTime = System.currentTimeMillis();
         ReviewResult result = new ReviewResult();
 

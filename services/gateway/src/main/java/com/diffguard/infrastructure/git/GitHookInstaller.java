@@ -17,8 +17,16 @@ public class GitHookInstaller {
     private static final String PRE_COMMIT_HOOK = """
             #!/bin/sh
             # DiffGuard - AI 代码审查 pre-commit 钩子
+
+            # Resolve java: prefer JAVA_HOME, fall back to PATH
+            if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+                JAVA="$JAVA_HOME/bin/java"
+            else
+                JAVA="java"
+            fi
+
             echo "🔍 DiffGuard：正在运行AI代码审查..."
-            java -jar "$(dirname "$0")/diffguard.jar" review --staged
+            "$JAVA" -jar "$(dirname "$0")/diffguard.jar" review --staged
             exit_code=$?
             if [ $exit_code -ne 0 ]; then
                 echo "❌ DiffGuard：发现严重问题，提交已中止。"
@@ -32,12 +40,20 @@ public class GitHookInstaller {
     private static final String PRE_PUSH_HOOK = """
             #!/bin/sh
             # DiffGuard - AI 代码审查 pre-push 钩子
+
+            # Resolve java: prefer JAVA_HOME, fall back to PATH
+            if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+                JAVA="$JAVA_HOME/bin/java"
+            else
+                JAVA="java"
+            fi
+
             remote="$1"
             url="$2"
 
             while read local_ref local_sha remote_ref remote_sha; do
                 echo "🔍 DiffGuard：正在审查推送到 $remote 的变更..."
-                java -jar "$(dirname "$0")/diffguard.jar" review --from "$local_sha" --to "$remote_sha"
+                "$JAVA" -jar "$(dirname "$0")/diffguard.jar" review --from "$local_sha" --to "$remote_sha"
                 exit_code=$?
                 if [ $exit_code -ne 0 ]; then
                     echo "❌ DiffGuard：发现严重问题，推送已中止。"

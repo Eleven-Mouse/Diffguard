@@ -1,6 +1,6 @@
 package com.diffguard.cli;
 
-import com.diffguard.service.CliReviewService;
+import com.diffguard.service.ReviewApplicationService;
 import com.diffguard.infrastructure.config.ReviewConfig;
 import com.diffguard.domain.review.model.DiffFileEntry;
 import com.diffguard.domain.review.model.ReviewResult;
@@ -50,7 +50,7 @@ public class ReviewCommand implements Runnable {
 
     private int doReview() {
         Path projectDir = Path.of("").toAbsolutePath();
-        CliReviewService service = new CliReviewService();
+        ReviewApplicationService service = new ReviewApplicationService();
 
         ProgressDisplay.printBanner();
 

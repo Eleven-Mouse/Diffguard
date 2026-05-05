@@ -1,9 +1,9 @@
 package com.diffguard.domain.agent.python;
 
+import com.diffguard.infrastructure.common.JacksonMapper;
 import com.diffguard.infrastructure.config.ReviewConfig;
 import com.diffguard.domain.review.model.DiffFileEntry;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
@@ -22,8 +22,6 @@ import java.util.List;
 public class PythonAgentClient {
 
     private static final Logger log = LoggerFactory.getLogger(PythonAgentClient.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     private final String agentUrl;
     private final HttpClient httpClient;
 
@@ -49,16 +47,16 @@ public class PythonAgentClient {
                                String toolServerUrl) throws Exception {
         String requestId = java.util.UUID.randomUUID().toString();
 
-        ObjectNode request = MAPPER.createObjectNode();
+        ObjectNode request = JacksonMapper.MAPPER.createObjectNode();
         request.put("request_id", requestId);
         request.put("mode", mode);
         request.put("project_dir", projectDir);
         request.put("tool_server_url", toolServerUrl);
 
         // Diff entries
-        ArrayNode entriesArray = MAPPER.createArrayNode();
+        ArrayNode entriesArray = JacksonMapper.MAPPER.createArrayNode();
         for (DiffFileEntry entry : diffEntries) {
-            ObjectNode e = MAPPER.createObjectNode();
+            ObjectNode e = JacksonMapper.MAPPER.createObjectNode();
             e.put("file_path", entry.getFilePath());
             e.put("content", entry.getContent());
             e.put("token_count", entry.getTokenCount());
@@ -66,12 +64,12 @@ public class PythonAgentClient {
         }
         request.set("diff_entries", entriesArray);
 
-        // LLM config
+        // LLM config — 传递环境变量名而非明文密钥
         ReviewConfig.LlmConfig llm = config.getLlm();
-        ObjectNode llmNode = MAPPER.createObjectNode();
+        ObjectNode llmNode = JacksonMapper.MAPPER.createObjectNode();
         llmNode.put("provider", llm.getProvider());
         llmNode.put("model", llm.getModel());
-        llmNode.put("api_key", llm.resolveApiKey());
+        llmNode.put("api_key_env", llm.getApiKeyEnv());
         llmNode.put("base_url", llm.resolveBaseUrl());
         llmNode.put("max_tokens", llm.getMaxTokens());
         llmNode.put("temperature", llm.getTemperature());
@@ -79,27 +77,29 @@ public class PythonAgentClient {
         request.set("llm_config", llmNode);
 
         // Review config
-        ObjectNode reviewNode = MAPPER.createObjectNode();
+        ObjectNode reviewNode = JacksonMapper.MAPPER.createObjectNode();
         reviewNode.put("language", config.getReview().getLanguage());
         if (config.getRules() != null && config.getRules().getEnabled() != null) {
-            ArrayNode rulesArray = MAPPER.createArrayNode();
+            ArrayNode rulesArray = JacksonMapper.MAPPER.createArrayNode();
             config.getRules().getEnabled().forEach(rulesArray::add);
             reviewNode.set("rules_enabled", rulesArray);
         }
         request.set("review_config", reviewNode);
 
         // Allowed files
-        ArrayNode allowedArray = MAPPER.createArrayNode();
+        ArrayNode allowedArray = JacksonMapper.MAPPER.createArrayNode();
         diffEntries.stream().map(DiffFileEntry::getFilePath).forEach(allowedArray::add);
         request.set("allowed_files", allowedArray);
 
-        String jsonBody = MAPPER.writeValueAsString(request);
+        String jsonBody = JacksonMapper.MAPPER.writeValueAsString(request);
         log.info("Sending {} review request {} to Python agent", mode, requestId);
         log.debug("Request body size: {} bytes", jsonBody.length());
 
         HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(agentUrl + "/api/v1/review"))
                 .header("Content-Type", "application/json")
+                .header("X-Trace-Id", requestId)
+                .header("X-Request-Id", requestId)
                 .timeout(Duration.ofSeconds(llm.getTimeoutSeconds() + 30))
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
@@ -110,7 +110,7 @@ public class PythonAgentClient {
             throw new RuntimeException("Python agent returned HTTP " + response.statusCode() + ": " + response.body());
         }
 
-        JsonNode result = MAPPER.readTree(response.body());
+        JsonNode result = JacksonMapper.MAPPER.readTree(response.body());
         log.info("Python agent response: status={}, issues={}",
                 result.path("status").asText(),
                 result.path("issues").size());

@@ -39,6 +39,11 @@ async def review(request: ReviewRequest) -> ReviewResponse:
     start = time.monotonic()
     request_id = request.request_id or str(uuid.uuid4())
 
+    # Propagate trace ID for cross-service correlation
+    import logging
+    logger = logging.getLogger("diffguard.review")
+    logger.info("Review request: id=%s mode=%s trace_id=%s", request_id, request.mode, request_id)
+
     try:
         if request.mode == ReviewMode.PIPELINE:
             orchestrator = PipelineOrchestrator(request)

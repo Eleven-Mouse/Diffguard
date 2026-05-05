@@ -4,7 +4,7 @@ import com.diffguard.infrastructure.config.ConfigLoader;
 import com.diffguard.infrastructure.config.ReviewConfig;
 import com.diffguard.exception.ConfigException;
 import com.diffguard.infrastructure.output.TerminalUI;
-import com.diffguard.webhook.WebhookServer;
+import com.diffguard.adapter.webhook.WebhookServer;
 import picocli.CommandLine;
 
 import java.nio.file.Path;

@@ -1,0 +1,71 @@
+# StrategyPlanner configuration - externalized strategy weights and focus areas.
+# Modify this file to customize review behavior per file category and risk level.
+
+defaults:
+  weights:
+    security: 1.0
+    performance: 1.0
+    architecture: 1.0
+
+categories:
+  controller:
+    weights:
+      security: 1.5
+      architecture: 1.3
+    focus:
+      - Input validation
+      - Authentication/Authorization
+      - API design
+
+  dao:
+    weights:
+      security: 2.0
+      performance: 1.5
+      architecture: 0.5
+    focus:
+      - SQL injection
+      - Query performance
+      - Transaction handling
+
+  service:
+    weights:
+      performance: 1.3
+    focus:
+      - Business logic correctness
+      - Error handling
+
+  config:
+    weights:
+      security: 2.5
+      performance: 0.3
+    focus:
+      - Configuration security
+      - Secret exposure
+
+  model:
+    weights:
+      architecture: 1.5
+      security: 0.8
+    focus:
+      - Data integrity
+      - Serialization safety
+
+  test:
+    weights:
+      security: 0.3
+      performance: 0.3
+      architecture: 0.5
+    focus:
+      - Test coverage
+      - Test quality
+
+risk_adjustments:
+  high_and_critical:
+    has_database_operations:
+      security_delta: 0.5
+      focus:
+        - Database operation safety
+    has_concurrency_code:
+      performance_delta: 0.5
+      focus:
+        - Thread safety and concurrency
