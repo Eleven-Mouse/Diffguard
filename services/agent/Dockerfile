@@ -9,7 +9,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY pyproject.toml ./
 
 # Install dependencies
-RUN uv pip install --system -i https://pypi.tuna.tsinghua.edu.cn/simple -r pyproject.toml
+RUN uv pip install --system -r pyproject.toml
 
 # Copy application code
 COPY app/ ./app/

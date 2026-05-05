@@ -88,7 +88,7 @@ class GetCallGraphToolTest {
             ToolResult result = tool.execute("callers process", context);
 
             assertTrue(result.isSuccess());
-            assertTrue(result.getOutput().contains("handle"));
+            assertTrue(result.getOutput().contains("Controller.handle"));
         }
 
         @Test
@@ -152,7 +152,7 @@ class GetCallGraphToolTest {
             ToolResult result = tool.execute("impact Service.process", context);
 
             assertTrue(result.isSuccess());
-            assertTrue(result.getOutput().contains("handle"));
+            assertTrue(result.getOutput().contains("Controller.handle"));
         }
 
         @Test
@@ -161,7 +161,7 @@ class GetCallGraphToolTest {
             ToolResult result = tool.execute("impact save", context);
 
             assertTrue(result.isSuccess());
-            assertTrue(result.getOutput().contains("process"));
+            assertTrue(result.getOutput().contains("Service.process"));
         }
 
         @Test

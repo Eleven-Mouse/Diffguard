@@ -161,11 +161,7 @@ public class ReviewTaskMessage {
      */
     public static String extractTaskId(byte[] data) {
         try {
-            if (data == null || data.length == 0) {
-                return null;
-            }
-            String value = MAPPER.readTree(data).path("task_id").asText(null);
-            return value != null && !value.isEmpty() ? value : null;
+            return MAPPER.readTree(data).path("task_id").asText();
         } catch (Exception e) {
             return null;
         }
