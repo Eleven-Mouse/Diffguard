@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.models.schemas import IssuePayload
 from app.agent.pipeline.stages.base import PipelineContext, PipelineStage
-from app.agent.pipeline_orchestrator import _load_prompt
+from app.agent.llm_utils import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +30,8 @@ class AggregationStage(PipelineStage):
     async def execute(self, context: PipelineContext) -> PipelineContext:
         logger.info("Pipeline Stage [aggregation]: Merging results")
 
-        system = _load_prompt("pipeline/aggregation-system.txt")
-        user_tpl = _load_prompt("pipeline/aggregation-user.txt")
+        system = load_prompt("pipeline/aggregation-system.txt")
+        user_tpl = load_prompt("pipeline/aggregation-user.txt")
 
         # Build reviewer results section dynamically
         reviewer_section = ""

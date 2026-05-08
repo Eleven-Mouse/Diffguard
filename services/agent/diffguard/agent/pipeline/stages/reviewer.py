@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.models.schemas import IssuePayload
 from app.agent.pipeline.stages.base import PipelineContext, PipelineStage
-from app.agent.pipeline_orchestrator import _load_prompt
+from app.agent.llm_utils import load_prompt
 from app.tools.definitions import (
     make_call_graph_tool,
     make_diff_context_tool,
@@ -93,8 +93,8 @@ class ReviewerStage(PipelineStage):
         from langchain.agents import AgentExecutor, create_tool_calling_agent
         from langchain_core.prompts import ChatPromptTemplate
 
-        system = _load_prompt(system_prompt_file)
-        user_tpl = _load_prompt(user_prompt_file)
+        system = load_prompt(system_prompt_file)
+        user_tpl = load_prompt(user_prompt_file)
         user = user_tpl.replace("{{summary}}", summary).replace("{{diff}}", diff_text)
 
         tools = [

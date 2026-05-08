@@ -45,15 +45,15 @@ class ArchitectureAgent(ReviewAgent):
         from langchain.agents import AgentExecutor, create_tool_calling_agent
         from langchain_core.prompts import ChatPromptTemplate
 
-        from app.agent.pipeline_orchestrator import _load_prompt
+        from app.agent.llm_utils import load_prompt
 
-        system = _load_prompt("reviewagents/architecture-system.txt")
+        system = load_prompt("reviewagents/architecture-system.txt")
         if focus_areas:
             system += "\n\nAdditional focus areas:\n" + "\n".join(f"- {a}" for a in focus_areas)
         if additional_rules:
             system += "\n\nAdditional rules:\n" + "\n".join(f"- {r}" for r in additional_rules)
 
-        user_tpl = _load_prompt("react-user.txt")
+        user_tpl = load_prompt("react-user.txt")
         user = user_tpl.replace("{{diff}}", diff_text)
 
         tools = [

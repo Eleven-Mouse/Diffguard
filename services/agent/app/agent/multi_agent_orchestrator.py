@@ -12,7 +12,7 @@ import logging
 
 from app.agent.base import AgentReviewResult
 from app.agent.memory import AgentMemory
-from app.agent.pipeline_orchestrator import _create_llm
+from app.agent.llm_utils import create_llm
 from app.agent.registry import AgentRegistry
 from app.agent.strategy_planner import StrategyPlanner
 from app.models.schemas import (
@@ -42,7 +42,7 @@ class MultiAgentOrchestrator:
 
     async def run(self) -> ReviewResponse:
         req = self.request
-        llm = _create_llm(req)
+        llm = create_llm(req)
         diff_text = "\n".join(e.content for e in req.diff_entries)
 
         tool_client: JavaToolClient | None = None

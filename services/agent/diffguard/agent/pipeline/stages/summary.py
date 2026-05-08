@@ -7,7 +7,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from app.agent.pipeline.stages.base import PipelineContext, PipelineStage
-from app.agent.pipeline_orchestrator import _load_prompt
+from app.agent.llm_utils import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,8 @@ class SummaryStage(PipelineStage):
 
     async def execute(self, context: PipelineContext) -> PipelineContext:
         logger.info("Pipeline Stage [summary]: Analyzing diff")
-        system = _load_prompt("pipeline/diff-summary-system.txt")
-        user_tpl = _load_prompt("pipeline/diff-summary-user.txt")
+        system = load_prompt("pipeline/diff-summary-system.txt")
+        user_tpl = load_prompt("pipeline/diff-summary-user.txt")
         user = user_tpl.replace("{{diff}}", context.diff_text)
 
         structured_llm = context.llm.with_structured_output(_DiffSummary)
