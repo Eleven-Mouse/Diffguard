@@ -43,7 +43,12 @@ public class SignatureVerifier {
         }
 
         byte[] expected = computeHmacBytes(payload);
-        byte[] provided = hexToBytes(signature.substring("sha256=".length()));
+        byte[] provided;
+        try {
+            provided = hexToBytes(signature.substring("sha256=".length()));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
 
         // 使用 MessageDigest.isEqual 进行常量时间比较
         return MessageDigest.isEqual(expected, provided);
@@ -63,11 +68,18 @@ public class SignatureVerifier {
      * 将十六进制字符串转换为字节数组。
      */
     private static byte[] hexToBytes(String hex) {
+        if (hex == null || hex.length() % 2 != 0) {
+            throw new IllegalArgumentException("Invalid hex string length");
+        }
         int len = hex.length();
         byte[] data = new byte[len / 2];
         for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
-                    + Character.digit(hex.charAt(i + 1), 16));
+            int high = Character.digit(hex.charAt(i), 16);
+            int low = Character.digit(hex.charAt(i + 1), 16);
+            if (high < 0 || low < 0) {
+                throw new IllegalArgumentException("Invalid hex character");
+            }
+            data[i / 2] = (byte) ((high << 4) + low);
         }
         return data;
     }

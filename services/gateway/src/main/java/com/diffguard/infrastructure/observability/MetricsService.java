@@ -3,7 +3,8 @@ package com.diffguard.infrastructure.observability;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,7 +16,7 @@ public class MetricsService {
 
     private static final Logger log = LoggerFactory.getLogger(MetricsService.class);
 
-    private final SimpleMeterRegistry registry;
+    private final PrometheusMeterRegistry registry;
 
     private final Counter reviewTotal;
     private final Counter reviewSuccess;
@@ -28,54 +29,52 @@ public class MetricsService {
     private final Timer llmCallDuration;
 
     public MetricsService() {
-        this.registry = new SimpleMeterRegistry();
+        this.registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
 
-        this.reviewTotal = Counter.builder("diffguard.review.total")
+        this.reviewTotal = Counter.builder("diffguard_review_total")
                 .description("Total review tasks submitted")
                 .register(registry);
 
-        this.reviewSuccess = Counter.builder("diffguard.review.success")
+        this.reviewSuccess = Counter.builder("diffguard_review_success")
                 .description("Successfully completed reviews")
                 .register(registry);
 
-        this.reviewFailed = Counter.builder("diffguard.review.failed")
+        this.reviewFailed = Counter.builder("diffguard_review_failed")
                 .description("Failed reviews")
                 .register(registry);
 
-        this.issuesFound = Counter.builder("diffguard.issues.total")
+        this.issuesFound = Counter.builder("diffguard_issues_total")
                 .description("Total issues found across all reviews")
                 .register(registry);
 
-        this.criticalIssuesFound = Counter.builder("diffguard.issues.critical")
+        this.criticalIssuesFound = Counter.builder("diffguard_issues_critical")
                 .description("Critical severity issues found")
                 .register(registry);
 
-        this.llmTokensUsed = Counter.builder("diffguard.llm.tokens")
+        this.llmTokensUsed = Counter.builder("diffguard_llm_tokens")
                 .description("Total LLM tokens consumed")
                 .register(registry);
 
-        this.staticRuleHits = Counter.builder("diffguard.rules.static.hits")
+        this.staticRuleHits = Counter.builder("diffguard_rules_static_hits")
                 .description("Issues found by static rules (zero LLM cost)")
                 .register(registry);
 
-        this.reviewDuration = Timer.builder("diffguard.review.duration")
+        this.reviewDuration = Timer.builder("diffguard_review_duration")
                 .description("Review execution duration")
                 .register(registry);
 
-        this.llmCallDuration = Timer.builder("diffguard.llm.call.duration")
+        this.llmCallDuration = Timer.builder("diffguard_llm_call_duration")
                 .description("Single LLM API call duration")
                 .register(registry);
 
-        log.info("MetricsService initialized (SimpleMeterRegistry)");
+        log.info("MetricsService initialized (PrometheusMeterRegistry)");
     }
 
     public MeterRegistry getRegistry() { return registry; }
 
-    /** 返回指标摘要文本（给 /metrics 端点用） */
+    /** 返回 Prometheus 格式指标文本（给 /metrics 端点用） */
     public String scrape() {
-        StringBuilder sb = new StringBuilder();
-        registry.getMeters().forEach(m -> sb.append(m.getId().getName()).append(" ").append(m.measure()).append("\n"));
-        return sb.toString();
+        return registry.scrape();
     }
 
     public void recordReviewSubmitted() { reviewTotal.increment(); }

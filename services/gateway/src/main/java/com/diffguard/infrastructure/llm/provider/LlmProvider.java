@@ -8,7 +8,7 @@ import java.io.IOException;
  * LLM 供应商接口，定义统一的 API 调用抽象。
  * 每个供应商实现负责构建请求、发送调用、解析响应。
  */
-public interface LlmProvider {
+public interface LlmProvider extends AutoCloseable {
 
     /**
      * 调用 LLM API 并返回响应中的文本内容。
@@ -21,4 +21,11 @@ public interface LlmProvider {
      * @throws InterruptedException 线程被中断
      */
     String call(String systemPrompt, String userPrompt) throws LlmApiException, IOException, InterruptedException;
+
+    /**
+     * 关闭供应商持有的资源（如 HttpClient）。
+     * 默认空实现，子类按需覆盖。
+     */
+    @Override
+    default void close() { }
 }

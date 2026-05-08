@@ -198,6 +198,19 @@ class LlmClientTest {
                 verify(mockProvider, atLeast(3)).call(anyString(), anyString());
             }
         }
+
+        @Test
+        @DisplayName("500 错误重试 3 次（含初始调用）后抛出")
+        void serverErrorRetriesCorrectly() throws Exception {
+            when(mockProvider.call(anyString(), anyString()))
+                    .thenThrow(new LlmApiException(500, "internal server error"));
+
+            try (LlmClient client = new LlmClient(mockProvider)) {
+                assertThrows(LlmApiException.class, () -> client.review(List.of(makePrompt())));
+                // 500 is retryable: MAX_SERVER_ERROR_RETRIES=2 means 3 attempts total (1 initial + 2 retries)
+                verify(mockProvider, times(3)).call(anyString(), anyString());
+            }
+        }
     }
 
     @Nested
@@ -209,6 +222,14 @@ class LlmClientTest {
         void closeNoException() {
             LlmClient client = new LlmClient(mockProvider);
             assertDoesNotThrow(client::close);
+        }
+
+        @Test
+        @DisplayName("close() 调用 provider.close()")
+        void closeCallsProviderClose() {
+            LlmClient client = new LlmClient(mockProvider);
+            client.close();
+            verify(mockProvider).close();
         }
     }
 }

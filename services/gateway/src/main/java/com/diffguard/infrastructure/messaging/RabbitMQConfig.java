@@ -54,10 +54,10 @@ public class RabbitMQConfig implements AutoCloseable {
         channel.exchangeDeclare(REVIEW_EXCHANGE, "topic", true);
 
         // Queues with DLX, TTL, and priority support
-        declareQueueWithDlx(AGENT_QUEUE, 10);
-        declareQueueWithDlx(PIPELINE_QUEUE, 10);
-        declareQueueWithDlx(SIMPLE_QUEUE, 5);
-        declareQueueWithDlx(RESULT_QUEUE, 5);
+        declareQueueWithDlx(AGENT_QUEUE, 10, 600000);     // 10 min TTL
+        declareQueueWithDlx(PIPELINE_QUEUE, 10, 600000);   // 10 min TTL
+        declareQueueWithDlx(SIMPLE_QUEUE, 5, 600000);      // 10 min TTL
+        declareQueueWithDlx(RESULT_QUEUE, 5, 3600000);     // 60 min TTL (reviews can be slow)
 
         // Bindings: routing key pattern → queue
         channel.queueBind(AGENT_QUEUE, REVIEW_EXCHANGE, "review.agent.#");
@@ -68,13 +68,13 @@ public class RabbitMQConfig implements AutoCloseable {
         log.info("RabbitMQ topology declared");
     }
 
-    private void declareQueueWithDlx(String queueName, int maxPriority) throws IOException {
+    private void declareQueueWithDlx(String queueName, int maxPriority, int ttlMs) throws IOException {
         channel.queueDeclare(queueName, true, false, false,
                 java.util.Map.of(
                         "x-dead-letter-exchange", DEAD_LETTER_EXCHANGE,
                         "x-dead-letter-routing-key", "dead",
                         "x-max-priority", maxPriority,
-                        "x-message-ttl", 600000  // 10 min TTL
+                        "x-message-ttl", ttlMs
                 ));
     }
 

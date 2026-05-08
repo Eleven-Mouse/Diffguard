@@ -283,4 +283,20 @@ class ClaudeHttpProviderTest {
                     () -> provider.call("sys", "user"));
         }
     }
+
+    // ------------------------------------------------------------------
+    // close - resource cleanup
+    // ------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("close - 资源清理")
+    class Close {
+
+        @Test
+        @DisplayName("close() 关闭 HttpClient 不抛异常")
+        void closeDoesNotThrow() {
+            ClaudeHttpProvider provider = createProvider(tokenTracker);
+            assertDoesNotThrow(() -> provider.close());
+        }
+    }
 }

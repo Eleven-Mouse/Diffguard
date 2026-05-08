@@ -69,7 +69,7 @@ public class LocalTFIDFProvider implements EmbeddingProvider {
     @Override
     public float[] embed(String text) {
         if (vocabulary.isEmpty()) {
-            return new float[0];
+            throw new IllegalStateException("Vocabulary not built. Call buildVocabulary() before embed().");
         }
 
         float[] vector = new float[vocabulary.size()];

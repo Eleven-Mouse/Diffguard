@@ -104,4 +104,44 @@ class SignatureVerifierTest {
             throw new RuntimeException(e);
         }
     }
+
+    // ------------------------------------------------------------------
+    // hexToBytes 输入验证
+    // ------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("hexToBytes 输入验证")
+    class HexInputValidation {
+
+        @Test
+        @DisplayName("奇数长度 hex 字符串返回 false")
+        void oddLengthHexReturnsFalse() {
+            SignatureVerifier verifier = new SignatureVerifier("secret");
+            assertFalse(verifier.verify("payload", "sha256=abc"));
+        }
+
+        @Test
+        @DisplayName("无效 hex 字符返回 false")
+        void invalidHexCharsReturnFalse() {
+            SignatureVerifier verifier = new SignatureVerifier("secret");
+            assertFalse(verifier.verify("payload", "sha256=xyz1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"));
+        }
+
+        @Test
+        @DisplayName("有效 hex 签名验证通过")
+        void validHexStillWorks() {
+            String secret = "test-secret";
+            String payload = "test-payload";
+            SignatureVerifier verifier = new SignatureVerifier(secret);
+            String signature = computeSignature(secret, payload);
+            assertTrue(verifier.verify(payload, "sha256=" + signature));
+        }
+
+        @Test
+        @DisplayName("sha256= 后无内容返回 false")
+        void emptyHexAfterPrefixReturnsFalse() {
+            SignatureVerifier verifier = new SignatureVerifier("secret");
+            assertFalse(verifier.verify("payload", "sha256="));
+        }
+    }
 }

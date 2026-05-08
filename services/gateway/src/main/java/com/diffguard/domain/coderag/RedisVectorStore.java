@@ -59,7 +59,7 @@ public class RedisVectorStore implements VectorStore {
             Map<String, String> fields = new HashMap<>();
             fields.put("vector", Base64.getEncoder().encodeToString(bytes));
             fields.put("dim", String.valueOf(vector.length));
-            jedis.hset((redisKey + ":" + chunkId).getBytes(), toStringStringMap(fields));
+            jedis.hset(redisKey + ":" + chunkId, fields);
         }
     }
 
@@ -122,7 +122,7 @@ public class RedisVectorStore implements VectorStore {
         String cursor = "0";
         String match = redisKey + ":*";
         do {
-            var scanResult = jedis.scan(cursor, new redis.clients.jedis.ScanParams().match(match).count(100));
+            var scanResult = jedis.scan(cursor, new redis.clients.jedis.params.ScanParams().match(match).count(100));
             allKeys.addAll(scanResult.getResult());
             cursor = scanResult.getCursor();
         } while (!"0".equals(cursor));

@@ -48,7 +48,7 @@ public class ReviewOrchestrator implements AutoCloseable {
     private final ReviewConfig config;
     private final ExecutorService executor;
     private final ScheduledExecutorService timeoutExecutor;
-    private final GitHubApiClient githubClient;
+    private GitHubApiClient githubClient;
 
     // 新增组件（nullable，向后兼容）
     private final MetricsService metrics;
@@ -103,6 +103,7 @@ public class ReviewOrchestrator implements AutoCloseable {
 
     ReviewOrchestrator(ReviewConfig config, GitHubApiClient githubClient) {
         this(config);
+        this.githubClient = githubClient;
     }
 
     /**

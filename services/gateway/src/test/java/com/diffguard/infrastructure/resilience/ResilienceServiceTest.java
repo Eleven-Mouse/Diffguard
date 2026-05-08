@@ -1,5 +1,6 @@
 package com.diffguard.infrastructure.resilience;
 
+import com.diffguard.exception.LlmApiException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class ResilienceServiceTest {
 
     private ResilienceService service;
+
+    @SuppressWarnings("unchecked")
+    private static <E extends Throwable> void sneakyThrow(Throwable e) throws E {
+        throw (E) e;
+    }
 
     @BeforeEach
     void setUp() {
@@ -101,28 +107,37 @@ class ResilienceServiceTest {
         }
 
         @Test
-        @DisplayName("retries on failure and succeeds eventually")
+        @DisplayName("first call succeeds without retry")
         void retriesOnFailure() {
             AtomicInteger counter = new AtomicInteger(0);
             String result = service.executeLlmCall(() -> {
-                if (counter.incrementAndGet() < 3) {
-                    throw new RuntimeException("transient error");
-                }
-                return "recovered";
+                counter.incrementAndGet();
+                return "ok";
             });
-            assertEquals("recovered", result);
-            assertTrue(counter.get() >= 3);
+            assertEquals("ok", result);
+            assertEquals(1, counter.get());
         }
 
         @Test
-        @DisplayName("all retries exhausted throws exception")
+        @DisplayName("RuntimeException not retried, thrown immediately")
         void allRetriesExhausted() {
             AtomicInteger counter = new AtomicInteger(0);
-            assertThrows(Exception.class, () -> service.executeLlmCall(() -> {
+            assertThrows(RuntimeException.class, () -> service.executeLlmCall(() -> {
                 counter.incrementAndGet();
-                throw new RuntimeException("permanent error");
+                throw new RuntimeException("not retryable");
             }));
-            assertEquals(3, counter.get());
+            assertEquals(1, counter.get(), "RuntimeException should not be retried");
+        }
+
+        @Test
+        @DisplayName("RuntimeException 不触发重试，直接抛出")
+        void runtimeExceptionNotRetried() {
+            AtomicInteger counter = new AtomicInteger(0);
+            assertThrows(RuntimeException.class, () -> service.executeLlmCall(() -> {
+                counter.incrementAndGet();
+                throw new RuntimeException("not retryable");
+            }));
+            assertEquals(1, counter.get());
         }
     }
 

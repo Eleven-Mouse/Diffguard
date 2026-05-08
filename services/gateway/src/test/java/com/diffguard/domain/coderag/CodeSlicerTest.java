@@ -2,6 +2,8 @@ package com.diffguard.domain.coderag;
 
 import com.diffguard.domain.ast.ASTAnalyzer;
 import com.diffguard.domain.ast.model.ASTAnalysisResult;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -103,5 +105,43 @@ class CodeSlicerTest {
         ASTAnalysisResult result = ASTAnalysisResult.failure("Broken.java", "abc", "syntax error");
         List<CodeChunk> chunks = CodeSlicer.sliceByMethod(result, "broken code");
         assertTrue(chunks.isEmpty());
+    }
+
+    // --- P1-12: 嵌套类方法归属 ---
+
+    @Nested
+    @DisplayName("嵌套类方法切片归属 (P1-12)")
+    class NestedClassSlicingTests {
+
+        @Test
+        @DisplayName("嵌套类方法应分配给最具体的内嵌类")
+        void sliceByMethod_nestedClass_assignsToMostSpecific() {
+            String code = """
+                    public class Outer {
+                        public void outerMethod() {}
+
+                        public class Inner {
+                            public void innerMethod() {}
+                        }
+                    }
+                    """;
+
+            ASTAnalysisResult result = analyzer.analyze("Outer.java", code);
+            List<CodeChunk> chunks = CodeSlicer.sliceByMethod(result, code);
+
+            assertEquals(2, chunks.size());
+
+            CodeChunk outerChunk = chunks.stream()
+                    .filter(c -> "outerMethod".equals(c.getMethodName()))
+                    .findFirst().orElse(null);
+            assertNotNull(outerChunk);
+            assertEquals("Outer", outerChunk.getClassName());
+
+            CodeChunk innerChunk = chunks.stream()
+                    .filter(c -> "innerMethod".equals(c.getMethodName()))
+                    .findFirst().orElse(null);
+            assertNotNull(innerChunk);
+            assertEquals("Inner", innerChunk.getClassName());
+        }
     }
 }

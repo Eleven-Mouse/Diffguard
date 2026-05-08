@@ -59,13 +59,14 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"    # webhook server
-      - "9090:9090"    # tool server
+      - "127.0.0.1:9090:9090"    # tool server
       - "9091:9091"    # metrics (prometheus)
     environment:
       - DIFFGUARD_AGENT_URL=http://diffguard-agent:8000
       - DIFFGUARD_API_KEY=${DIFFGUARD_API_KEY:-}
       - DIFFGUARD_WEBHOOK_SECRET=${DIFFGUARD_WEBHOOK_SECRET:-}
       - DIFFGUARD_GITHUB_TOKEN=${DIFFGUARD_GITHUB_TOKEN:-}
+      - DIFFGUARD_TOOL_SECRET=${DIFFGUARD_TOOL_SECRET:-}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=diffguard
@@ -99,6 +100,7 @@ services:
       - "8000:8000"
     environment:
       - JAVA_TOOL_SERVER_URL=http://diffguard-gateway:9090
+      - DIFFGUARD_TOOL_SECRET=${DIFFGUARD_TOOL_SECRET:-}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=diffguard

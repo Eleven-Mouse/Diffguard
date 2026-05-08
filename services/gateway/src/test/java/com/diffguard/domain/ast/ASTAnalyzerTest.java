@@ -1,6 +1,8 @@
 package com.diffguard.domain.ast;
 
 import com.diffguard.domain.ast.model.*;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -260,5 +262,31 @@ class ASTAnalyzerTest {
         ASTAnalysisResult r2 = analyzer.analyze("B.java", "class B {}");
 
         assertNotEquals(r1.getContentHash(), r2.getContentHash());
+    }
+
+    // --- P1-14: null 与空白内容的哈希处理 ---
+
+    @Nested
+    @DisplayName("null与空白内容哈希处理 (P1-14)")
+    class NullAndBlankContentHashTests {
+
+        @Test
+        @DisplayName("null内容仍应产生哈希")
+        void analyze_nullContent_returnsFailureWithHash() {
+            ASTAnalysisResult result = analyzer.analyze("Null.java", null);
+
+            assertFalse(result.isParseSucceeded());
+            assertNotNull(result.getContentHash(), "null content should still produce a hash");
+        }
+
+        @Test
+        @DisplayName("空白内容应正常计算哈希")
+        void analyze_blankContent_computesHash() {
+            ASTAnalysisResult result = analyzer.analyze("Blank.java", "   ");
+
+            // Blank is NOT null, so hash should be computed normally
+            assertNotNull(result.getContentHash());
+            assertFalse(result.getContentHash().isEmpty());
+        }
     }
 }

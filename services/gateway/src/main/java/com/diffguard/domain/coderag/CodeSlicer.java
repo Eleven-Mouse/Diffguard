@@ -24,26 +24,24 @@ public class CodeSlicer {
         List<CodeChunk> chunks = new ArrayList<>();
         String[] lines = sourceContent.split("\n");
 
-        for (ClassInfo cls : result.getClasses()) {
-            for (MethodInfo method : result.getMethods()) {
-                if (method.getStartLine() >= cls.getStartLine()
-                        && method.getEndLine() <= cls.getEndLine()) {
-                    String content = extractLines(lines, method.getStartLine(), method.getEndLine());
-                    if (content.isBlank()) continue;
+        for (MethodInfo method : result.getMethods()) {
+            ClassInfo best = findMostSpecificClass(method, result.getClasses());
+            if (best == null) continue;
 
-                    chunks.add(new CodeChunk(
-                            "method:" + cls.getName() + "." + method.getName()
-                                    + "(" + String.join(",", method.getParameterTypes()) + ")",
-                            CodeChunk.Granularity.METHOD,
-                            result.getFilePath(),
-                            cls.getName(),
-                            method.getName(),
-                            content,
-                            method.getStartLine(),
-                            method.getEndLine()
-                    ));
-                }
-            }
+            String content = extractLines(lines, method.getStartLine(), method.getEndLine());
+            if (content.isBlank()) continue;
+
+            chunks.add(new CodeChunk(
+                    "method:" + best.getName() + "." + method.getName()
+                            + "(" + String.join(",", method.getParameterTypes()) + ")",
+                    CodeChunk.Granularity.METHOD,
+                    result.getFilePath(),
+                    best.getName(),
+                    method.getName(),
+                    content,
+                    method.getStartLine(),
+                    method.getEndLine()
+            ));
         }
         return chunks;
     }
@@ -110,5 +108,19 @@ public class CodeSlicer {
             sb.append(lines[i]).append('\n');
         }
         return sb.toString();
+    }
+
+    private static ClassInfo findMostSpecificClass(MethodInfo method, List<ClassInfo> classes) {
+        ClassInfo best = null;
+        for (ClassInfo cls : classes) {
+            if (method.getStartLine() >= cls.getStartLine()
+                    && method.getEndLine() <= cls.getEndLine()) {
+                if (best == null || (cls.getEndLine() - cls.getStartLine())
+                        < (best.getEndLine() - best.getStartLine())) {
+                    best = cls;
+                }
+            }
+        }
+        return best;
     }
 }

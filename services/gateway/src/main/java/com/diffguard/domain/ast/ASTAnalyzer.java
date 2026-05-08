@@ -32,6 +32,8 @@ public class ASTAnalyzer {
 
     private static final Logger log = LoggerFactory.getLogger(ASTAnalyzer.class);
 
+    private final JavaParser parser = new JavaParser();
+
     /**
      * 解析单个 Java 文件并提取结构化信息。
      *
@@ -40,14 +42,15 @@ public class ASTAnalyzer {
      * @return AST 分析结果，解析失败时 parseSucceeded=false
      */
     public ASTAnalysisResult analyze(String filePath, String fileContent) {
-        if (fileContent == null || fileContent.isBlank()) {
-            String hash = fileContent == null ? "null" : computeHash(fileContent);
-            return ASTAnalysisResult.failure(filePath, hash, "空内容");
+        if (fileContent == null) {
+            return ASTAnalysisResult.failure(filePath, "null", "空内容");
+        }
+        if (fileContent.isBlank()) {
+            return ASTAnalysisResult.failure(filePath, computeHash(fileContent), "空内容");
         }
 
         String contentHash = computeHash(fileContent);
         try {
-            JavaParser parser = new JavaParser();
             ParseResult<CompilationUnit> parseResult = parser.parse(fileContent);
 
             if (!parseResult.isSuccessful()) {

@@ -4,6 +4,9 @@ import com.diffguard.exception.LlmApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
  * LLM Provider 共享工具方法。
  * 集中异常翻译、状态码提取等跨 Provider 复用的逻辑。
@@ -53,17 +56,22 @@ public final class ProviderUtils {
      * @param e 异常
      * @return 提取到的状态码，未匹配则返回 -1
      */
+    private static final Pattern STATUS_CODE_PATTERN = Pattern.compile(
+            "\\b([45]\\d{2})\\b"
+    );
+
     public static int extractStatusCode(Exception e) {
         String msg = e.getMessage();
         if (msg == null) return -1;
-        if (msg.contains("429")) return 429;
-        if (msg.contains("402")) return 402;
-        if (msg.contains("500")) return 500;
-        if (msg.contains("502")) return 502;
-        if (msg.contains("503")) return 503;
-        if (msg.contains("504")) return 504;
-        if (msg.contains("529")) return 529; // Claude 特有的过载错误
-        if (msg.contains("400")) return 400;
+        Matcher m = STATUS_CODE_PATTERN.matcher(msg);
+        while (m.find()) {
+            int code = Integer.parseInt(m.group(1));
+            // Return the first match that is a known HTTP status code
+            if (code == 400 || code == 402 || code == 429
+                    || code == 500 || code == 502 || code == 503 || code == 504 || code == 529) {
+                return code;
+            }
+        }
         return -1;
     }
 

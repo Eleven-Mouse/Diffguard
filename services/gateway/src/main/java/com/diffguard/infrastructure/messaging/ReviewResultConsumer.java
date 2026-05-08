@@ -13,8 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.*;
 
 /**
  * 消费 Python Agent 返回的 Review 结果。
@@ -23,12 +22,16 @@ import java.util.concurrent.CountDownLatch;
 public class ReviewResultConsumer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewResultConsumer.class);
+    private static final long PENDING_TTL_MINUTES = 10;
+    private static final int MAX_PENDING = 1000;
+
     private final Channel channel;
     private final ReviewTaskRepository taskRepo;
     private final ReviewResultRepository resultRepo;
+    private final ScheduledExecutorService cleanupScheduler;
 
     /** 等待结果的 pending tasks: taskId → CompletableFuture */
-    private final Map<String, java.util.concurrent.CompletableFuture<ReviewResult>> pendingTasks
+    private final Map<String, CompletableFuture<ReviewResult>> pendingTasks
             = new ConcurrentHashMap<>();
 
     private String consumerTag;
@@ -40,14 +43,26 @@ public class ReviewResultConsumer implements AutoCloseable {
         this.channel = mqConfig.getChannel();
         this.taskRepo = taskRepo;
         this.resultRepo = resultRepo;
+        this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor();
+        this.cleanupScheduler.scheduleAtFixedRate(this::cleanupPending, 2, 2, TimeUnit.MINUTES);
     }
 
     /**
      * 注册一个等待结果的 taskId。
      */
     public void registerPending(String taskId,
-                                java.util.concurrent.CompletableFuture<ReviewResult> future) {
-        pendingTasks.put(taskId, future);
+                                CompletableFuture<ReviewResult> future) {
+        if (pendingTasks.size() >= MAX_PENDING) {
+            throw new IllegalStateException("Too many pending tasks");
+        }
+        CompletableFuture<ReviewResult> timeoutFuture = future
+                .orTimeout(PENDING_TTL_MINUTES, TimeUnit.MINUTES)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        pendingTasks.remove(taskId, future);
+                    }
+                });
+        pendingTasks.put(taskId, timeoutFuture);
     }
 
     /**
@@ -70,7 +85,7 @@ public class ReviewResultConsumer implements AutoCloseable {
             ReviewResult result = parseResult(delivery.getBody());
 
             // 1. Complete pending future
-            java.util.concurrent.CompletableFuture<ReviewResult> pending = pendingTasks.remove(taskId);
+            CompletableFuture<ReviewResult> pending = pendingTasks.remove(taskId);
             if (pending != null) {
                 pending.complete(result);
             }
@@ -97,6 +112,17 @@ public class ReviewResultConsumer implements AutoCloseable {
     private void handleCancel(String consumerTag) {
         log.warn("Consumer cancelled by broker: {}", consumerTag);
         running = false;
+    }
+
+    /**
+     * 定期清理已完成或已取消的 pending futures，防止 map 无限增长。
+     */
+    private void cleanupPending() {
+        pendingTasks.entrySet().removeIf(entry -> {
+            CompletableFuture<?> f = entry.getValue();
+            return f.isDone() || f.isCancelled();
+        });
+        log.debug("Pending tasks after cleanup: {}", pendingTasks.size());
     }
 
     private ReviewResult parseResult(byte[] body) {
@@ -134,9 +160,42 @@ public class ReviewResultConsumer implements AutoCloseable {
 
     public boolean isRunning() { return running; }
 
+    /**
+     * 启动死信队列消费者，记录失败消息。
+     */
+    public void startDlqConsumer() throws IOException {
+        channel.basicConsume(RabbitMQConfig.DEAD_LETTER_QUEUE, false,
+                (consumerTag, delivery) -> {
+                    long tag = delivery.getEnvelope().getDeliveryTag();
+                    String body = new String(delivery.getBody(), java.nio.charset.StandardCharsets.UTF_8);
+                    log.error("DLQ message received: routingKey={}, body={}",
+                            delivery.getEnvelope().getRoutingKey(),
+                            body.length() > 500 ? body.substring(0, 500) + "..." : body);
+                    channel.basicAck(tag, false);
+                },
+                consumerTag1 -> log.warn("DLQ consumer cancelled: {}", consumerTag1));
+        log.info("DLQ consumer started on {}", RabbitMQConfig.DEAD_LETTER_QUEUE);
+    }
+
     @Override
     public void close() {
         running = false;
+        // 1. 关闭定时清理调度器
+        cleanupScheduler.shutdown();
+        try {
+            if (!cleanupScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                cleanupScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            cleanupScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        // 2. 取消所有剩余的 pending futures
+        for (Map.Entry<String, CompletableFuture<ReviewResult>> entry : pendingTasks.entrySet()) {
+            entry.getValue().cancel(true);
+        }
+        pendingTasks.clear();
+        // 3. 取消 RabbitMQ consumer
         try {
             if (consumerTag != null) channel.basicCancel(consumerTag);
         } catch (IOException e) {

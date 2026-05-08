@@ -17,9 +17,10 @@ _DEFAULT_TIMEOUT = 10.0
 class JavaToolClient:
     """Manages sessions and dispatches tool calls to the Java tool server."""
 
-    def __init__(self, base_url: str, session_id: str) -> None:
+    def __init__(self, base_url: str, session_id: str, tool_secret: str | None = None) -> None:
         self._base_url = base_url.rstrip("/")
         self._session_id = session_id
+        self._tool_secret = tool_secret
         self._client = httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT)
 
     @property
@@ -28,7 +29,10 @@ class JavaToolClient:
 
     @property
     def _headers(self) -> dict[str, str]:
-        return {"X-Session-Id": self._session_id}
+        headers = {"X-Session-Id": self._session_id}
+        if self._tool_secret:
+            headers["X-Tool-Secret"] = self._tool_secret
+        return headers
 
     async def _post(self, path: str, payload: dict[str, Any] | None = None) -> ToolResponse:
         url = f"{self._base_url}{path}"
@@ -70,26 +74,32 @@ async def create_tool_session(
     diff_entries: list[DiffEntry],
     project_dir: str,
     allowed_files: list[str],
+    tool_secret: str | None = None,
 ) -> JavaToolClient:
     """Create a tool session on the Java side and return a ready JavaToolClient."""
-    import uuid
+    url = f"{base_url.rstrip('/')}/api/v1/tools/session"
+    headers: dict[str, str] = {}
+    if tool_secret:
+        headers["X-Tool-Secret"] = tool_secret
 
-    session_id = str(uuid.uuid4())
-    client = JavaToolClient(base_url, session_id)
+    async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as http:
+        resp = await http.post(
+            url,
+            json={
+                "project_dir": project_dir,
+                "diff_entries": [e.model_dump() for e in diff_entries],
+                "allowed_files": allowed_files,
+            },
+            headers=headers,
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
-    resp = await client._post(
-        "/api/v1/tools/session",
-        {
-            "session_id": session_id,
-            "project_dir": project_dir,
-            "diff_entries": [e.model_dump() for e in diff_entries],
-            "allowed_files": allowed_files,
-        },
-    )
-    if not resp.success:
-        await client.close()
-        raise RuntimeError(f"Failed to create tool session: {resp.error}")
+    if not data.get("success"):
+        raise RuntimeError(f"Failed to create tool session: {data.get('error', 'unknown')}")
 
+    session_id = data.get("session_id", "")
+    client = JavaToolClient(base_url, session_id, tool_secret)
     return client
 
 

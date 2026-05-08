@@ -103,10 +103,11 @@ public class ProjectASTAnalyzer {
         for (ClassInfo cls : result.getClasses()) {
             classNameToPath.put(cls.getName(), filePath);
 
-            // 索引方法到类
+            // 索引方法到类 (find most specific class for each method)
             List<MethodInfo> classMethodsList = new ArrayList<>();
             for (MethodInfo method : result.getMethods()) {
-                if (isMethodInClass(method, cls)) {
+                ClassInfo best = findMostSpecificClass(method, result.getClasses());
+                if (best != null && best.getName().equals(cls.getName())) {
                     classMethodsList.add(method);
                 }
             }
@@ -244,6 +245,20 @@ public class ProjectASTAnalyzer {
 
     private boolean isMethodInClass(MethodInfo method, ClassInfo cls) {
         return method.getStartLine() >= cls.getStartLine() && method.getEndLine() <= cls.getEndLine();
+    }
+
+    private static ClassInfo findMostSpecificClass(MethodInfo method, List<ClassInfo> classes) {
+        ClassInfo best = null;
+        for (ClassInfo cls : classes) {
+            if (method.getStartLine() >= cls.getStartLine()
+                    && method.getEndLine() <= cls.getEndLine()) {
+                if (best == null || (cls.getEndLine() - cls.getStartLine())
+                        < (best.getEndLine() - best.getStartLine())) {
+                    best = cls;
+                }
+            }
+        }
+        return best;
     }
 
     /**

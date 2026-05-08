@@ -2,6 +2,8 @@ package com.diffguard.domain.codegraph;
 
 import com.diffguard.domain.ast.ProjectASTAnalyzer;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -265,6 +267,56 @@ class CodeGraphTest {
         assertTrue(mermaid.contains("Controller"));
         assertTrue(mermaid.contains("Service"));
         assertTrue(mermaid.contains("-->"));
+    }
+
+    // --- P1-11: 同名类不冲突 ---
+
+    @Nested
+    @DisplayName("同名类在不同文件中不冲突 (P1-11)")
+    class SameNameClassCollisionTests {
+
+        @TempDir
+        Path collisionDir;
+
+        @Test
+        @DisplayName("不同包下同名类应生成独立节点")
+        void sameNameClassesInDifferentFiles_dontCollide() throws IOException {
+            Path dir1 = collisionDir.resolve("src/main/java/com/a");
+            Path dir2 = collisionDir.resolve("src/main/java/com/b");
+            Files.createDirectories(dir1);
+            Files.createDirectories(dir2);
+
+            Files.writeString(dir1.resolve("Service.java"), """
+                    package com.a;
+                    public class Service {
+                        public void methodA() {}
+                    }
+                    """);
+            Files.writeString(dir2.resolve("Service.java"), """
+                    package com.b;
+                    public class Service {
+                        public void methodB() {}
+                    }
+                    """);
+
+            ProjectASTAnalyzer analyzer = new ProjectASTAnalyzer();
+            analyzer.scanProject(collisionDir);
+            CodeGraph sameNameGraph = CodeGraphBuilder.buildFromAnalyzer(analyzer);
+
+            // Should have 2 CLASS nodes named "Service"
+            List<GraphNode> serviceNodes = sameNameGraph.getNodesByType(GraphNode.Type.CLASS).stream()
+                    .filter(n -> n.getName().equals("Service"))
+                    .toList();
+            assertEquals(2, serviceNodes.size(), "Same-name classes should have separate nodes");
+
+            // Each should have its own method
+            List<GraphNode> methods = sameNameGraph.getNodesByType(GraphNode.Type.METHOD);
+            assertTrue(methods.stream().anyMatch(n -> n.getName().equals("methodA")));
+            assertTrue(methods.stream().anyMatch(n -> n.getName().equals("methodB")));
+
+            // IDs should be different
+            assertNotEquals(serviceNodes.get(0).getId(), serviceNodes.get(1).getId());
+        }
     }
 
     // --- Helpers ---

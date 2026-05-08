@@ -109,7 +109,7 @@ class ReviewResultRepositoryTest {
         }
 
         @Test
-        @DisplayName("saveResult handles SQLException gracefully")
+        @DisplayName("saveResult SQLException 抛出 RuntimeException")
         void saveResultHandlesException() throws SQLException {
             when(connection.prepareStatement(anyString())).thenThrow(new SQLException("DB error"));
 
@@ -123,7 +123,7 @@ class ReviewResultRepositoryTest {
             issue.setSuggestion("sug");
             result.addIssue(issue);
 
-            assertDoesNotThrow(() -> repository.saveResult("task-4", result));
+            assertThrows(RuntimeException.class, () -> repository.saveResult("task-4", result));
         }
 
         @Test
@@ -188,7 +188,7 @@ class ReviewResultRepositoryTest {
         }
 
         @Test
-        @DisplayName("saveStaticIssues handles SQLException")
+        @DisplayName("saveStaticIssues SQLException 抛出 RuntimeException")
         void saveStaticIssuesHandlesException() throws SQLException {
             when(connection.prepareStatement(anyString())).thenThrow(new SQLException("error"));
 
@@ -200,7 +200,7 @@ class ReviewResultRepositoryTest {
             issue.setMessage("m");
             issue.setSuggestion("s");
 
-            assertDoesNotThrow(() -> repository.saveStaticIssues("task-12", List.of(issue)));
+            assertThrows(RuntimeException.class, () -> repository.saveStaticIssues("task-12", List.of(issue)));
         }
     }
 

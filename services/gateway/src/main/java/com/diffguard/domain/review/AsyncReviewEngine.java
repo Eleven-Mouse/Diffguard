@@ -119,6 +119,8 @@ public class AsyncReviewEngine implements ReviewEngine {
         }
     }
 
+    public String getTaskId() { return taskId; }
+
     @Override
     public void close() {
         // Shared resources are not closed per-instance

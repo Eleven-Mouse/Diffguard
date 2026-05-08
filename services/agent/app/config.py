@@ -10,6 +10,7 @@ class Settings:
 
     # Java tool server
     JAVA_TOOL_SERVER_URL: str = os.getenv("JAVA_TOOL_SERVER_URL", "http://localhost:9090")
+    DIFFGUARD_TOOL_SECRET: str | None = os.getenv("DIFFGUARD_TOOL_SECRET")
 
     # Agent HTTP server
     AGENT_HOST: str = os.getenv("AGENT_HOST", "0.0.0.0")

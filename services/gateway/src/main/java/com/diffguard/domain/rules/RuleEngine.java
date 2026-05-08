@@ -72,9 +72,9 @@ public class RuleEngine {
 
             String[] lines = entry.getContent().split("\n");
             for (int i = 0; i < lines.length; i++) {
-                String line = lines[i].trim();
-                if (line.startsWith("+") || line.startsWith("-")) continue; // skip diff markers
-                if (SQL_CONCAT.matcher(line).find()) {
+                String codeLine = stripDiffMarker(lines[i].trim());
+                if (codeLine == null) continue;
+                if (SQL_CONCAT.matcher(codeLine).find()) {
                     issues.add(createIssue(entry.getFilePath(), i + 1,
                             "sql_injection",
                             "Potential SQL injection: string concatenation detected in SQL query. Use parameterized queries instead.",
@@ -102,11 +102,11 @@ public class RuleEngine {
             List<ReviewIssue> issues = new ArrayList<>();
             String[] lines = entry.getContent().split("\n");
             for (int i = 0; i < lines.length; i++) {
-                String line = lines[i].trim();
-                if (line.startsWith("+") || line.startsWith("-")) continue;
-                if (SECRET_PATTERN.matcher(line).find() ||
-                    AWS_KEY.matcher(line).find() ||
-                    GITHUB_TOKEN.matcher(line).find()) {
+                String codeLine = stripDiffMarker(lines[i].trim());
+                if (codeLine == null) continue;
+                if (SECRET_PATTERN.matcher(codeLine).find() ||
+                    AWS_KEY.matcher(codeLine).find() ||
+                    GITHUB_TOKEN.matcher(codeLine).find()) {
                     issues.add(createIssue(entry.getFilePath(), i + 1,
                             "hardcoded_secret",
                             "Hardcoded secret or API key detected. Use environment variables or secret management.",
@@ -130,11 +130,11 @@ public class RuleEngine {
 
             String[] lines = entry.getContent().split("\n");
             for (int i = 0; i < lines.length; i++) {
-                String line = lines[i].trim();
-                if (line.startsWith("+") || line.startsWith("-")) continue;
+                String codeLine = stripDiffMarker(lines[i].trim());
+                if (codeLine == null) continue;
 
                 // Runtime.exec()
-                if (line.contains("Runtime.exec(") || line.contains("exec(")) {
+                if (codeLine.contains("Runtime.exec(") || codeLine.contains("exec(")) {
                     issues.add(createIssue(entry.getFilePath(), i + 1,
                             "command_injection",
                             "Potential command injection via Runtime.exec(). Ensure input is sanitized.",
@@ -142,7 +142,7 @@ public class RuleEngine {
                     ));
                 }
                 // ObjectOutputStream without validation
-                if (line.contains("ObjectInputStream") && !line.contains("ValidatingObjectInputStream")) {
+                if (codeLine.contains("ObjectInputStream") && !codeLine.contains("ValidatingObjectInputStream")) {
                     issues.add(createIssue(entry.getFilePath(), i + 1,
                             "insecure_deserialization",
                             "ObjectInputStream without validation may lead to insecure deserialization.",
@@ -170,7 +170,9 @@ public class RuleEngine {
             int maxIndent = 0;
             int maxIndentLine = 0;
             for (int i = 0; i < lines.length; i++) {
-                int indent = countLeadingSpaces(lines[i]);
+                String codeLine = stripDiffMarker(lines[i]);
+                if (codeLine == null) continue;
+                int indent = countLeadingSpaces(codeLine);
                 if (indent > maxIndent) {
                     maxIndent = indent;
                     maxIndentLine = i + 1;
@@ -199,6 +201,25 @@ public class RuleEngine {
     }
 
     // ---- helpers ----
+
+    /**
+     * Strip diff markers from a line and return the actual code content.
+     *
+     * @return {@code null} if the line is diff metadata or a removed line
+     *         (should be skipped), otherwise the code with the leading
+     *         {@code +} marker removed, or the line as-is if no marker.
+     */
+    static String stripDiffMarker(String line) {
+        if (line.startsWith("---"))   return null;   // diff metadata (old file)
+        if (line.startsWith("+++"))   return null;   // diff metadata (new file)
+        if (line.startsWith("@@"))    return null;   // hunk header
+        if (line.startsWith("diff ")) return null;   // diff header
+        if (line.startsWith("index ")) return null;   // diff header
+        if (line.startsWith("\\ "))   return null;   // no-newline marker
+        if (line.startsWith("-"))     return null;   // removed line – don't scan
+        if (line.startsWith("+"))     return line.substring(1); // added line – strip marker
+        return line;                                  // context line – keep as-is
+    }
 
     static boolean isJavaOrPython(String path) {
         return path.endsWith(".java") || path.endsWith(".py");

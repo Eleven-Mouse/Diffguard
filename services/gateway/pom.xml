@@ -72,13 +72,12 @@
             <version>3.1.8</version>
         </dependency>
 
-        <!-- HTTP Server (Webhook) -->
+        <!-- HTTP Server (Webhook) — javalin-bundle includes javalin transitively -->
         <dependency>
             <groupId>io.javalin</groupId>
-            <artifactId>javalin</artifactId>
+            <artifactId>javalin-bundle</artifactId>
             <version>5.6.3</version>
         </dependency>
-
 
         <!-- RabbitMQ -->
         <dependency>
@@ -133,11 +132,6 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
             <version>1.13.0</version>
-        </dependency>
-        <dependency>
-            <groupId>io.javalin</groupId>
-            <artifactId>javalin-bundle</artifactId>
-            <version>5.6.3</version>
         </dependency>
 
         <!-- Logback (replace slf4j-simple) -->

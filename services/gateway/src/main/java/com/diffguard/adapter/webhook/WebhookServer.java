@@ -78,6 +78,7 @@ public class WebhookServer {
 
     public void stop() {
         controller.close();
+        toolServerController.close();
         toolApp.stop();
         app.stop();
         log.info("DiffGuard 服务器已停止");

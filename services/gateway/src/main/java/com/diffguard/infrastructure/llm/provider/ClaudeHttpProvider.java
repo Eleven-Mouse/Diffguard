@@ -126,6 +126,15 @@ public class ClaudeHttpProvider implements LlmProvider {
         return "";
     }
 
+    @Override
+    public void close() {
+        try {
+            httpClient.close();
+        } catch (Exception e) {
+            log.warn("关闭 Claude HttpClient 失败", e);
+        }
+    }
+
     private static String truncate(String text, int maxLen) {
         if (text == null) return "";
         return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";

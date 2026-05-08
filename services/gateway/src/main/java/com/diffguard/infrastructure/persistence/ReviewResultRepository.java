@@ -56,6 +56,7 @@ public class ReviewResultRepository {
             log.debug("Saved {} issues for task {}", result.getIssues().size(), taskId);
         } catch (SQLException e) {
             log.error("Failed to save results for task {}: {}", taskId, e.getMessage());
+            throw new RuntimeException("Failed to save review results", e);
         }
     }
 
@@ -89,6 +90,7 @@ public class ReviewResultRepository {
             log.debug("Saved {} static issues for task {}", issues.size(), taskId);
         } catch (SQLException e) {
             log.error("Failed to save static issues for task {}: {}", taskId, e.getMessage());
+            throw new RuntimeException("Failed to save static issues", e);
         }
     }
 

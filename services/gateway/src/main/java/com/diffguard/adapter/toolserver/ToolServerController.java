@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -28,10 +29,39 @@ public class ToolServerController {
 
     private static final Logger log = LoggerFactory.getLogger(ToolServerController.class);
     private static final String SESSION_HEADER = "X-Session-Id";
+    private static final String TOOL_SECRET_HEADER = "X-Tool-Secret";
+
+    private final String toolSecret = System.getenv("DIFFGUARD_TOOL_SECRET");
 
     private final ToolSessionManager sessionManager = new ToolSessionManager();
 
+    /**
+     * Release all session resources. Should be called on server shutdown.
+     */
+    public void close() {
+        sessionManager.close();
+        log.info("Tool server controller closed, all sessions released");
+    }
+
     public void registerRoutes(Javalin app) {
+        // Shared-secret authentication for all tool endpoints
+        app.before(ctx -> {
+            String path = ctx.path();
+            if (!path.startsWith("/api/v1/tools/")) {
+                return;
+            }
+            // Skip auth if no secret configured (backward compat for CLI mode)
+            if (toolSecret == null || toolSecret.isEmpty()) {
+                return;
+            }
+            String headerSecret = ctx.header(TOOL_SECRET_HEADER);
+            if (!toolSecret.equals(headerSecret)) {
+                ctx.status(401);
+                ctx.json(errorResponse("Unauthorized: invalid or missing " + TOOL_SECRET_HEADER));
+                return;
+            }
+        });
+
         app.post("/api/v1/tools/session", this::handleCreateSession);
         app.delete("/api/v1/tools/session/{sessionId}", this::handleDeleteSession);
         app.post("/api/v1/tools/file-content", this::handleFileContent);
@@ -46,7 +76,7 @@ public class ToolServerController {
     private void handleCreateSession(Context ctx) {
         try {
             JsonNode body = ctx.bodyAsClass(JsonNode.class);
-            String sessionId = body.path("session_id").asText();
+            String sessionId = UUID.randomUUID().toString();
             String projectDir = body.path("project_dir").asText();
             Set<String> allowedFiles = Set.of();
             if (body.has("allowed_files")) {
@@ -58,7 +88,10 @@ public class ToolServerController {
 
             sessionManager.create(sessionId, Path.of(projectDir), diffEntries, allowedFiles);
             log.info("Tool session created: {}", sessionId);
-            ctx.json(successResponse());
+
+            ObjectNode response = successResponse();
+            response.put("session_id", sessionId);
+            ctx.json(response);
         } catch (Exception e) {
             log.error("Failed to create session", e);
             ctx.json(errorResponse(e.getMessage()));

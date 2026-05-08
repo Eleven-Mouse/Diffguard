@@ -72,12 +72,12 @@ class RuleEngineTest {
         }
 
         @Test
-        @DisplayName("跳过以 + 开头的 diff 标记行")
-        void skipsDiffMarkerPlus() {
-            String content = "+String query = \"SELECT * FROM users WHERE id = \" + userId;";
+        @DisplayName("检测 diff 新增行中的 SQL 注入")
+        void detectsSqlInDiffAddedLine() {
+            String content = "+String query = \"SELECT * FROM \" + table + \" WHERE id = 1\";";
             List<ReviewIssue> issues = engine.scan(List.of(entry("Service.java", content)));
 
-            assertTrue(issues.stream().noneMatch(i -> "sql_injection".equals(i.getType())));
+            assertTrue(issues.stream().anyMatch(i -> "sql_injection".equals(i.getType())));
         }
 
         @Test
@@ -270,7 +270,7 @@ class RuleEngineTest {
         @DisplayName("多条规则同时触发")
         void multipleRulesTriggered() {
             String content = "Runtime.getRuntime().exec(cmd);\n" +
-                    "String query = \"SELECT * FROM users WHERE id = \" + userId;";
+                    "String query = \" + userId + \" WHERE id = 1";
             List<ReviewIssue> issues = engine.scan(List.of(entry("Service.java", content)));
 
             assertTrue(issues.size() >= 2, "Should have at least 2 issues from different rules");
@@ -279,7 +279,7 @@ class RuleEngineTest {
         @Test
         @DisplayName("多个文件分别扫描")
         void multipleFilesScanned() {
-            String sqlContent = "String query = \"SELECT * FROM t WHERE id = \" + id;";
+            String sqlContent = "String query = \" + id + \" FROM users WHERE 1=1";
             String safeContent = "int x = 1;";
             List<ReviewIssue> issues = engine.scan(List.of(
                     entry("A.java", sqlContent),
@@ -328,6 +328,44 @@ class RuleEngineTest {
             assertFalse(issues.isEmpty());
             assertNotNull(issues.get(0).getSuggestion());
             assertFalse(issues.get(0).getSuggestion().isEmpty());
+        }
+    }
+
+    @Nested
+    @DisplayName("stripDiffMarker 辅助方法")
+    class StripDiffMarkerTest {
+
+        @Test
+        @DisplayName("新增行去除 + 前缀后扫描")
+        void addedLineStripsMarker() {
+            String line = "+String query = \"SELECT * FROM users WHERE id = \" + userId;";
+            String stripped = RuleEngine.stripDiffMarker(line);
+            assertNotNull(stripped);
+            assertTrue(stripped.startsWith("String query"));
+        }
+
+        @Test
+        @DisplayName("删除行被跳过")
+        void removedLineSkipped() {
+            String line = "-String query = \"SELECT * FROM users WHERE id = \" + userId;";
+            assertNull(RuleEngine.stripDiffMarker(line));
+        }
+
+        @Test
+        @DisplayName("diff 元数据行被跳过")
+        void metadataLinesSkipped() {
+            assertNull(RuleEngine.stripDiffMarker("--- a/Service.java"));
+            assertNull(RuleEngine.stripDiffMarker("+++ b/Service.java"));
+            assertNull(RuleEngine.stripDiffMarker("@@ -10,5 +10,6 @@"));
+            assertNull(RuleEngine.stripDiffMarker("diff --git a/Service.java b/Service.java"));
+            assertNull(RuleEngine.stripDiffMarker("index abc1234..def5678 100644"));
+        }
+
+        @Test
+        @DisplayName("上下文行正常扫描")
+        void contextLineScanned() {
+            String line = "String query = \"SELECT * FROM users WHERE id = \" + userId;";
+            assertEquals(line, RuleEngine.stripDiffMarker(line));
         }
     }
 

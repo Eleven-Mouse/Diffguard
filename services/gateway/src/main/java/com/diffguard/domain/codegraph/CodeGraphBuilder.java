@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * 从 ProjectASTAnalyzer 的分析结果构建 CodeGraph。
@@ -86,7 +87,7 @@ public class CodeGraphBuilder {
             GraphNode.Type nodeType = "interface".equals(cls.getType())
                     ? GraphNode.Type.INTERFACE
                     : GraphNode.Type.CLASS;
-            String classId = "class:" + cls.getName();
+            String classId = "class:" + filePath + ":" + cls.getName();
             graph.addNode(new GraphNode(nodeType, classId, cls.getName(), filePath));
             graph.addEdge(new GraphEdge(GraphEdge.Type.CONTAINS, fileId, classId));
         }
@@ -96,20 +97,32 @@ public class CodeGraphBuilder {
 
     private static void buildMethodNodes(CodeGraph graph, String filePath,
                                           ASTAnalysisResult result) {
-        for (ClassInfo cls : result.getClasses()) {
-            String classId = "class:" + cls.getName();
+        for (MethodInfo method : result.getMethods()) {
+            ClassInfo best = findMostSpecificClass(method, result.getClasses());
+            if (best == null) continue;
 
-            for (MethodInfo method : result.getMethods()) {
-                if (method.getStartLine() >= cls.getStartLine()
-                        && method.getEndLine() <= cls.getEndLine()) {
-                    String methodId = "method:" + cls.getName() + "." + method.getName()
-                            + "(" + String.join(",", method.getParameterTypes()) + ")";
-                    graph.addNode(new GraphNode(GraphNode.Type.METHOD, methodId,
-                            method.getName(), filePath));
-                    graph.addEdge(new GraphEdge(GraphEdge.Type.CONTAINS, classId, methodId));
+            String classId = "class:" + filePath + ":" + best.getName();
+            String methodId = "method:" + filePath + ":" + best.getName() + "." + method.getName()
+                    + "(" + String.join(",", method.getParameterTypes()) + ")";
+            graph.addNode(new GraphNode(GraphNode.Type.METHOD, methodId,
+                    method.getName(), filePath));
+            graph.addEdge(new GraphEdge(GraphEdge.Type.CONTAINS, classId, methodId));
+        }
+    }
+
+    /** Find the most specific (smallest line range) class that contains the method. */
+    private static ClassInfo findMostSpecificClass(MethodInfo method, List<ClassInfo> classes) {
+        ClassInfo best = null;
+        for (ClassInfo cls : classes) {
+            if (method.getStartLine() >= cls.getStartLine()
+                    && method.getEndLine() <= cls.getEndLine()) {
+                if (best == null || (cls.getEndLine() - cls.getStartLine())
+                        < (best.getEndLine() - best.getStartLine())) {
+                    best = cls;
                 }
             }
         }
+        return best;
     }
 
     // --- Pass 3: Inheritance + Call + Import edges ---
@@ -117,20 +130,27 @@ public class CodeGraphBuilder {
     private static void buildInheritanceEdges(CodeGraph graph, String filePath,
                                                ASTAnalysisResult result) {
         for (ClassInfo cls : result.getClasses()) {
-            String classId = "class:" + cls.getName();
+            String classId = "class:" + filePath + ":" + cls.getName();
 
             // extends
             if (cls.getSuperClass() != null && !cls.getSuperClass().isEmpty()) {
-                String parentId = "class:" + cls.getSuperClass();
-                if (graph.getNode(parentId).isPresent()) {
+                // Try same-file first, then search globally
+                String parentId = "class:" + filePath + ":" + cls.getSuperClass();
+                if (graph.getNode(parentId).isEmpty()) {
+                    parentId = findClassNodeIdByName(graph, cls.getSuperClass());
+                }
+                if (parentId != null) {
                     graph.addEdge(new GraphEdge(GraphEdge.Type.EXTENDS, classId, parentId));
                 }
             }
 
             // implements
             for (String iface : cls.getInterfaces()) {
-                String ifaceId = "class:" + iface;
-                if (graph.getNode(ifaceId).isPresent()) {
+                String ifaceId = "class:" + filePath + ":" + iface;
+                if (graph.getNode(ifaceId).isEmpty()) {
+                    ifaceId = findClassNodeIdByName(graph, iface);
+                }
+                if (ifaceId != null) {
                     graph.addEdge(new GraphEdge(GraphEdge.Type.IMPLEMENTS, classId, ifaceId));
                 }
             }
@@ -196,12 +216,9 @@ public class CodeGraphBuilder {
 
     private static String findMethodNodeId(CodeGraph graph, String className, String methodName) {
         if (className == null || className.isEmpty() || methodName == null) return null;
-        String candidateId = "method:" + className + "." + methodName + "()";
-        if (graph.getNode(candidateId).isPresent()) return candidateId;
-
-        // Try with parameters - search for partial match
+        // Search for method nodes matching className.methodName
         for (GraphNode node : graph.getNodesByType(GraphNode.Type.METHOD)) {
-            if (node.getName().equals(methodName) && node.getId().contains(className + ".")) {
+            if (node.getName().equals(methodName) && node.getId().contains(":" + className + "." + methodName)) {
                 return node.getId();
             }
         }
@@ -211,6 +228,20 @@ public class CodeGraphBuilder {
     private static String findMethodNodeIdGlobally(CodeGraph graph, String methodName) {
         for (GraphNode node : graph.getNodesByType(GraphNode.Type.METHOD)) {
             if (node.getName().equals(methodName)) {
+                return node.getId();
+            }
+        }
+        return null;
+    }
+
+    private static String findClassNodeIdByName(CodeGraph graph, String className) {
+        for (GraphNode node : graph.getNodesByType(GraphNode.Type.CLASS)) {
+            if (node.getName().equals(className)) {
+                return node.getId();
+            }
+        }
+        for (GraphNode node : graph.getNodesByType(GraphNode.Type.INTERFACE)) {
+            if (node.getName().equals(className)) {
                 return node.getId();
             }
         }

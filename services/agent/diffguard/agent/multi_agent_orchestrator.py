@@ -21,6 +21,7 @@ from app.models.schemas import (
     ReviewStatus,
 )
 from app.tools.tool_client import JavaToolClient, create_tool_session, destroy_tool_session
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class MultiAgentOrchestrator:
                 req.diff_entries,
                 req.project_dir,
                 req.allowed_files,
+                tool_secret=settings.DIFFGUARD_TOOL_SECRET,
             )
 
             # Compute strategy

@@ -1,0 +1,23 @@
+以下是一次代码审查的原始回复内容，请将其转换为以下 JSON 格式：
+
+```json
+{
+  "has_critical": false,
+  "summary": "审查总结",
+  "issues": [
+    {
+      "severity": "CRITICAL|WARNING|INFO",
+      "file": "文件路径",
+      "line": 0,
+      "type": "问题类型",
+      "message": "问题描述",
+      "suggestion": "修复建议"
+    }
+  ],
+  "highlights": ["代码亮点"],
+  "test_suggestions": ["测试建议"]
+}
+```
+
+原始回复内容：
+%s

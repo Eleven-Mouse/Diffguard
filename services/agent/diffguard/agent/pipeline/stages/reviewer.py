@@ -22,6 +22,9 @@ from app.tools.definitions import (
 
 logger = logging.getLogger(__name__)
 
+# Maximum total token budget per review request (across all reviewers).
+MAX_TOTAL_TOKEN_BUDGET = 200_000
+
 
 class _TargetedReviewResult(BaseModel):
     summary: str = ""
@@ -58,6 +61,7 @@ class ReviewerStage(PipelineStage):
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
+        total_tokens = 0
         for (name, _, _), result in zip(self._reviewers, results):
             if isinstance(result, Exception):
                 logger.warning("Reviewer '%s' failed: %s", name, result)
@@ -66,6 +70,12 @@ class ReviewerStage(PipelineStage):
                 ).model_dump_json()
             else:
                 context.review_results[name] = result.model_dump_json()
+                total_tokens += len(result.model_dump_json()) // 4  # rough estimate
+
+            if total_tokens > MAX_TOTAL_TOKEN_BUDGET:
+                logger.warning("Token budget exceeded (%d/%d), skipping remaining reviewers",
+                               total_tokens, MAX_TOTAL_TOKEN_BUDGET)
+                break
 
         logger.info("All reviewers completed: %s", list(context.review_results.keys()))
         return context
@@ -103,7 +113,12 @@ class ReviewerStage(PipelineStage):
         ])
 
         agent = create_tool_calling_agent(llm, tools, prompt)
-        executor = AgentExecutor(agent=agent, tools=tools, max_iterations=8, verbose=True)
+        executor = AgentExecutor(
+            agent=agent, tools=tools,
+            max_iterations=8,
+            max_execution_time=120,  # 2-minute timeout per reviewer
+            verbose=True,
+        )
 
         raw = await executor.ainvoke({"input": user})
         output_text = raw.get("output", "")

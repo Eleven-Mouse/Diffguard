@@ -361,4 +361,20 @@ class OpenAiHttpProviderTest {
             assertEquals("claude result", result);
         }
     }
+
+    // ------------------------------------------------------------------
+    // close - resource cleanup
+    // ------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("close - 资源清理")
+    class Close {
+
+        @Test
+        @DisplayName("close() 关闭 HttpClient 不抛异常")
+        void closeDoesNotThrow() {
+            OpenAiHttpProvider provider = createProvider("gpt-4o", tokenTracker);
+            assertDoesNotThrow(() -> provider.close());
+        }
+    }
 }

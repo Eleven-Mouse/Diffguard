@@ -33,6 +33,7 @@ public class ReviewService implements ReviewEngine {
 
     private LlmClient ownedClient; // 本实例创建的客户端，需在 close() 中关闭
     private boolean closed = false;
+    private volatile String cachedPromptHash; // lazily computed, cached for reuse
 
     public ReviewService(ReviewConfig config, Path projectDir, boolean noCache) {
         this.config = config;
@@ -198,6 +199,7 @@ public class ReviewService implements ReviewEngine {
      * 计算 prompt 模板哈希，确保模板变更后缓存失效。
      */
     private String computePromptHash() {
+        if (cachedPromptHash != null) return cachedPromptHash;
         PromptBuilder pb = new PromptBuilder(config, projectDir);
         List<PromptBuilder.PromptContent> samples = pb.buildPrompts(
                 java.util.List.of(new DiffFileEntry("dummy.java", "dummy diff content", 3)));
@@ -206,7 +208,8 @@ public class ReviewService implements ReviewEngine {
         }
         PromptBuilder.PromptContent sample = samples.get(0);
         String combined = sample.getSystemPrompt() + sample.getUserPrompt();
-        return CacheKeyGenerator.sha256(combined);
+        cachedPromptHash = CacheKeyGenerator.sha256(combined);
+        return cachedPromptHash;
     }
 
     @Override

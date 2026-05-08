@@ -99,7 +99,7 @@ public class LlmClient implements AutoCloseable {
             } catch (LlmApiException e) {
                 lastException = e;
                 int errorMaxAttempts = e.isRateLimitError() ? MAX_RETRIES : MAX_SERVER_ERROR_RETRIES;
-                if (e.isRetryable() && attempt < errorMaxAttempts) {
+                if (e.isRetryable() && attempt < errorMaxAttempts + 1) {
                     int delay;
                     if (e.isRateLimitError()) {
                         delay = (int) RETRY_DELAY_MS;
@@ -168,6 +168,11 @@ public class LlmClient implements AutoCloseable {
 
     @Override
     public void close() {
+        try {
+            provider.close();
+        } catch (Exception e) {
+            log.warn("关闭 LlmProvider 失败", e);
+        }
         batchExecutor.close();
     }
 }

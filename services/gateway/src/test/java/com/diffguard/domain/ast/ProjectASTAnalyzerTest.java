@@ -1,6 +1,8 @@
 package com.diffguard.domain.ast;
 
 import com.diffguard.domain.ast.model.*;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -190,5 +192,37 @@ class ProjectASTAnalyzerTest {
         List<ProjectASTAnalyzer.CrossFileCall> calls = analyzer.buildCrossFileCallGraph();
         // helper() has no scope (intra-class call), so no cross-file calls expected
         assertTrue(calls.isEmpty());
+    }
+
+    // --- P1-12: 嵌套类方法归属 ---
+
+    @Nested
+    @DisplayName("嵌套类方法归属 (P1-12)")
+    class NestedClassMethodTests {
+
+        @Test
+        @DisplayName("嵌套类的方法应正确分配到各自的类中")
+        void methodsOfNestedClass_assignedCorrectly() throws IOException {
+            writeJavaFile("src/Nested.java", """
+                    public class Nested {
+                        public void outerMethod() {}
+
+                        public class Inner {
+                            public void innerMethod() {}
+                        }
+                    }
+                    """);
+
+            ProjectASTAnalyzer analyzer = new ProjectASTAnalyzer();
+            analyzer.scanProject(tempDir);
+
+            List<MethodInfo> outerMethods = analyzer.getMethodsOfClass("Nested");
+            assertEquals(1, outerMethods.size());
+            assertEquals("outerMethod", outerMethods.get(0).getName());
+
+            List<MethodInfo> innerMethods = analyzer.getMethodsOfClass("Inner");
+            assertEquals(1, innerMethods.size());
+            assertEquals("innerMethod", innerMethods.get(0).getName());
+        }
     }
 }

@@ -9,7 +9,9 @@ import io.github.resilience4j.retry.RetryConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
 /**
@@ -59,7 +61,9 @@ public class ResilienceService {
         RetryConfig retryConfig = RetryConfig.custom()
                 .maxAttempts(3)
                 .waitDuration(Duration.ofMillis(500))
-                .retryOnException(e -> true)
+                .retryOnException(e -> e instanceof IOException
+                        || e instanceof com.diffguard.exception.LlmApiException
+                        || e instanceof TimeoutException)
                 .build();
         this.llmRetry = Retry.of("llm", retryConfig);
 

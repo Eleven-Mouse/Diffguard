@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 将 Review 任务发布到 RabbitMQ。
@@ -15,6 +17,12 @@ import java.util.concurrent.CompletableFuture;
 public class ReviewTaskPublisher implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewTaskPublisher.class);
+
+    private final ExecutorService publishExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "mq-publish");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final Channel channel;
 
@@ -35,7 +43,7 @@ public class ReviewTaskPublisher implements AutoCloseable {
             } catch (IOException e) {
                 throw new RuntimeException("Failed to publish review task", e);
             }
-        });
+        }, publishExecutor);
     }
 
     /**
@@ -65,6 +73,7 @@ public class ReviewTaskPublisher implements AutoCloseable {
 
     @Override
     public void close() {
+        publishExecutor.shutdown();
         // Channel lifecycle managed by RabbitMQConfig
     }
 }

@@ -142,6 +142,15 @@ public class OpenAiHttpProvider implements LlmProvider {
         return content;
     }
 
+    @Override
+    public void close() {
+        try {
+            httpClient.close();
+        } catch (Exception e) {
+            log.warn("关闭 OpenAI HttpClient 失败", e);
+        }
+    }
+
     private boolean isProxyResponseFormatError(Exception e) {
         if (e.getMessage() == null) return false;
         String msg = e.getMessage().toLowerCase();
