@@ -72,8 +72,7 @@ public class RedisVectorStore implements VectorStore {
         // Scan all stored vectors and compute similarity
         List<SearchResult> results = new ArrayList<>();
         try (var jedis = jedisPool.getResource()) {
-            var keys = jedis.keys(redisKey + ":*");
-            if (keys == null || keys.isEmpty()) return List.of();
+            List<String> keys = scanKeys(jedis);
 
             PriorityQueue<SearchResult> heap = new PriorityQueue<>(topK + 1);
 
@@ -104,8 +103,7 @@ public class RedisVectorStore implements VectorStore {
     public int size() {
         if (jedisPool == null) return fallback.size();
         try (var jedis = jedisPool.getResource()) {
-            var keys = jedis.keys(redisKey + ":*");
-            return keys != null ? keys.size() : 0;
+            return scanKeys(jedis).size();
         }
     }
 
@@ -113,9 +111,22 @@ public class RedisVectorStore implements VectorStore {
     public void clear() {
         if (jedisPool == null) { fallback.clear(); return; }
         try (var jedis = jedisPool.getResource()) {
-            var keys = jedis.keys(redisKey + ":*");
-            if (keys != null && !keys.isEmpty()) jedis.del(keys.toArray(new String[0]));
+            List<String> keys = scanKeys(jedis);
+            if (!keys.isEmpty()) jedis.del(keys.toArray(new String[0]));
         }
+    }
+
+    /** Use SCAN instead of KEYS to avoid blocking Redis in production. */
+    private List<String> scanKeys(redis.clients.jedis.Jedis jedis) {
+        List<String> allKeys = new ArrayList<>();
+        String cursor = "0";
+        String match = redisKey + ":*";
+        do {
+            var scanResult = jedis.scan(cursor, new redis.clients.jedis.ScanParams().match(match).count(100));
+            allKeys.addAll(scanResult.getResult());
+            cursor = scanResult.getCursor();
+        } while (!"0".equals(cursor));
+        return allKeys;
     }
 
     // --- helpers ---

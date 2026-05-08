@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import javax.sql.DataSource;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.*;
 
 /**
  * 异步审查引擎：通过 taskId 轮询 MySQL 获取结果。
@@ -23,6 +24,17 @@ import java.util.List;
 public class AsyncReviewEngine implements ReviewEngine {
 
     private static final Logger log = LoggerFactory.getLogger(AsyncReviewEngine.class);
+
+    private static final ScheduledExecutorService POLL_EXECUTOR =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "async-review-poll");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /** Shared DatabaseConfig singleton — created once, reused across reviews. */
+    private static volatile DatabaseConfig sharedDbConfig;
+    private static final Object DB_LOCK = new Object();
 
     private final String taskId;
     private final ReviewConfig config;
@@ -35,30 +47,36 @@ public class AsyncReviewEngine implements ReviewEngine {
         this.timeoutMs = (config.getLlm().getTimeoutSeconds() + 60) * 1000L;
     }
 
+    private static DatabaseConfig getSharedDbConfig() {
+        if (sharedDbConfig == null) {
+            synchronized (DB_LOCK) {
+                if (sharedDbConfig == null) {
+                    sharedDbConfig = DatabaseConfig.fromEnv();
+                }
+            }
+        }
+        return sharedDbConfig;
+    }
+
     @Override
     public ReviewResult review(List<DiffFileEntry> diffEntries, Path projectDir) throws DiffGuardException {
-        long start = System.currentTimeMillis();
+        ReviewConfig.DatabaseConfigHolder dbConfig = config.getDatabase();
+        if (dbConfig == null || !dbConfig.isEnabled()) {
+            throw new DiffGuardException("Async mode requires database enabled");
+        }
 
-        try {
-            // Try to connect to MySQL and poll for result
-            ReviewConfig.DatabaseConfigHolder dbConfig = config.getDatabase();
-            if (dbConfig == null || !dbConfig.isEnabled()) {
-                throw new DiffGuardException("Async mode requires database enabled");
-            }
+        DatabaseConfig dbc = getSharedDbConfig();
+        DataSource ds = dbc.getDataSource();
+        ReviewTaskRepository taskRepo = new ReviewTaskRepository(ds);
+        ReviewResultRepository resultRepo = new ReviewResultRepository(ds);
 
-            com.diffguard.infrastructure.persistence.DatabaseConfig dbc = DatabaseConfig.fromEnv();
-            DataSource ds = dbc.getDataSource();
-            ReviewTaskRepository taskRepo = new ReviewTaskRepository(ds);
-            ReviewResultRepository resultRepo = new ReviewResultRepository(ds);
+        taskRepo.updateStatus(taskId, "RUNNING");
 
-            // Mark task as running
-            taskRepo.updateStatus(taskId, "RUNNING");
+        CompletableFuture<ReviewResult> future = new CompletableFuture<>();
 
-            // Poll until completed or timeout
-            while (System.currentTimeMillis() - start < timeoutMs) {
-                Thread.sleep(pollIntervalMs);
-
-                // Check if results exist in DB
+        // Schedule polling off the calling thread
+        ScheduledFuture<?> pollHandle = POLL_EXECUTOR.scheduleAtFixedRate(() -> {
+            try {
                 List<ReviewIssue> issues = resultRepo.findByTaskId(taskId);
                 if (!issues.isEmpty()) {
                     ReviewResult result = new ReviewResult();
@@ -68,32 +86,41 @@ public class AsyncReviewEngine implements ReviewEngine {
                     result.setHasCriticalFlag(issues.stream()
                             .anyMatch(i -> i.getSeverity() == Severity.CRITICAL));
                     result.setTotalFilesReviewed(diffEntries.size());
-                    result.setReviewDurationMs(System.currentTimeMillis() - start);
-
-                    taskRepo.updateStatus(taskId, "COMPLETED");
-                    dbc.close();
-                    return result;
+                    future.complete(result);
                 }
+            } catch (Exception e) {
+                future.completeExceptionally(e);
             }
+        }, pollIntervalMs, pollIntervalMs, TimeUnit.MILLISECONDS);
 
-            // Timeout
-            taskRepo.updateError(taskId, "Review timed out after " + timeoutMs + "ms");
-            dbc.close();
-            throw new DiffGuardException("Async review timed out: " + taskId);
+        // Timeout guard
+        POLL_EXECUTOR.schedule(() -> {
+            if (!future.isDone()) {
+                taskRepo.updateError(taskId, "Review timed out after " + timeoutMs + "ms");
+                future.completeExceptionally(new DiffGuardException("Async review timed out: " + taskId));
+            }
+        }, timeoutMs, TimeUnit.MILLISECONDS);
 
-        } catch (DiffGuardException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new DiffGuardException("Async review failed: " + e.getMessage(), e);
+        try {
+            ReviewResult result = future.get();
+            pollHandle.cancel(false);
+            taskRepo.updateStatus(taskId, "COMPLETED");
+            result.setReviewDurationMs(System.currentTimeMillis());
+            return result;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            pollHandle.cancel(false);
+            throw new DiffGuardException("Async review interrupted: " + taskId, e);
+        } catch (ExecutionException e) {
+            pollHandle.cancel(false);
+            Throwable cause = e.getCause();
+            if (cause instanceof DiffGuardException dge) throw dge;
+            throw new DiffGuardException("Async review failed: " + cause.getMessage(), cause);
         }
     }
 
     @Override
     public void close() {
-        // No resources to close
-    }
-
-    public String getTaskId() {
-        return taskId;
+        // Shared resources are not closed per-instance
     }
 }

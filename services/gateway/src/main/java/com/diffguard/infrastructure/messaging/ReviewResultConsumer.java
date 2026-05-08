@@ -3,10 +3,10 @@ package com.diffguard.infrastructure.messaging;
 import com.diffguard.domain.review.model.ReviewIssue;
 import com.diffguard.domain.review.model.ReviewResult;
 import com.diffguard.domain.review.model.Severity;
+import com.diffguard.infrastructure.common.JacksonMapper;
 import com.diffguard.infrastructure.persistence.ReviewResultRepository;
 import com.diffguard.infrastructure.persistence.ReviewTaskRepository;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,8 +23,6 @@ import java.util.concurrent.CountDownLatch;
 public class ReviewResultConsumer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewResultConsumer.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     private final Channel channel;
     private final ReviewTaskRepository taskRepo;
     private final ReviewResultRepository resultRepo;
@@ -103,7 +101,7 @@ public class ReviewResultConsumer implements AutoCloseable {
 
     private ReviewResult parseResult(byte[] body) {
         try {
-            JsonNode root = MAPPER.readTree(body);
+            JsonNode root = JacksonMapper.MAPPER.readTree(body);
             String status = root.path("status").asText("failed");
             if ("failed".equals(status)) {
                 throw new RuntimeException("Agent returned failed: " + root.path("error").asText("unknown"));
@@ -115,7 +113,7 @@ public class ReviewResultConsumer implements AutoCloseable {
                 for (JsonNode issueNode : issues) {
                     ReviewIssue issue = new ReviewIssue();
                     issue.setSeverity(Severity.fromString(
-                            root.path("severity").asText("INFO")));
+                            issueNode.path("severity").asText("INFO")));
                     issue.setFile(issueNode.path("file").asText(""));
                     issue.setLine(issueNode.path("line").asInt(0));
                     issue.setType(issueNode.path("type").asText(""));

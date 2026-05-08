@@ -1,9 +1,4 @@
 请合并以下专项审查结果：
 
 变更总结：{{summary}}
-
-安全审查结果：{{securityResult}}
-
-逻辑审查结果：{{logicResult}}
-
-质量审查结果：{{qualityResult}}
+{{reviewer_results}}

@@ -33,15 +33,13 @@ class AggregationStage(PipelineStage):
         system = _load_prompt("pipeline/aggregation-system.txt")
         user_tpl = _load_prompt("pipeline/aggregation-user.txt")
 
-        # Build reviewer result substitutions dynamically
-        replacements = {"{{summary}}": context.summary}
-        for i, (name, result_json) in enumerate(context.review_results.items()):
-            replacements[f"{{{{reviewer_{i}_name}}}}"] = name
-            replacements[f"{{{{reviewer_{i}_result}}}}"] = result_json
+        # Build reviewer results section dynamically
+        reviewer_section = ""
+        for name, result_json in context.review_results.items():
+            reviewer_section += f"\n{name}审查结果：{result_json}\n"
 
-        user = user_tpl
-        for key, val in replacements.items():
-            user = user.replace(key, val)
+        user = user_tpl.replace("{{summary}}", context.summary)
+        user = user.replace("{{reviewer_results}}", reviewer_section)
 
         structured_llm = context.llm.with_structured_output(_AggregatedReview)
         aggregated = await structured_llm.ainvoke([("system", system), ("human", user)])

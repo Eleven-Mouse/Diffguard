@@ -35,7 +35,7 @@ public class DatabaseConfig implements AutoCloseable {
         config.addDataSourceProperty("useServerPrepStmts", "true");
 
         this.dataSource = new HikariDataSource(config);
-        log.info("MySQL connection pool initialized: {}:5700{}/{}/{}", host, port, dbName, user);
+        log.info("MySQL connection pool initialized: {}:{}/{}/{}", host, port, dbName, user);
     }
 
     public DataSource getDataSource() {
@@ -54,7 +54,10 @@ public class DatabaseConfig implements AutoCloseable {
         int port = Integer.parseInt(env("MYSQL_PORT", "3306"));
         String db = env("MYSQL_DB", "diffguard");
         String user = env("MYSQL_USER", "diffguard");
-        String password = env("MYSQL_PASSWORD", "diffguard123");
+        String password = env("MYSQL_PASSWORD", null);
+        if (password == null) {
+            throw new IllegalStateException("MYSQL_PASSWORD environment variable is required");
+        }
         return new DatabaseConfig(host, port, db, user, password);
     }
 
