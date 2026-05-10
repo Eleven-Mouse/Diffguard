@@ -1,8 +1,4 @@
-"""Shared LLM and prompt utilities.
-
-Extracted from pipeline_orchestrator to avoid circular imports
-(pipeline stages need these functions but pipeline_orchestrator imports the stages).
-"""
+"""Shared LLM and prompt utilities."""
 
 from __future__ import annotations
 
@@ -11,7 +7,7 @@ from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
-_PROMPTS_DIR = Path("app/prompts")
+_PROMPTS_DIR = Path(__file__).parent.parent / "llm" / "prompts"
 
 
 def create_llm(config: Any) -> BaseChatModel:

@@ -1,6 +1,6 @@
 package com.diffguard.domain.agent.core;
 
-import com.diffguard.domain.review.model.DiffFileEntry;
+import com.diffguard.adapter.toolserver.model.DiffFileEntry;
 
 import java.nio.file.Path;
 import java.util.List;

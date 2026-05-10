@@ -33,7 +33,6 @@ class AggregationStage(PipelineStage):
         system = load_prompt("pipeline/aggregation-system.txt")
         user_tpl = load_prompt("pipeline/aggregation-user.txt")
 
-        # Build reviewer results section dynamically
         reviewer_section = ""
         for name, result_json in context.review_results.items():
             reviewer_section += f"\n{name}审查结果：{result_json}\n"

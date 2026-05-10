@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field, model_validator
 
 class ReviewMode(str, Enum):
     PIPELINE = "PIPELINE"
-    MULTI_AGENT = "MULTI_AGENT"
 
 
 class ReviewStatus(str, Enum):
@@ -72,6 +71,20 @@ class ReviewRequest(BaseModel):
     allowed_files: list[str] = Field(default_factory=list)
 
 
+class WebhookReviewRequest(BaseModel):
+    """Request from Java gateway: repo + PR number. Python fetches diff itself."""
+    request_id: str = ""
+    repo_full_name: str
+    pr_number: int
+    head_sha: str = ""
+    github_token_env: str = "DIFFGUARD_GITHUB_TOKEN"
+    llm_config: LlmConfig = Field(default_factory=LlmConfig)
+    review_config: ReviewConfigPayload = Field(default_factory=ReviewConfigPayload)
+    tool_server_url: str = ""
+    project_dir: str = ""
+    excluded_dirs: list[str] = Field(default_factory=list)
+
+
 class IssuePayload(BaseModel):
     severity: str = "INFO"
     file: str = ""
@@ -79,6 +92,8 @@ class IssuePayload(BaseModel):
     type: str = ""
     message: str = ""
     suggestion: str = ""
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    filter_metadata: dict = Field(default_factory=dict)
 
 
 class ReviewResponse(BaseModel):
@@ -118,4 +133,3 @@ class ToolResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = "ok"
-    langchain_version: str = ""

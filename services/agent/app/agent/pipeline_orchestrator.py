@@ -14,6 +14,7 @@ from app.agent.pipeline.stages.base import PipelineContext, PipelineStage
 from app.agent.pipeline.stages.summary import SummaryStage
 from app.agent.pipeline.stages.reviewer import ReviewerStage
 from app.agent.pipeline.stages.aggregation import AggregationStage
+from app.agent.pipeline.stages.false_positive_filter import FalsePositiveFilterStage
 from app.models.schemas import (
     ReviewRequest,
     ReviewResponse,
@@ -29,11 +30,12 @@ logger = logging.getLogger(__name__)
 
 
 def build_default_pipeline() -> list[PipelineStage]:
-    """Build the standard 3-stage review pipeline."""
+    """Build the standard 4-stage review pipeline."""
     return [
         SummaryStage(),
         ReviewerStage(),
         AggregationStage(),
+        FalsePositiveFilterStage(),
     ]
 
 
@@ -65,13 +67,16 @@ class PipelineOrchestrator:
         tool_client: JavaToolClient | None = None
 
         try:
-            tool_client = await create_tool_session(
-                req.tool_server_url,
-                req.diff_entries,
-                req.project_dir,
-                req.allowed_files,
-                tool_secret=settings.DIFFGUARD_TOOL_SECRET,
-            )
+            # Tool Server is optional — skip when no URL is configured
+            # (e.g. GitHub Action mode without the Java gateway)
+            if req.tool_server_url:
+                tool_client = await create_tool_session(
+                    req.tool_server_url,
+                    req.diff_entries,
+                    req.project_dir,
+                    req.allowed_files,
+                    tool_secret=settings.DIFFGUARD_TOOL_SECRET,
+                )
 
             context = PipelineContext(
                 diff_text=diff_text,
@@ -101,4 +106,7 @@ class PipelineOrchestrator:
             )
         finally:
             if tool_client:
-                await destroy_tool_session(tool_client)
+                try:
+                    await destroy_tool_session(tool_client)
+                except Exception:
+                    pass

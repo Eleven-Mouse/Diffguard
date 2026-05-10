@@ -3,7 +3,7 @@ package com.diffguard.adapter.toolserver;
 import com.diffguard.domain.agent.core.AgentContext;
 import com.diffguard.domain.agent.core.AgentTool;
 import com.diffguard.domain.agent.tools.*;
-import com.diffguard.domain.review.model.DiffFileEntry;
+import com.diffguard.adapter.toolserver.model.DiffFileEntry;
 
 import java.nio.file.Path;
 import java.util.*;

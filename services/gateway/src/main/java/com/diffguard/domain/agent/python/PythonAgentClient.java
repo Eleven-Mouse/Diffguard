@@ -2,7 +2,7 @@ package com.diffguard.domain.agent.python;
 
 import com.diffguard.infrastructure.common.JacksonMapper;
 import com.diffguard.infrastructure.config.ReviewConfig;
-import com.diffguard.domain.review.model.DiffFileEntry;
+import com.diffguard.adapter.toolserver.model.DiffFileEntry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;

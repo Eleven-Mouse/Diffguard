@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.models.schemas import IssuePayload
-from app.tools.tool_client import JavaToolClient
+
+if TYPE_CHECKING:
+    from app.tools.tool_client import JavaToolClient
 
 
 @dataclass
 class PipelineContext:
-    """Mutable context passed between pipeline stages.
-
-    Each stage reads what it needs and writes its output back.
-    """
+    """Mutable context passed between pipeline stages."""
     # Input (set once)
     diff_text: str = ""
     llm: BaseChatModel | None = None
@@ -39,6 +38,9 @@ class PipelineContext:
     highlights: list[str] = field(default_factory=list)
     test_suggestions: list[str] = field(default_factory=list)
 
+    # False positive filter output
+    filter_stats: Any = None
+
 
 class PipelineStage(ABC):
     """Abstract base for a single pipeline stage."""
@@ -46,15 +48,8 @@ class PipelineStage(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Stage identifier (e.g. 'summary', 'review', 'aggregate')."""
+        """Stage identifier."""
 
     @abstractmethod
     async def execute(self, context: PipelineContext) -> PipelineContext:
-        """Execute this stage, reading from and writing to the context.
-
-        Args:
-            context: The shared pipeline context.
-
-        Returns:
-            The updated context (mutated in-place, returned for chaining).
-        """
+        """Execute this stage, reading from and writing to the context."""

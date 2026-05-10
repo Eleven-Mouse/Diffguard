@@ -1,0 +1,90 @@
+name: 'DiffGuard AI Code Review'
+description: 'AI-powered code review using multi-agent pipeline — security, logic, performance, and code quality.'
+author: 'DiffGuard'
+
+inputs:
+  api-key:
+    description: 'LLM API key (Anthropic or OpenAI)'
+    required: true
+    default: ''
+  provider:
+    description: 'LLM provider: "claude" or "openai"'
+    required: false
+    default: 'claude'
+  model:
+    description: 'Model name (e.g. claude-sonnet-4-20250514, gpt-4o)'
+    required: false
+    default: 'claude-sonnet-4-20250514'
+  language:
+    description: 'Review output language: "zh" or "en"'
+    required: false
+    default: 'zh'
+  comment-pr:
+    description: 'Whether to comment on PRs with findings'
+    required: false
+    default: 'true'
+  exclude-directories:
+    description: 'Comma-separated list of directories to exclude'
+    required: false
+    default: ''
+  enable-fp-filter:
+    description: 'Enable false-positive filtering (regex rules)'
+    required: false
+    default: 'true'
+  timeout-minutes:
+    description: 'Timeout for the review in minutes'
+    required: false
+    default: '10'
+
+outputs:
+  findings-count:
+    description: 'Number of review findings'
+    value: ${{ steps.diffguard-review.outputs.findings_count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        pip install -r ${{ github.action_path }}/services/agent/requirements-github-action.txt
+
+    - name: Run DiffGuard Review
+      id: diffguard-review
+      if: github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        DIFFGUARD_API_KEY: ${{ inputs.api-key }}
+        DIFFGUARD_PROVIDER: ${{ inputs.provider }}
+        DIFFGUARD_MODEL: ${{ inputs.model }}
+        DIFFGUARD_LANGUAGE: ${{ inputs.language }}
+        DIFFGUARD_COMMENT_PR: ${{ inputs.comment-pr }}
+        DIFFGUARD_EXCLUDE_DIRS: ${{ inputs.exclude-directories }}
+        DIFFGUARD_ENABLE_FP_FILTER: ${{ inputs.enable-fp-filter }}
+        DIFFGUARD_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+        REPO_PATH: ${{ github.workspace }}
+      run: |
+        echo "Running DiffGuard AI Code Review..."
+        cd ${{ github.action_path }}/services/agent
+        export PYTHONPATH="${{ github.action_path }}/services/agent"
+        python -m app.github_action_runner 2>&1 | tee review-output.json
+
+        if [ -f review-output.json ]; then
+          FINDINGS=$(python -c "import json,sys; d=json.load(open('review-output.json')); print(len(d.get('issues',[])))" 2>/dev/null || echo "0")
+          echo "findings_count=$FINDINGS" >> $GITHUB_OUTPUT
+          echo "DiffGuard found $FINDINGS review findings"
+        else
+          echo "findings_count=0" >> $GITHUB_OUTPUT
+        fi
+
+branding:
+  icon: 'shield'
+  color: 'blue'

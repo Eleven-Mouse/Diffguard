@@ -2,7 +2,7 @@ package com.diffguard.domain.ast;
 
 import com.diffguard.domain.ast.model.ASTAnalysisResult;
 import com.diffguard.infrastructure.config.ReviewConfig;
-import com.diffguard.domain.review.model.DiffFileEntry;
+import com.diffguard.adapter.toolserver.model.DiffFileEntry;
 import com.diffguard.infrastructure.common.TokenEstimator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

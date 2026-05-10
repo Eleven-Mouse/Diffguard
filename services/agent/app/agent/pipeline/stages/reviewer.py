@@ -1,4 +1,11 @@
-"""Reviewer stage - runs parallel domain-specific reviews with tool-using agents."""
+"""Reviewer stage - runs parallel domain-specific reviews.
+
+When ``tool_client`` is available, each reviewer runs as a tool-calling
+ReAct agent (via LangChain AgentExecutor).  When ``tool_client`` is ``None``
+(e.g. GitHub Action mode without the Java Tool Server), reviewers fall back
+to a direct structured-LLM call — cheaper and faster, but without the
+ability to explore the codebase on its own.
+"""
 
 from __future__ import annotations
 
@@ -11,14 +18,6 @@ from pydantic import BaseModel, Field
 from app.models.schemas import IssuePayload
 from app.agent.pipeline.stages.base import PipelineContext, PipelineStage
 from app.agent.llm_utils import load_prompt
-from app.tools.definitions import (
-    make_call_graph_tool,
-    make_diff_context_tool,
-    make_file_content_tool,
-    make_method_definition_tool,
-    make_related_files_tool,
-    make_semantic_search_tool,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +28,7 @@ class _TargetedReviewResult(BaseModel):
 
 
 class ReviewerStage(PipelineStage):
-    """Runs multiple domain-specific reviewers in parallel.
-
-    Each reviewer is defined by a (name, system_prompt, user_prompt) tuple.
-    """
+    """Runs multiple domain-specific reviewers in parallel."""
 
     @property
     def name(self) -> str:
@@ -80,12 +76,28 @@ class ReviewerStage(PipelineStage):
         diff_text: str,
         tool_client: Any,
     ) -> _TargetedReviewResult:
-        from langchain.agents import AgentExecutor, create_tool_calling_agent
-        from langchain_core.prompts import ChatPromptTemplate
-
         system = load_prompt(system_prompt_file)
         user_tpl = load_prompt(user_prompt_file)
         user = user_tpl.replace("{{summary}}", summary).replace("{{diff}}", diff_text)
+
+        if tool_client is not None:
+            return await self._run_with_tools(llm, system, user, tool_client)
+        return await self._run_direct(llm, system, user)
+
+    async def _run_with_tools(
+        self, llm: Any, system: str, user: str, tool_client: Any,
+    ) -> _TargetedReviewResult:
+        from langchain.agents import AgentExecutor, create_tool_calling_agent
+        from langchain_core.prompts import ChatPromptTemplate
+
+        from app.tools.definitions import (
+            make_call_graph_tool,
+            make_diff_context_tool,
+            make_file_content_tool,
+            make_method_definition_tool,
+            make_related_files_tool,
+            make_semantic_search_tool,
+        )
 
         tools = [
             make_file_content_tool(tool_client),
@@ -111,10 +123,19 @@ class ReviewerStage(PipelineStage):
         try:
             return _TargetedReviewResult.model_validate_json(output_text)
         except Exception:
-            parse_prompt = (
-                "Parse the following review output into structured JSON matching this schema: "
-                "{summary: string, issues: [{severity, file, line, type, message, suggestion}]}. "
-                f"Output:\n{output_text}"
-            )
-            structured = llm.with_structured_output(_TargetedReviewResult)
-            return await structured.ainvoke([("human", parse_prompt)])
+            return await self._parse_fallback(llm, output_text)
+
+    async def _run_direct(
+        self, llm: Any, system: str, user: str,
+    ) -> _TargetedReviewResult:
+        structured_llm = llm.with_structured_output(_TargetedReviewResult)
+        return await structured_llm.ainvoke([("system", system), ("human", user)])
+
+    async def _parse_fallback(self, llm: Any, output_text: str) -> _TargetedReviewResult:
+        parse_prompt = (
+            "Parse the following review output into structured JSON matching this schema: "
+            "{summary: string, issues: [{severity, file, line, type, message, suggestion}]}. "
+            f"Output:\n{output_text}"
+        )
+        structured = llm.with_structured_output(_TargetedReviewResult)
+        return await structured.ainvoke([("human", parse_prompt)])

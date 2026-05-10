@@ -14,8 +14,8 @@ COPY pyproject.toml ./
 # Install dependencies
 RUN uv pip install --system -r pyproject.toml
 
-# Copy application code (diffguard/ is the latest version)
-COPY diffguard/ ./app/
+# Copy application code
+COPY app/ ./app/
 
 EXPOSE 8000
 
