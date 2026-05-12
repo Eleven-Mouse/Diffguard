@@ -1,58 +1,31 @@
-services:
-  rabbitmq:
-    image: rabbitmq:3.13-management
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      RABBITMQ_DEFAULT_USER: diffguard
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-diffguard123}
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    networks:
-      - diffguard-net
+# DiffGuard — two-service deployment (Java webhook + Python review).
+#
+# GitHub Action mode: no Docker needed. Just add the Action to your workflow.
+# This compose file runs DiffGuard as a self-hosted webhook service.
+#
+# Architecture:
+#   Java Gateway (8080) — webhook receiver + AST tool server (9090)
+#   Python Agent (8000) — review engine (LLM + GitHub API)
 
+services:
   diffguard-gateway:
     build:
       context: ./services/gateway
       dockerfile: Dockerfile
     ports:
-      - "8090:8080"           # webhook server
-      - "127.0.0.1:9090:9090" # tool server (localhost only)
-      - "9091:9091"           # metrics
+      - "8080:8080"
+      - "9090:9090"
     environment:
-      - DIFFGUARD_AGENT_URL=http://diffguard-agent:8000
       - DIFFGUARD_API_KEY=${DIFFGUARD_API_KEY:-}
       - DIFFGUARD_WEBHOOK_SECRET=${DIFFGUARD_WEBHOOK_SECRET:-}
       - DIFFGUARD_GITHUB_TOKEN=${DIFFGUARD_GITHUB_TOKEN:-}
-      - DIFFGUARD_TOOL_SECRET=${DIFFGUARD_TOOL_SECRET:-}
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=diffguard
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-diffguard123}
-      - MYSQL_HOST=blog-mysql
-      - MYSQL_PORT=3306
-      - MYSQL_DB=diffguard
-      - MYSQL_USER=root
-      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD:-}
-      - REDIS_HOST=blog-redis
-      - REDIS_PORT=6379
-    volumes:
-      - ${PROJECT_DIR:-.}:/project:ro
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      diffguard-agent:
-        condition: service_healthy
-    networks:
-      - diffguard-net
-      - blog-net
+      - DIFFGUARD_TOOL_SERVER_URL=http://diffguard-gateway:9090
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   diffguard-agent:
     build:
@@ -61,33 +34,15 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - DIFFGUARD_API_KEY=${DIFFGUARD_API_KEY:-}
       - JAVA_TOOL_SERVER_URL=http://diffguard-gateway:9090
       - DIFFGUARD_TOOL_SECRET=${DIFFGUARD_TOOL_SECRET:-}
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=diffguard
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-diffguard123}
-      - REDIS_HOST=blog-redis
-      - REDIS_PORT=6379
     depends_on:
-      rabbitmq:
+      diffguard-gateway:
         condition: service_healthy
-    networks:
-      - diffguard-net
-      - blog-net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
-
-volumes:
-  rabbitmq_data:
-
-networks:
-  diffguard-net:
-    driver: bridge
-  blog-net:
-    external: true
-    name: blog_blog-net

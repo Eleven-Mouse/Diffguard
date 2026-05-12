@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  build-java:
     runs-on: ubuntu-latest
 
     strategy:
@@ -34,3 +34,43 @@ jobs:
         with:
           name: test-results-java-${{ matrix.java-version }}
           path: services/gateway/target/surefire-reports/
+
+  build-python:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: [ "3.12" ]
+
+    defaults:
+      run:
+        working-directory: services/agent
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: services/agent/pyproject.toml
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Lint (ruff check)
+        run: uv run ruff check app/ tests/ || true
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --tb=short
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-python-${{ matrix.python-version }}
+          path: services/agent/tests/

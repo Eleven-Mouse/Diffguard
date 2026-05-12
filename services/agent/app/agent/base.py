@@ -1,77 +1,53 @@
-"""ReviewAgent abstract base class - the core agent abstraction for DiffGuard."""
+"""Base data classes for agent results."""
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Literal
 
 from app.models.schemas import IssuePayload
-from app.tools.tool_client import JavaToolClient
 
 
 @dataclass
 class AgentReviewResult:
-    """Structured result returned by every ReviewAgent."""
+    """Result returned by an Agent after completing a review.
+
+    This class is used as a common interface across all agents
+    (builtin and custom) so callers can handle results uniformly.
+    """
+
     has_critical: bool = False
     summary: str = ""
     issues: list[IssuePayload] = field(default_factory=list)
-    highlights: list[str] = field(default_factory=list)
-    confidence: float = 1.0
+    metadata: dict = field(default_factory=dict)
 
-    def model_dump_json(self) -> str:
-        import json
-        return json.dumps({
+    @property
+    def critical_count(self) -> int:
+        """Number of CRITICAL severity issues."""
+        return sum(1 for i in self.issues if i.severity.upper() == "CRITICAL")
+
+    @property
+    def warning_count(self) -> int:
+        """Number of WARNING severity issues."""
+        return sum(1 for i in self.issues if i.severity.upper() == "WARNING")
+
+    def to_dict(self) -> dict:
+        """Convert to a plain dictionary for serialization."""
+        return {
             "has_critical": self.has_critical,
             "summary": self.summary,
-            "issues": [i.model_dump() for i in self.issues],
-            "highlights": self.highlights,
-            "confidence": self.confidence,
-        })
-
-
-class ReviewAgent(ABC):
-    """Abstract base class for all review agents.
-
-    Subclass this to create a specialized review agent. Register the subclass
-    with ``@AgentRegistry.register("name")`` to make it discoverable.
-    """
-
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Unique identifier for this agent (e.g. 'security', 'performance')."""
-
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """Human-readable description of this agent's capabilities."""
-
-    @property
-    def default_weight(self) -> float:
-        """Default strategy weight (0.0 = disabled, 1.0 = standard)."""
-        return 1.0
-
-    @abstractmethod
-    async def review(
-        self,
-        llm: Any,
-        diff_text: str,
-        tool_client: JavaToolClient,
-        focus_areas: list[str] | None = None,
-        additional_rules: list[str] | None = None,
-        max_iterations: int = 8,
-    ) -> AgentReviewResult:
-        """Execute the review.
-
-        Args:
-            llm: LangChain BaseChatModel instance.
-            diff_text: Combined diff content.
-            tool_client: Client for calling Java tool server.
-            focus_areas: Optional strategy-driven focus hints.
-            additional_rules: Optional extra rules from strategy.
-            max_iterations: Max agent reasoning iterations.
-
-        Returns:
-            AgentReviewResult with issues and metadata.
-        """
+            "issue_count": len(self.issues),
+            "issues": [
+                {
+                    "severity": i.severity,
+                    "file": i.file,
+                    "line": i.line,
+                    "type": i.type,
+                    "message": i.message,
+                    "suggestion": i.suggestion,
+                    "confidence": i.confidence,
+                }
+                for i in self.issues
+            ],
+            "metadata": self.metadata,
+        }

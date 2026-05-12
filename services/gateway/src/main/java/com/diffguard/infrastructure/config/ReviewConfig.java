@@ -10,108 +10,28 @@ import java.util.List;
 public class ReviewConfig {
 
     private LlmConfig llm = new LlmConfig();
-    private RulesConfig rules = new RulesConfig();
     private IgnoreConfig ignore = new IgnoreConfig();
     private ReviewOptions review = new ReviewOptions();
-    private PipelineConfig pipeline = new PipelineConfig();
     private WebhookConfig webhook = null;
     private EmbeddingConfig embedding = new EmbeddingConfig();
     private AgentServiceConfig agentService = null;
-    private MessageQueueConfig messageQueue = new MessageQueueConfig();
-    private DatabaseConfigHolder database = new DatabaseConfigHolder();
-    private RedisConfig redis = new RedisConfig();
 
-    public LlmConfig getLlm() {
-        return llm;
-    }
-
-    public void setLlm(LlmConfig llm) {
-        this.llm = llm;
-    }
-
-    public RulesConfig getRules() {
-        return rules;
-    }
-
-    public void setRules(RulesConfig rules) {
-        this.rules = rules;
-    }
-
-    public IgnoreConfig getIgnore() {
-        return ignore;
-    }
-
-    public void setIgnore(IgnoreConfig ignore) {
-        this.ignore = ignore;
-    }
-
-    public ReviewOptions getReview() {
-        return review;
-    }
-
-    public void setReview(ReviewOptions review) {
-        this.review = review;
-    }
-
-    public WebhookConfig getWebhook() {
-        return webhook;
-    }
-
-    public void setWebhook(WebhookConfig webhook) {
-        this.webhook = webhook;
-    }
-
-    public EmbeddingConfig getEmbedding() {
-        return embedding;
-    }
-
-    public AgentServiceConfig getAgentService() {
-        return agentService;
-    }
-
-    public void setAgentService(AgentServiceConfig agentService) {
-        this.agentService = agentService;
-    }
-
-    public MessageQueueConfig getMessageQueue() {
-        return messageQueue;
-    }
-
-    public DatabaseConfigHolder getDatabase() {
-        return database;
-    }
-
-    public RedisConfig getRedis() {
-        return redis;
-    }
-
-    /**
-     * 校验配置参数合法性。
-     *
-     * @throws IllegalArgumentException 配置不合法时抛出
-     */
-    public void validate() {
-        llm.validate();
-        if (review.maxDiffFiles <= 0) {
-            throw new IllegalArgumentException("review.max_diff_files 必须大于 0，当前值：" + review.maxDiffFiles);
-        }
-        if (review.maxTokensPerFile <= 0) {
-            throw new IllegalArgumentException("review.max_tokens_per_file 必须大于 0，当前值：" + review.maxTokensPerFile);
-        }
-        if (embedding.isOpenAi()) {
-            if (embedding.getModel() == null || embedding.getModel().isBlank()) {
-                throw new IllegalArgumentException("embedding.model 不能为空 when provider is openai");
-            }
-            if (embedding.getDimensions() != null && embedding.getDimensions() <= 0) {
-                throw new IllegalArgumentException("embedding.dimensions 必须大于 0，当前值：" + embedding.getDimensions());
-            }
-        }
-    }
+    public LlmConfig getLlm() { return llm; }
+    public void setLlm(LlmConfig llm) { this.llm = llm; }
+    public IgnoreConfig getIgnore() { return ignore; }
+    public void setIgnore(IgnoreConfig ignore) { this.ignore = ignore; }
+    public ReviewOptions getReview() { return review; }
+    public void setReview(ReviewOptions review) { this.review = review; }
+    public WebhookConfig getWebhook() { return webhook; }
+    public void setWebhook(WebhookConfig webhook) { this.webhook = webhook; }
+    public EmbeddingConfig getEmbedding() { return embedding; }
+    public AgentServiceConfig getAgentService() { return agentService; }
+    public void setAgentService(AgentServiceConfig agentService) { this.agentService = agentService; }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class LlmConfig {
         private String provider = "claude";
-        private String model = "mimo-v2-pro";
+        private String model = "claude-sonnet-4-20250514";
 
         @JsonProperty("max_tokens")
         private int maxTokens = 4096;
@@ -130,7 +50,6 @@ public class ReviewConfig {
         @JsonProperty("base_url_env")
         private String baseUrlEnv = "DIFFGUARD_API_BASE_URL";
 
-        // getter 和 setter 方法
         public String getProvider() { return provider; }
         public void setProvider(String provider) { this.provider = provider; }
         public String getModel() { return model; }
@@ -149,18 +68,13 @@ public class ReviewConfig {
         public void setBaseUrlEnv(String baseUrlEnv) { this.baseUrlEnv = baseUrlEnv; }
 
         public String resolveBaseUrl() {
-            // 优先使用环境变量
             if (baseUrlEnv != null && !baseUrlEnv.isBlank()) {
                 String envVal = System.getenv(baseUrlEnv);
-                if (envVal != null && !envVal.isBlank()) {
-                    return envVal.trim().replaceAll("/+$", "");
-                }
+                if (envVal != null && !envVal.isBlank()) return envVal.trim().replaceAll("/+$", "");
             }
-            // 其次使用配置文件中的值
             if (baseUrl != null && !baseUrl.isBlank()) {
                 return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
             }
-            // 根据提供商返回默认URL
             return switch (provider.toLowerCase()) {
                 case "openai" -> "https://api.openai.com/v1";
                 default -> "https://api.anthropic.com";
@@ -168,51 +82,10 @@ public class ReviewConfig {
         }
 
         public String resolveApiKey() {
-            // 仅通过环境变量获取，不允许明文存储 API Key
             String envKey = System.getenv(apiKeyEnv);
-            if (envKey != null && !envKey.isBlank()) {
-                return envKey.trim();
-            }
-            throw new IllegalStateException(
-                "未找到API密钥。请通过环境变量设置：" + apiKeyEnv);
+            if (envKey != null && !envKey.isBlank()) return envKey.trim();
+            throw new IllegalStateException("API key not found in env var: " + apiKeyEnv);
         }
-
-        /**
-         * 校验 LLM 配置参数合法性。
-         *
-         * @throws IllegalArgumentException 配置不合法时抛出
-         */
-        public void validate() {
-            if (provider == null || provider.isBlank()) {
-                throw new IllegalArgumentException("llm.provider 不能为空");
-            }
-            if (!provider.equalsIgnoreCase("claude") && !provider.equalsIgnoreCase("openai")) {
-                throw new IllegalArgumentException("不支持的 llm.provider：" + provider + "（支持 claude/openai）");
-            }
-            if (model == null || model.isBlank()) {
-                throw new IllegalArgumentException("llm.model 不能为空");
-            }
-            if (maxTokens <= 0) {
-                throw new IllegalArgumentException("llm.max_tokens 必须大于 0，当前值：" + maxTokens);
-            }
-            if (temperature < 0 || temperature > 2) {
-                throw new IllegalArgumentException("llm.temperature 必须在 0-2 范围内，当前值：" + temperature);
-            }
-            if (timeoutSeconds <= 0) {
-                throw new IllegalArgumentException("llm.timeout_seconds 必须大于 0，当前值：" + timeoutSeconds);
-            }
-            if (apiKeyEnv == null || apiKeyEnv.isBlank()) {
-                throw new IllegalArgumentException("llm.api_key_env 不能为空");
-            }
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class RulesConfig {
-        private List<String> enabled = List.of("security", "bug-risk", "code-style", "performance");
-
-        public List<String> getEnabled() { return enabled; }
-
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -221,7 +94,6 @@ public class ReviewConfig {
 
         public List<String> getFiles() { return files; }
         public void setFiles(List<String> files) { this.files = files; }
-
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -235,22 +107,9 @@ public class ReviewConfig {
         private String language = "zh";
 
         public int getMaxDiffFiles() { return maxDiffFiles; }
-
         public int getMaxTokensPerFile() { return maxTokensPerFile; }
-
         public String getLanguage() { return language; }
     }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class PipelineConfig {
-        private boolean enabled = false;
-
-        public boolean isEnabled() { return enabled; }
-
-    }
-
-    public PipelineConfig getPipeline() { return pipeline; }
-    public void setPipeline(PipelineConfig pipeline) { this.pipeline = pipeline; }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class WebhookConfig {
@@ -266,24 +125,13 @@ public class ReviewConfig {
         private List<RepoMapping> repos = List.of();
 
         public int getPort() { return port; }
-
+        public String getGithubTokenEnv() { return githubTokenEnv; }
         public void setRepos(List<RepoMapping> repos) { this.repos = repos; }
 
         public String resolveSecret() {
-            if (secret != null && !secret.isBlank()) {
-                return secret.trim();
-            }
+            if (secret != null && !secret.isBlank()) return secret.trim();
             String env = System.getenv(secretEnv);
             return (env != null && !env.isBlank()) ? env.trim() : null;
-        }
-
-        public String resolveGitHubToken() {
-            String token = System.getenv(githubTokenEnv);
-            if (token == null || token.isBlank()) {
-                throw new IllegalStateException(
-                    "未找到 GitHub Token。请通过环境变量设置：" + githubTokenEnv);
-            }
-            return token.trim();
         }
 
         public Path resolveLocalPath(String repoFullName) {
@@ -322,21 +170,13 @@ public class ReviewConfig {
         public void setModel(String model) { this.model = model; }
         public Integer getDimensions() { return dimensions; }
 
-        public boolean isOpenAi() {
-            return "openai".equalsIgnoreCase(provider);
-        }
+        public boolean isOpenAi() { return "openai".equalsIgnoreCase(provider); }
 
-        /**
-         * 解析 Embedding API Key，复用 LLM 的环境变量。
-         */
         public String resolveApiKey(String llmApiKeyEnv) {
             String key = System.getenv(llmApiKeyEnv != null ? llmApiKeyEnv : "DIFFGUARD_API_KEY");
             return (key != null && !key.isBlank()) ? key.trim() : null;
         }
 
-        /**
-         * 解析 Embedding API Base URL，复用 LLM 的 base_url 以兼容代理。
-         */
         public String resolveBaseUrl(String llmBaseUrl) {
             if (llmBaseUrl != null && !llmBaseUrl.isBlank()) {
                 return llmBaseUrl.endsWith("/") ? llmBaseUrl.substring(0, llmBaseUrl.length() - 1) : llmBaseUrl;
@@ -355,124 +195,39 @@ public class ReviewConfig {
         @JsonProperty("tool_server_port")
         private int toolServerPort = 9090;
 
+        @JsonProperty("tool_server_url")
+        private String toolServerUrl = null;
+
         public String getUrl() { return url; }
         public void setUrl(String url) { this.url = url; }
         public int getTimeoutSeconds() { return timeoutSeconds; }
         public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
         public int getToolServerPort() { return toolServerPort; }
         public void setToolServerPort(int toolServerPort) { this.toolServerPort = toolServerPort; }
-    }
+        public String getToolServerUrl() { return toolServerUrl; }
+        public void setToolServerUrl(String toolServerUrl) { this.toolServerUrl = toolServerUrl; }
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class MessageQueueConfig {
-        private boolean enabled = false;
-        private String host = "localhost";
-        private int port = 5672;
-        private String user = "guest";
-        private String password = null;
-
-        @JsonProperty("password_env")
-        private String passwordEnv = "RABBITMQ_PASSWORD";
-
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public String getHost() { return host; }
-        public void setHost(String host) { this.host = host; }
-        public int getPort() { return port; }
-        public void setPort(int port) { this.port = port; }
-        public String getUser() { return user; }
-        public void setUser(String user) { this.user = user; }
-        public String getPassword() { return password; }
-        public void setPassword(String password) { this.password = password; }
-        public String getPasswordEnv() { return passwordEnv; }
-        public void setPasswordEnv(String passwordEnv) { this.passwordEnv = passwordEnv; }
-
-        public String resolveHost() {
-            String env = System.getenv("RABBITMQ_HOST");
-            return (env != null && !env.isBlank()) ? env.trim() : host;
-        }
-
-        public int resolvePort() {
-            String env = System.getenv("RABBITMQ_PORT");
-            return (env != null && !env.isBlank()) ? Integer.parseInt(env.trim()) : port;
-        }
-
-        public String resolvePassword() {
-            if (password != null && !password.isBlank()) {
-                return password.trim();
+        /**
+         * Resolve the tool server URL that the Python agent can reach.
+         * Priority: explicit tool_server_url config > DIFFGUARD_TOOL_SERVER_URL env > derived from agent URL.
+         */
+        public String resolveToolServerUrl() {
+            // 1. Explicit config
+            if (toolServerUrl != null && !toolServerUrl.isBlank()) {
+                return toolServerUrl;
             }
-            String env = System.getenv(passwordEnv);
-            return (env != null && !env.isBlank()) ? env.trim() : "guest";
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class DatabaseConfigHolder {
-        private boolean enabled = false;
-        private String host = "localhost";
-        private int port = 3306;
-        private String name = "diffguard";
-        private String user = "diffguard";
-        private String password = null;
-
-        @JsonProperty("password_env")
-        private String passwordEnv = "MYSQL_PASSWORD";
-
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public String getHost() { return host; }
-        public void setHost(String host) { this.host = host; }
-        public int getPort() { return port; }
-        public void setPort(int port) { this.port = port; }
-        public String getName() { return name; }
-        public void setName(String name) { this.name = name; }
-        public String getUser() { return user; }
-        public void setUser(String user) { this.user = user; }
-        public String getPassword() { return password; }
-        public void setPassword(String password) { this.password = password; }
-        public String getPasswordEnv() { return passwordEnv; }
-        public void setPasswordEnv(String passwordEnv) { this.passwordEnv = passwordEnv; }
-
-        public String resolveHost() {
-            String env = System.getenv("MYSQL_HOST");
-            return (env != null && !env.isBlank()) ? env.trim() : host;
-        }
-
-        public int resolvePort() {
-            String env = System.getenv("MYSQL_PORT");
-            return (env != null && !env.isBlank()) ? Integer.parseInt(env.trim()) : port;
-        }
-
-        public String resolveUser() {
-            String env = System.getenv("MYSQL_USER");
-            return (env != null && !env.isBlank()) ? env.trim() : user;
-        }
-
-        public String resolvePassword() {
-            if (password != null && !password.isBlank()) {
-                return password.trim();
+            // 2. Environment variable override
+            String envUrl = System.getenv("DIFFGUARD_TOOL_SERVER_URL");
+            if (envUrl != null && !envUrl.isBlank()) {
+                return envUrl.trim();
             }
-            String env = System.getenv(passwordEnv);
-            return (env != null && !env.isBlank()) ? env.trim() : null;
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class RedisConfig {
-        private boolean enabled = false;
-        private String host = "localhost";
-        private int port = 6379;
-
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public String getHost() { return host; }
-        public void setHost(String host) { this.host = host; }
-        public int getPort() { return port; }
-        public void setPort(int port) { this.port = port; }
-
-        public String resolveHost() {
-            String env = System.getenv("REDIS_HOST");
-            return (env != null && !env.isBlank()) ? env.trim() : host;
+            // 3. Derive from agent URL: replace agent port with tool server port
+            //    e.g. http://diffguard-agent:8000 → http://diffguard-gateway:9090
+            //    This works when both services share the same hostname base, but in
+            //    Docker they have different hostnames, so we try to derive from the
+            //    agent URL's host by replacing known patterns.
+            String host = url.replaceAll("^https?://", "").replaceAll(":\\d+.*$", "");
+            return "http://" + host + ":" + toolServerPort;
         }
     }
 }

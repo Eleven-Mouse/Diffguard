@@ -3,7 +3,7 @@ package com.diffguard.adapter.toolserver;
 import com.diffguard.adapter.toolserver.ToolSessionManager.Session;
 import com.diffguard.domain.agent.core.AgentTool;
 import com.diffguard.domain.agent.core.ToolResult;
-import com.diffguard.domain.review.model.DiffFileEntry;
+import com.diffguard.adapter.toolserver.model.DiffFileEntry;
 import com.diffguard.infrastructure.common.JacksonMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;

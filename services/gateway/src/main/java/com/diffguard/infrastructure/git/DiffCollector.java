@@ -2,7 +2,7 @@ package com.diffguard.infrastructure.git;
 
 import com.diffguard.infrastructure.config.ReviewConfig;
 import com.diffguard.exception.DiffCollectionException;
-import com.diffguard.domain.review.model.DiffFileEntry;
+import com.diffguard.adapter.toolserver.model.DiffFileEntry;
 import com.diffguard.infrastructure.common.TokenEstimator;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
