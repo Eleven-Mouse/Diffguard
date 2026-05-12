@@ -195,11 +195,39 @@ public class ReviewConfig {
         @JsonProperty("tool_server_port")
         private int toolServerPort = 9090;
 
+        @JsonProperty("tool_server_url")
+        private String toolServerUrl = null;
+
         public String getUrl() { return url; }
         public void setUrl(String url) { this.url = url; }
         public int getTimeoutSeconds() { return timeoutSeconds; }
         public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
         public int getToolServerPort() { return toolServerPort; }
         public void setToolServerPort(int toolServerPort) { this.toolServerPort = toolServerPort; }
+        public String getToolServerUrl() { return toolServerUrl; }
+        public void setToolServerUrl(String toolServerUrl) { this.toolServerUrl = toolServerUrl; }
+
+        /**
+         * Resolve the tool server URL that the Python agent can reach.
+         * Priority: explicit tool_server_url config > DIFFGUARD_TOOL_SERVER_URL env > derived from agent URL.
+         */
+        public String resolveToolServerUrl() {
+            // 1. Explicit config
+            if (toolServerUrl != null && !toolServerUrl.isBlank()) {
+                return toolServerUrl;
+            }
+            // 2. Environment variable override
+            String envUrl = System.getenv("DIFFGUARD_TOOL_SERVER_URL");
+            if (envUrl != null && !envUrl.isBlank()) {
+                return envUrl.trim();
+            }
+            // 3. Derive from agent URL: replace agent port with tool server port
+            //    e.g. http://diffguard-agent:8000 → http://diffguard-gateway:9090
+            //    This works when both services share the same hostname base, but in
+            //    Docker they have different hostnames, so we try to derive from the
+            //    agent URL's host by replacing known patterns.
+            String host = url.replaceAll("^https?://", "").replaceAll(":\\d+.*$", "");
+            return "http://" + host + ":" + toolServerPort;
+        }
     }
 }

@@ -165,6 +165,43 @@ class AsyncGitHubClient:
                     pass
 
     # ------------------------------------------------------------------
+    # Historical comments
+    # ------------------------------------------------------------------
+
+    async def fetch_diffguard_comments(
+        self, pr_number: int, *, max_chars: int = 2000,
+    ) -> str:
+        """Fetch previous DiffGuard review comments on this PR."""
+        client = await self._get_client()
+        try:
+            resp = await client.get(
+                f"{self._base}/pulls/{pr_number}/comments?per_page=100",
+                headers=self._headers,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            logger.warning("Failed to fetch PR comments: %s", e)
+            return ""
+
+        dg_comments = [
+            c for c in resp.json()
+            if "DiffGuard" in c.get("body", "") or c.get("body", "").startswith("**[")
+        ]
+        if not dg_comments:
+            return ""
+
+        lines: list[str] = []
+        total = 0
+        for c in dg_comments:
+            entry = f"- {c.get('path', '?')}:{c.get('line', '?')} | {c['body'][:200]}"
+            if total + len(entry) > max_chars:
+                break
+            lines.append(entry)
+            total += len(entry)
+
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 

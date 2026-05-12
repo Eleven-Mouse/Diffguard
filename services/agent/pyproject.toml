@@ -11,6 +11,7 @@ dependencies = [
     "langchain>=0.3.0",
     "langchain-openai>=0.3.0",
     "langchain-anthropic>=0.3.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

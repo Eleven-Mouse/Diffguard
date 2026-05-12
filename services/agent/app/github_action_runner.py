@@ -33,10 +33,26 @@ def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default).strip()
 
 
+def _split_diff(diff_text: str):
+    """Split a multi-file diff into per-file DiffEntry objects."""
+    import re
+    from app.models.schemas import DiffEntry
+
+    sections = re.split(r"(?=^diff --git)", diff_text, flags=re.MULTILINE)
+    entries = []
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+        match = re.match(r"^diff --git a/(.*?) b/", section)
+        filepath = match.group(1) if match else "unknown"
+        entries.append(DiffEntry(file_path=filepath, content=section))
+    return entries if entries else [DiffEntry(file_path="full-diff", content=diff_text)]
+
+
 def _build_review_request(diff_text: str):
     """Construct a ReviewRequest from environment variables."""
     from app.models.schemas import (
-        DiffEntry,
         LlmConfig,
         ReviewConfigPayload,
         ReviewMode,
@@ -54,7 +70,7 @@ def _build_review_request(diff_text: str):
         request_id=f"gh-{_env('GITHUB_REPOSITORY')}-{_env('PR_NUMBER')}",
         mode=ReviewMode.PIPELINE,
         project_dir=_env("REPO_PATH", str(Path.cwd())),
-        diff_entries=[DiffEntry(file_path="full-diff", content=diff_text)],
+        diff_entries=_split_diff(diff_text),
         llm_config=LlmConfig(
             provider=provider,
             model=model,
@@ -109,11 +125,18 @@ def main() -> None:
         pr_number, meta["title"], meta["additions"], meta["deletions"], meta["changed_files"],
     )
 
+    # --- Fetch historical DiffGuard comments ---
+    historical_context = ""
+    try:
+        historical_context = gh.fetch_diffguard_comments(pr_number)
+    except Exception as e:
+        logger.warning("Failed to fetch historical comments: %s", e)
+
     # --- Build request & run pipeline ---
     from app.agent.pipeline_orchestrator import PipelineOrchestrator
 
     request = _build_review_request(diff_text)
-    orchestrator = PipelineOrchestrator(request)
+    orchestrator = PipelineOrchestrator(request, historical_context=historical_context)
 
     import asyncio
 

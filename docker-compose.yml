@@ -19,6 +19,7 @@ services:
       - DIFFGUARD_API_KEY=${DIFFGUARD_API_KEY:-}
       - DIFFGUARD_WEBHOOK_SECRET=${DIFFGUARD_WEBHOOK_SECRET:-}
       - DIFFGUARD_GITHUB_TOKEN=${DIFFGUARD_GITHUB_TOKEN:-}
+      - DIFFGUARD_TOOL_SERVER_URL=http://diffguard-gateway:9090
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s

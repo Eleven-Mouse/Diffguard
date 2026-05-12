@@ -17,5 +17,8 @@ class Settings:
     AGENT_PORT: int = int(os.getenv("AGENT_PORT", "8000"))
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "info")
 
+    # Webhook HMAC secret (optional - enables signature verification)
+    WEBHOOK_HMAC_SECRET: str | None = os.getenv("DIFFGUARD_WEBHOOK_HMAC_SECRET")
+
 
 settings = Settings()

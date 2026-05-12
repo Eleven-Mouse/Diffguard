@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
 import re
 import time
 import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.agent.pipeline_orchestrator import PipelineOrchestrator
 from app.config import settings
@@ -25,7 +28,86 @@ from app.models.schemas import (
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="DiffGuard Agent Service", version="0.2.0")
+app = FastAPI(title="DiffGuard Agent Service", version="0.3.0")
+
+
+# ---------------------------------------------------------------------------
+# Webhook HMAC verification
+# ---------------------------------------------------------------------------
+
+_SIG_HEADER = "X-DiffGuard-Signature"
+_TS_HEADER = "X-DiffGuard-Timestamp"
+_MAX_SKEW_SECONDS = 300  # reject requests older than 5 minutes
+
+
+def _verify_webhook_signature(body: bytes, request: Request) -> JSONResponse | None:
+    """Verify HMAC-SHA256 signature on incoming webhook requests.
+
+    Returns a JSONResponse error if verification fails, or None on success.
+    If ``DIFFGUARD_WEBHOOK_HMAC_SECRET`` is not configured, verification is skipped.
+    """
+    secret = settings.WEBHOOK_HMAC_SECRET
+    if not secret:
+        return None  # No secret configured — skip verification
+
+    sig_header = request.headers.get(_SIG_HEADER)
+    if not sig_header:
+        logger.warning("Webhook rejected: missing %s header", _SIG_HEADER)
+        return JSONResponse(
+            status_code=401,
+            content={"detail": f"Missing {_SIG_HEADER} header"},
+        )
+
+    # Replay protection: check timestamp
+    ts_header = request.headers.get(_TS_HEADER)
+    if ts_header:
+        try:
+            ts = int(ts_header)
+            if abs(time.time() - ts) > _MAX_SKEW_SECONDS:
+                logger.warning("Webhook rejected: timestamp skew too large")
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Request timestamp expired"},
+                )
+        except (ValueError, TypeError):
+            pass  # malformed timestamp — don't reject, HMAC still checked
+
+    # Compute expected signature: HMAC-SHA256(secret, body)
+    expected = "sha256=" + hmac.new(
+        secret.encode("utf-8"), body, hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected, sig_header):
+        logger.warning("Webhook rejected: invalid signature")
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid signature"},
+        )
+
+    return None  # verification passed
+
+
+# ---------------------------------------------------------------------------
+# Middleware: capture raw body for HMAC verification
+# ---------------------------------------------------------------------------
+
+@app.middleware("http")
+async def webhook_signature_middleware(request: Request, call_next):
+    """Verify HMAC signature on /webhook-review before routing."""
+    if request.url.path != "/api/v1/webhook-review" or request.method != "POST":
+        return await call_next(request)
+
+    body = await request.body()
+    err = _verify_webhook_signature(body, request)
+    if err is not None:
+        return err
+
+    return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 
 @app.get("/api/v1/health", response_model=HealthResponse)
@@ -94,6 +176,13 @@ async def webhook_review(request: WebhookReviewRequest) -> ReviewResponse:
                 summary="Empty diff, nothing to review",
             )
 
+        # Fetch historical DiffGuard comments on this PR
+        historical_context = ""
+        try:
+            historical_context = await gh.fetch_diffguard_comments(request.pr_number)
+        except Exception as e:
+            logger.warning("Failed to fetch historical comments: %s", e)
+
         # Split diff into file-level entries
         diff_entries = _split_diff(diff_text)
         if not diff_entries:
@@ -111,7 +200,7 @@ async def webhook_review(request: WebhookReviewRequest) -> ReviewResponse:
             allowed_files=[],
         )
 
-        orchestrator = PipelineOrchestrator(review_req)
+        orchestrator = PipelineOrchestrator(review_req, historical_context=historical_context)
         result = await orchestrator.run()
 
         # Post review comments to GitHub

@@ -89,10 +89,10 @@ public class WebhookDispatcher {
         reviewNode.put("language", config.getReview().getLanguage());
         request.set("review_config", reviewNode);
 
-        // Tool server URL (optional)
+        // Tool server URL — resolve to an address the Python agent can reach
         String toolServerUrl = "";
         if (config.getAgentService() != null) {
-            toolServerUrl = "http://localhost:" + config.getAgentService().getToolServerPort();
+            toolServerUrl = config.getAgentService().resolveToolServerUrl();
         }
         request.put("tool_server_url", toolServerUrl);
 
