@@ -14,8 +14,8 @@ COPY pyproject.toml ./
 # Install dependencies
 RUN uv pip install --system -r pyproject.toml
 
-# Copy application code (diffguard/ is the latest version)
-COPY diffguard/ ./app/
+# Copy application code
+COPY src/ ./src/
 
 EXPOSE 8000
 
@@ -24,4 +24,4 @@ USER diffguard
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')" || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "diffguard_agent.main:app", "--host", "0.0.0.0", "--port", "8000"]

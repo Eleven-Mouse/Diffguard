@@ -1,0 +1,12 @@
+# DiffGuard GitHub Action dependencies — lightweight, no external services
+
+# HTTP
+requests>=2.28.0
+
+# Pydantic
+pydantic>=2.0.0
+
+# LangChain core + providers
+langchain-core>=0.3.0
+langchain-anthropic>=0.3.0
+langchain-openai>=0.3.0

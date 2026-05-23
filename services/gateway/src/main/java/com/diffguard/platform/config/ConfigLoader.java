@@ -25,6 +25,9 @@ public class ConfigLoader {
      */
     public static ReviewConfig load(Path projectDir) throws ConfigException {
         ReviewConfig defaults = loadDefaults();
+        if (projectDir == null) {
+            return validateAndReturn(defaults);
+        }
 
         // 1. 尝试项目级配置
         File projectConfig = projectDir.resolve(CONFIG_FILENAME).toFile();

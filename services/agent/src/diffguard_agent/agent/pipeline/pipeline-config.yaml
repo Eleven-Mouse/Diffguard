@@ -1,0 +1,26 @@
+# DiffGuard Pipeline Configuration
+# Customize the review pipeline by adding, removing, or reordering stages.
+#
+# Available stage types:
+#   - static_rules: Run built-in static rule checks (zero LLM cost)
+#   - summary:     Analyze diff and produce a structured summary
+#   - reviewer:    Run domain-specific reviewers with tool-using agents
+#   - aggregation: Merge all reviewer outputs into a final verdict
+
+pipeline:
+  stages:
+    - type: summary
+
+    - type: reviewer
+      reviewers:
+        - name: security
+          system_prompt: pipeline/security-system.txt
+          user_prompt: pipeline/security-user.txt
+        - name: logic
+          system_prompt: pipeline/logic-system.txt
+          user_prompt: pipeline/logic-user.txt
+        - name: quality
+          system_prompt: pipeline/quality-system.txt
+          user_prompt: pipeline/quality-user.txt
+
+    - type: aggregation
