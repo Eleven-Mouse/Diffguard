@@ -1,0 +1,124 @@
+package com.diffguard.toolserver;
+
+import com.diffguard.agent.core.AgentContext;
+import com.diffguard.agent.core.AgentTool;
+import com.diffguard.agent.tools.*;
+import com.diffguard.review.model.DiffFileEntry;
+
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * 工具服务端会话管理器。
+ * <p>
+ * 为每次 Python Agent 审查请求创建会话，持有 projectDir、diffEntries、allowedFiles，
+ * 供工具端点回调使用。会话 10 分钟自动过期。
+ * <p>
+ * 重型资源（CodeGraph、SemanticSearchTool）按 projectDir 缓存共享，
+ * 避免并发会话重复扫描全项目。
+ */
+public class ToolSessionManager implements AutoCloseable {
+
+    private static final long SESSION_TTL_MS = 10 * 60 * 1000;
+
+    private final ConcurrentHashMap<String, Session> sessions = new ConcurrentHashMap<>();
+
+    /** Project-scoped heavy resource cache: projectDir → shared tool instances. */
+    private final ConcurrentHashMap<Path, SharedProjectResources> projectResources = new ConcurrentHashMap<>();
+
+    private static class SharedProjectResources {
+        final GetCallGraphTool callGraphTool;
+        final SemanticSearchTool semanticSearchTool;
+
+        SharedProjectResources(Path projectDir) {
+            this.callGraphTool = new GetCallGraphTool(projectDir);
+            this.semanticSearchTool = new SemanticSearchTool(projectDir);
+        }
+    }
+
+    private SharedProjectResources getOrCreateResources(Path projectDir) {
+        return projectResources.computeIfAbsent(projectDir, SharedProjectResources::new);
+    }
+
+    public static class Session {
+        private final String id;
+        private final Path projectDir;
+        private final List<DiffFileEntry> diffEntries;
+        private final Set<String> allowedFiles;
+        private final long createdAt;
+        private final AgentContext context;
+        private final Map<String, AgentTool> tools;
+
+        public Session(String id, Path projectDir, List<DiffFileEntry> diffEntries,
+                       Set<String> allowedFiles, SharedProjectResources shared) {
+            this.id = id;
+            this.projectDir = projectDir;
+            this.diffEntries = List.copyOf(diffEntries);
+            this.allowedFiles = Set.copyOf(allowedFiles);
+            this.createdAt = System.currentTimeMillis();
+            this.context = new AgentContext(projectDir, diffEntries);
+
+            FileAccessSandbox sandbox = new FileAccessSandbox(projectDir, this.allowedFiles);
+            this.tools = new LinkedHashMap<>();
+            this.tools.put("get_file_content", new GetFileContentTool(projectDir, sandbox));
+            this.tools.put("get_diff_context", new GetDiffContextTool());
+            this.tools.put("get_method_definition", new GetMethodDefinitionTool(projectDir, sandbox));
+            this.tools.put("get_call_graph", shared.callGraphTool);
+            this.tools.put("get_related_files", new GetRelatedFilesTool(shared.callGraphTool));
+            this.tools.put("semantic_search", shared.semanticSearchTool);
+        }
+
+        public String getId() { return id; }
+        public Path getProjectDir() { return projectDir; }
+        public List<DiffFileEntry> getDiffEntries() { return diffEntries; }
+        public AgentContext getContext() { return context; }
+        public AgentTool getTool(String name) { return tools.get(name); }
+        public Collection<AgentTool> getAllTools() { return tools.values(); }
+
+        public boolean isExpired() {
+            return System.currentTimeMillis() - createdAt > SESSION_TTL_MS;
+        }
+    }
+
+    public Session create(String id, Path projectDir, List<DiffFileEntry> diffEntries, Set<String> allowedFiles) {
+        cleanup();
+        SharedProjectResources shared = getOrCreateResources(projectDir);
+        Session session = new Session(id, projectDir, diffEntries, allowedFiles, shared);
+        sessions.put(id, session);
+        return session;
+    }
+
+    public Session get(String id) {
+        Session session = sessions.get(id);
+        if (session == null || session.isExpired()) {
+            sessions.remove(id);
+            return null;
+        }
+        return session;
+    }
+
+    public void remove(String id) {
+        sessions.remove(id);
+    }
+
+    /**
+     * Remove stale project resources that have no active sessions referencing them.
+     */
+    public void cleanup() {
+        sessions.entrySet().removeIf(e -> e.getValue().isExpired());
+
+        // Collect projectDirs still in use by active sessions
+        Set<Path> activeProjectDirs = sessions.values().stream()
+                .map(Session::getProjectDir)
+                .collect(java.util.stream.Collectors.toSet());
+
+        projectResources.keySet().removeIf(dir -> !activeProjectDirs.contains(dir));
+    }
+
+    @Override
+    public void close() {
+        sessions.clear();
+        projectResources.clear();
+    }
+}
