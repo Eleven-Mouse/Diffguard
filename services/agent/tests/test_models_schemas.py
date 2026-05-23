@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from app.models.schemas import (
+from diffguard_agent.models.schemas import (
     IssuePayload,
     ReviewResponse,
     ReviewStatus,

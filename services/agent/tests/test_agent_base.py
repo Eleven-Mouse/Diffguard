@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from app.agent.base import AgentReviewResult, ReviewAgent
-from app.models.schemas import IssuePayload
+from diffguard_agent.agent.base import AgentReviewResult, ReviewAgent
+from diffguard_agent.models.schemas import IssuePayload
 
 
 # ---------------------------------------------------------------------------

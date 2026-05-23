@@ -81,7 +81,7 @@
 
 | 模式 | 入口 | 需要 Java | Tool Server | 适用场景 |
 |------|------|-----------|-------------|---------|
-| **GitHub Action** | `python -m app.github_action_runner` | 否 | 不可用 | CI/CD 集成 |
+| **GitHub Action** | `python -m diffguard_agent.github_action_runner` | 否 | 不可用 | CI/CD 集成 |
 | **Webhook Server** | `java -jar diffguard.jar` + Python Agent | 是 | 可用 | 自托管服务 |
 
 ---
@@ -166,9 +166,9 @@ DiffGuard/
 │       ├── pyproject.toml              # Python 依赖定义
 │       ├── Dockerfile
 │       ├── config/
-│       │   └── false_positive_rules.yaml  # ★ 误报过滤规则库
+│       │   └── false-positive-rules.yaml  # ★ 误报过滤规则库
 │       ├── requirements-github-action.txt  # GitHub Action 精简依赖
-│       ├── app/
+│       ├── src/diffguard_agent/
 │       │   ├── main.py                 # ★ FastAPI 入口（/api/v1/review, /api/v1/webhook-review）
 │       │   ├── config.py               # Python 侧 Settings（环境变量）
 │       │   ├── metrics.py              # ReviewMetrics（可观测性）
@@ -188,7 +188,7 @@ DiffGuard/
 │       │   │           ├── summary.py        # ★ Stage 1: 变更摘要 + 文件路由
 │       │   │           ├── reviewer.py       # ★ Stage 2: 并行多维度审查
 │       │   │           ├── aggregation.py    # ★ Stage 3: 聚合去重 + 行号映射
-│       │   │           ├── false_positive_filter.py  # ★ Stage 4: 误报过滤
+│       │   │           ├── fp_filter_stage.py  # ★ Stage 4: 误报过滤
 │       │   │           └── static_rules.py   # 静态规则检查（预留）
 │       │   ├── llm/prompts/            # ★ Prompt 模板目录
 │       │   │   ├── pipeline/           # Pipeline 各阶段 prompt
@@ -314,7 +314,7 @@ ToolResult                      ← success=true, result=文件内容
 
 ### 5.1 Pipeline 引擎（Python Agent）
 
-**位置**: `services/agent/app/agent/pipeline/`
+**位置**: `services/agent/src/diffguard_agent/agent/pipeline/`
 
 **设计意图**: 将代码审查拆解为可组合的 Stage，每个 Stage 只负责一件事。Stage 之间通过 `PipelineContext` 传递数据，禁止直接耦合。
 
@@ -338,7 +338,7 @@ ToolResult                      ← success=true, result=文件内容
 
 ### 5.2 Reviewer Stage（Python Agent）
 
-**位置**: `services/agent/app/agent/pipeline/stages/reviewer.py`
+**位置**: `services/agent/src/diffguard_agent/agent/pipeline/stages/reviewer.py`
 
 **设计意图**: 根据是否有 Tool Server 可用，自动选择执行模式：
 - **有 Tool Server**: LangChain ReAct Agent（create_tool_calling_agent + AgentExecutor），最多 8 轮 tool 调用
@@ -353,7 +353,7 @@ ToolResult                      ← success=true, result=文件内容
 
 ### 5.3 Aggregation Stage（Python Agent）
 
-**位置**: `services/agent/app/agent/pipeline/stages/aggregation.py`
+**位置**: `services/agent/src/diffguard_agent/agent/pipeline/stages/aggregation.py`
 
 **设计意图**: 聚合 3 个 Reviewer 的结果，做三件事：
 1. **去重**: 最多保留 50 个 issue，按严重程度排序
@@ -369,7 +369,7 @@ ToolResult                      ← success=true, result=文件内容
 
 ### 5.4 False Positive Filter（Python Agent）
 
-**位置**: `services/agent/app/agent/false_positive_filter.py` + `config/false_positive_rules.yaml`
+**位置**: `services/agent/src/diffguard_agent/agent/false_positive_filter.py` + `config/false-positive-rules.yaml`
 
 **设计意图**: 两阶段过滤，降低误报率。
 
@@ -434,11 +434,11 @@ ToolResult                      ← success=true, result=文件内容
 
 | 文件 | 作用 | 修改风险 |
 |------|------|---------|
-| `services/agent/app/agent/pipeline/stages/base.py` | PipelineContext + PipelineStage 抽象 | 修改字段影响所有 Stage |
-| `services/agent/app/agent/pipeline_orchestrator.py` | Pipeline 编排 + 分块逻辑 | 影响整个审查流程 |
-| `services/agent/app/agent/llm_utils.py` | LLM 工厂 + 重试逻辑 | 影响 LLM 调用可靠性 |
-| `services/agent/app/agent/false_positive_filter.py` | 两阶段误报过滤 | 直接影响审查结果质量 |
-| `services/agent/app/models/schemas.py` | API 数据模型 | 影响所有 HTTP 接口 |
+| `services/agent/src/diffguard_agent/agent/pipeline/stages/base.py` | PipelineContext + PipelineStage 抽象 | 修改字段影响所有 Stage |
+| `services/agent/src/diffguard_agent/agent/pipeline_orchestrator.py` | Pipeline 编排 + 分块逻辑 | 影响整个审查流程 |
+| `services/agent/src/diffguard_agent/agent/llm_utils.py` | LLM 工厂 + 重试逻辑 | 影响 LLM 调用可靠性 |
+| `services/agent/src/diffguard_agent/agent/false_positive_filter.py` | 两阶段误报过滤 | 直接影响审查结果质量 |
+| `services/agent/src/diffguard_agent/models/schemas.py` | API 数据模型 | 影响所有 HTTP 接口 |
 | `services/gateway/.../ToolSessionManager.java` | Session 生命周期管理 | 影响并发安全 |
 | `services/gateway/.../CodeGraphBuilder.java` | 代码图谱构建 | 影响调用链分析 |
 | `services/gateway/.../WebhookDispatcher.java` | Webhook→Agent 转发 | 影响审查触发链路 |
@@ -447,22 +447,22 @@ ToolResult                      ← success=true, result=文件内容
 
 | 文件 | 作用 | 注意事项 |
 |------|------|---------|
-| `services/agent/app/agent/pipeline/stages/reviewer.py` | 并行审查执行 | `max_iterations` 和 JSON 解析 fallback 是经验值 |
-| `services/agent/app/agent/pipeline/stages/aggregation.py` | 聚合+行号映射 | `DiffLineMapper` 逻辑依赖 unified diff 格式假设 |
-| `services/agent/app/agent/diff_parser.py` | Diff 行号映射 | 核心算法，修改需充分测试 |
-| `services/agent/app/github/client.py` | GitHub API 客户端 | API 变更可能影响评论格式 |
-| `services/agent/config/false_positive_rules.yaml` | 误报规则库 | 新增规则需评估对审查结果的影响 |
+| `services/agent/src/diffguard_agent/agent/pipeline/stages/reviewer.py` | 并行审查执行 | `max_iterations` 和 JSON 解析 fallback 是经验值 |
+| `services/agent/src/diffguard_agent/agent/pipeline/stages/aggregation.py` | 聚合+行号映射 | `DiffLineMapper` 逻辑依赖 unified diff 格式假设 |
+| `services/agent/src/diffguard_agent/agent/diff_parser.py` | Diff 行号映射 | 核心算法，修改需充分测试 |
+| `services/agent/src/diffguard_agent/github/client.py` | GitHub API 客户端 | API 变更可能影响评论格式 |
+| `services/agent/config/false-positive-rules.yaml` | 误报规则库 | 新增规则需评估对审查结果的影响 |
 | `services/gateway/.../ConfigLoader.java` | 三层配置加载 | 深度合并逻辑需理解 Jackson 树操作 |
 
 ### 6.3 可安全修改的文件（低风险）
 
 | 文件 | 作用 |
 |------|------|
-| `services/agent/app/llm/prompts/pipeline/*.txt` | Prompt 模板，独立修改 |
-| `services/agent/app/tools/definitions.py` | LangChain @tool 定义 |
-| `services/agent/app/metrics.py` | 可观测性指标 |
+| `services/agent/src/diffguard_agent/llm/prompts/pipeline/*.txt` | Prompt 模板，独立修改 |
+| `services/agent/src/diffguard_agent/tools/definitions.py` | LangChain @tool 定义 |
+| `services/agent/src/diffguard_agent/metrics.py` | 可观测性指标 |
 | `services/gateway/.../FileAccessSandbox.java` | 沙箱规则 |
-| `services/agent/app/agent/pipeline/pipeline-config.yaml` | Pipeline DSL 配置 |
+| `services/agent/src/diffguard_agent/agent/pipeline/pipeline-config.yaml` | Pipeline DSL 配置 |
 
 ### 6.4 配置文件
 
@@ -470,8 +470,8 @@ ToolResult                      ← success=true, result=文件内容
 |------|---------|------|
 | `services/gateway/config/application.yml` | `ConfigLoader` 三层加载 | Java Gateway 运行时配置 |
 | `shared/config/review-config-template.yml` | 内置到 jar 中作为默认值 | 默认配置模板 |
-| `services/agent/config/false_positive_rules.yaml` | `_RuleLoader` 按路径加载 | 误报规则库 |
-| `services/agent/app/agent/pipeline/pipeline-config.yaml` | `load_pipeline_config()` | Pipeline Stage 编排配置 |
+| `services/agent/config/false-positive-rules.yaml` | `_RuleLoader` 按路径加载 | 误报规则库 |
+| `services/agent/src/diffguard_agent/agent/pipeline/pipeline-config.yaml` | `load_pipeline_config()` | Pipeline Stage 编排配置 |
 | `action.yml` | GitHub Action 运行时加载 | GitHub Action 输入/输出定义 |
 
 ---
@@ -480,7 +480,7 @@ ToolResult                      ← success=true, result=文件内容
 
 ### 7.1 存储结构
 
-所有 Prompt 模板存储在 `services/agent/app/llm/prompts/` 目录下，纯文本文件。
+所有 Prompt 模板存储在 `services/agent/src/diffguard_agent/llm/prompts/` 目录下，纯文本文件。
 
 ### 7.2 加载方式
 
@@ -529,13 +529,14 @@ exception/   → 异常定义
 
 **Python Agent 分层**:
 ```
-main.py              → HTTP 入口
-agent/               → 核心审查逻辑
-  pipeline/          → Pipeline Stage 实现
-agent/llm_utils.py   → LLM 抽象
-tools/               → Tool 定义
-models/              → 数据模型
-github/              → GitHub API 客户端
+src/diffguard_agent/
+  main.py              → HTTP 入口
+  agent/               → 核心审查逻辑
+    pipeline/          → Pipeline Stage 实现
+  agent/llm_utils.py   → LLM 抽象
+  tools/               → Tool 定义
+  models/              → 数据模型
+  github/              → GitHub API 客户端
 ```
 
 ### 8.3 API Key 安全
@@ -557,13 +558,13 @@ github/              → GitHub API 客户端
 
 ### 9.1 修改前必读
 
-1. 先看 `services/agent/app/agent/pipeline/stages/base.py` 理解 `PipelineContext` 的所有字段
-2. 先看 `services/agent/app/models/schemas.py` 理解 API 数据模型
+1. 先看 `services/agent/src/diffguard_agent/agent/pipeline/stages/base.py` 理解 `PipelineContext` 的所有字段
+2. 先看 `services/agent/src/diffguard_agent/models/schemas.py` 理解 API 数据模型
 3. 先看对应的 Prompt 文件理解 LLM 的输入/输出格式
 
 ### 9.2 新增 Reviewer 维度
 
-1. 在 `services/agent/app/llm/prompts/pipeline/` 添加 `xxx-system.txt` 和 `xxx-user.txt`
+1. 在 `services/agent/src/diffguard_agent/llm/prompts/pipeline/` 添加 `xxx-system.txt` 和 `xxx-user.txt`
 2. 在 `pipeline-config.yaml` 的 reviewer stage 下添加新 reviewer 定义
 3. Prompt 中必须包含 JSON 输出格式约束和强制排除项
 
@@ -616,16 +617,16 @@ github/              → GitHub API 客户端
 
 | 目录 | 风险原因 |
 |------|---------|
-| `services/agent/app/agent/pipeline/stages/` | Pipeline 核心，任何修改都可能影响审查结果 |
-| `services/agent/app/agent/false_positive_filter.py` | 直接决定哪些 issue 被过滤 |
-| `services/agent/app/agent/diff_parser.py` | 行号映射逻辑，错误会导致 GitHub 评论定位错 |
+| `services/agent/src/diffguard_agent/agent/pipeline/stages/` | Pipeline 核心，任何修改都可能影响审查结果 |
+| `services/agent/src/diffguard_agent/agent/false_positive_filter.py` | 直接决定哪些 issue 被过滤 |
+| `services/agent/src/diffguard_agent/agent/diff_parser.py` | 行号映射逻辑，错误会导致 GitHub 评论定位错 |
 | `services/gateway/.../ToolSessionManager.java` | Session 管理涉及并发安全 |
-| `services/agent/app/llm/prompts/pipeline/` | Prompt 变更直接影响 LLM 行为 |
+| `services/agent/src/diffguard_agent/llm/prompts/pipeline/` | Prompt 变更直接影响 LLM 行为 |
 
 ### 10.2 隐式依赖
 
 - `pipeline-config.yaml` 和 `pipeline_config.py` 必须保持同步：YAML 中的 stage type 必须在 Python 中有对应处理
-- `false_positive_rules.yaml` 中的正则模式和 `false_positive_filter.py` 中的硬编码默认值是叠加关系（不是替换）
+- `false-positive-rules.yaml` 中的正则模式和 `false_positive_filter.py` 中的硬编码默认值是叠加关系（不是替换）
 - `DiffLineMapper` 假设 diff 格式是标准 unified diff，如果 GitHub 改了 diff 格式会失效
 - `WebhookDispatcher` 传递 `api_key_env` 而非 API key，Python 侧的 `LlmConfig.model_validator` 负责解析——两端必须保持一致
 
@@ -647,19 +648,19 @@ github/              → GitHub API 客户端
 
 ### Step 2 — 理解数据流（3 分钟）
 
-读 [main.py](services/agent/app/main.py) 的 `/api/v1/webhook-review` 端点（第 148-231 行），理解一个审查请求的完整生命周期。
+读 [main.py](services/agent/src/diffguard_agent/main.py) 的 `/api/v1/webhook-review` 端点（第 148-231 行），理解一个审查请求的完整生命周期。
 
 ### Step 3 — 理解 Pipeline（5 分钟）
 
-读 [pipeline_orchestrator.py](services/agent/app/agent/pipeline_orchestrator.py) 的 `_run_single()` 方法（第 92-149 行），理解 Stage 如何串联执行。
+读 [pipeline_orchestrator.py](services/agent/src/diffguard_agent/agent/pipeline_orchestrator.py) 的 `_run_single()` 方法（第 92-149 行），理解 Stage 如何串联执行。
 
 ### Step 4 — 理解数据模型（3 分钟）
 
-读 [schemas.py](services/agent/app/models/schemas.py)，理解 `ReviewRequest`、`ReviewResponse`、`IssuePayload` 的字段。
+读 [schemas.py](services/agent/src/diffguard_agent/models/schemas.py)，理解 `ReviewRequest`、`ReviewResponse`、`IssuePayload` 的字段。
 
 ### Step 5 — 理解 Prompt（2 分钟）
 
-读 [security-system.txt](services/agent/app/llm/prompts/pipeline/security-system.txt)，理解 Prompt 如何指导 LLM 输出结构化 JSON。
+读 [security-system.txt](services/agent/src/diffguard_agent/llm/prompts/pipeline/security-system.txt)，理解 Prompt 如何指导 LLM 输出结构化 JSON。
 
 ### Step 6 — 理解 Java Gateway（5 分钟）
 

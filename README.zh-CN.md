@@ -30,19 +30,19 @@ DiffGuard 融合深度代码理解（AST 分析、代码知识图谱、语义检
 | 误报率高 | 两层过滤：正则规则（零 LLM 成本）+ 可选 LLM 二次验证 |
 | 每次审查 LLM 调用成本高 | 静态规则前置过滤，Diff 摘要压缩降低 Token 消耗 |
 | 难以集成到现有工作流 | CLI（Git Hook）· Server（GitHub Webhook）· CI（GitHub Action）三种部署模式 |
-| 不同 PR 需要不同审查深度 | Simple · Pipeline · Multi-Agent 三种审查模式 |
+| 不同 PR 需要不同审查深度 | Pipeline 模式可配置阶段；Simple 和 Multi-Agent 在路线图中 |
 
 ---
 
 ## 核心特性
 
-### 三种审查模式
+### 审查模式
 
-| 模式 | 架构 | 适用场景 |
+| 模式 | 架构 | 状态 |
 |---|---|---|
-| **Simple** | Java Gateway 直接调用 LLM | 快速检查、次要变更 |
-| **Pipeline** | 4 阶段 Pipeline + 并行域审查器 | 常规 PR、日常审查 |
-| **Multi-Agent** | 自主 ReAct Agent + 工具调用 | 安全敏感代码、复杂变更 |
+| **Pipeline** | 4 阶段 Pipeline + 并行域审查器 | **当前版本** |
+| **Simple** | Java Gateway 直接调用 LLM | 路线图 |
+| **Multi-Agent** | 自主 ReAct Agent + 工具调用 | 路线图 |
 
 ### 4 阶段审查 Pipeline
 

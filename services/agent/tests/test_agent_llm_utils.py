@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.agent.llm_utils import create_llm, load_prompt
+from diffguard_agent.agent.llm_utils import create_llm, load_prompt
 
 
 def _make_config(provider="openai", model="gpt-4o", api_key="sk-test",
@@ -29,7 +29,7 @@ def _make_config(provider="openai", model="gpt-4o", api_key="sk-test",
 
 class TestCreateLlmOpenai:
 
-    @patch("app.agent.llm_utils.ChatOpenAI", create=True)
+    @patch("diffguard_agent.agent.llm_utils.ChatOpenAI", create=True)
     def test_creates_chat_openai(self, mock_cls):
         """Patch the imported name inside the llm_utils module."""
         # The function does `from langchain_openai import ChatOpenAI`
@@ -39,7 +39,7 @@ class TestCreateLlmOpenai:
             # so we patch it directly on the module.
             pass
         # Simpler: patch the module attribute directly
-        import app.agent.llm_utils as mod
+        import diffguard_agent.agent.llm_utils as mod
 
         mock_openai_cls = MagicMock(return_value="openai_llm")
         with patch.object(mod, "ChatOpenAI", mock_openai_cls, create=True):

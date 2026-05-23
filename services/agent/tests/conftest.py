@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.models.schemas import (
+from diffguard_agent.models.schemas import (
     IssuePayload,
     ReviewRequest,
     ReviewResponse,
@@ -13,7 +13,7 @@ from app.models.schemas import (
     ReviewMode,
     ToolResponse,
 )
-from app.agent.base import AgentReviewResult
+from diffguard_agent.agent.base import AgentReviewResult
 
 
 @pytest.fixture

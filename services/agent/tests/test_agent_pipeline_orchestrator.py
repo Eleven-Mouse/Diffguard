@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agent.pipeline.stages.base import PipelineContext, PipelineStage
-from app.models.schemas import (
+from diffguard_agent.agent.pipeline.stages.base import PipelineContext, PipelineStage
+from diffguard_agent.models.schemas import (
     DiffEntry,
     LlmConfig,
     ReviewConfigPayload,
@@ -55,9 +55,9 @@ def _make_stage(name: str, mutate_fn=None):
 # ---------------------------------------------------------------------------
 # Patch targets
 # ---------------------------------------------------------------------------
-_CREATE_TOOL_SESSION = "app.agent.pipeline_orchestrator.create_tool_session"
-_DESTROY_TOOL_SESSION = "app.agent.pipeline_orchestrator.destroy_tool_session"
-_CREATE_LLM = "app.agent.pipeline_orchestrator.create_llm"
+_CREATE_TOOL_SESSION = "diffguard_agent.agent.pipeline_orchestrator.create_tool_session"
+_DESTROY_TOOL_SESSION = "diffguard_agent.agent.pipeline_orchestrator.destroy_tool_session"
+_CREATE_LLM = "diffguard_agent.agent.pipeline_orchestrator.create_llm"
 
 
 # ---------------------------------------------------------------------------
@@ -68,13 +68,13 @@ _CREATE_LLM = "app.agent.pipeline_orchestrator.create_llm"
 class TestBuildDefaultPipeline:
 
     def test_returns_four_stages(self):
-        from app.agent.pipeline_orchestrator import build_default_pipeline
+        from diffguard_agent.agent.pipeline_orchestrator import build_default_pipeline
 
         stages = build_default_pipeline()
         assert len(stages) == 4
 
     def test_stage_names(self):
-        from app.agent.pipeline_orchestrator import build_default_pipeline
+        from diffguard_agent.agent.pipeline_orchestrator import build_default_pipeline
 
         stages = build_default_pipeline()
         names = [s.name for s in stages]
@@ -89,7 +89,7 @@ class TestBuildDefaultPipeline:
 class TestPipelineOrchestratorConstructor:
 
     def test_uses_provided_stages(self):
-        from app.agent.pipeline_orchestrator import PipelineOrchestrator
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
 
         stage = _make_stage("custom")
         req = _make_request()
@@ -98,7 +98,7 @@ class TestPipelineOrchestratorConstructor:
         assert orch.stages[0].name == "custom"
 
     def test_uses_default_pipeline_when_none(self):
-        from app.agent.pipeline_orchestrator import PipelineOrchestrator
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
 
         req = _make_request()
         orch = PipelineOrchestrator(req)
@@ -118,7 +118,7 @@ class TestPipelineOrchestratorRun:
     async def test_executes_stages_sequentially(
         self, mock_create, mock_destroy, mock_create_llm,
     ):
-        from app.agent.pipeline_orchestrator import PipelineOrchestrator
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
 
         mock_create.return_value = MagicMock()
         mock_create_llm.return_value = MagicMock()
@@ -148,7 +148,7 @@ class TestPipelineOrchestratorRun:
     async def test_returns_review_response_on_success(
         self, mock_create, mock_destroy, mock_create_llm,
     ):
-        from app.agent.pipeline_orchestrator import PipelineOrchestrator
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
 
         mock_create.return_value = MagicMock()
         mock_create_llm.return_value = MagicMock()
@@ -167,7 +167,7 @@ class TestPipelineOrchestratorRun:
     async def test_returns_failed_on_exception(
         self, mock_create, mock_destroy, mock_create_llm,
     ):
-        from app.agent.pipeline_orchestrator import PipelineOrchestrator
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
 
         mock_create_llm.return_value = MagicMock()
 
@@ -187,7 +187,7 @@ class TestPipelineOrchestratorRun:
     async def test_creates_and_destroys_tool_session(
         self, mock_create, mock_destroy, mock_create_llm,
     ):
-        from app.agent.pipeline_orchestrator import PipelineOrchestrator
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
 
         mock_tool_client = MagicMock()
         mock_create.return_value = mock_tool_client
