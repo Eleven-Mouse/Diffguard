@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.schemas import (
+from diffguard_agent.models.schemas import (
     DiffEntry,
     IssuePayload,
     LlmConfig,
@@ -34,7 +34,7 @@ class TestDiffChunking:
         ]
 
     def test_small_diff_no_chunking(self):
-        from app.agent.pipeline_orchestrator import _chunk_diff_entries, MAX_FILES_PER_CHUNK
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries, MAX_FILES_PER_CHUNK
 
         entries = self._make_entries(5)
         chunks = _chunk_diff_entries(entries)
@@ -42,14 +42,14 @@ class TestDiffChunking:
         assert len(chunks[0]) == 5
 
     def test_exact_limit_no_split(self):
-        from app.agent.pipeline_orchestrator import _chunk_diff_entries, MAX_FILES_PER_CHUNK
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries, MAX_FILES_PER_CHUNK
 
         entries = self._make_entries(MAX_FILES_PER_CHUNK)
         chunks = _chunk_diff_entries(entries)
         assert len(chunks) == 1
 
     def test_over_limit_splits(self):
-        from app.agent.pipeline_orchestrator import _chunk_diff_entries, MAX_FILES_PER_CHUNK
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries, MAX_FILES_PER_CHUNK
 
         entries = self._make_entries(MAX_FILES_PER_CHUNK + 1)
         chunks = _chunk_diff_entries(entries)
@@ -58,7 +58,7 @@ class TestDiffChunking:
         assert len(chunks[1]) == 1
 
     def test_large_diff_splits_by_chars(self):
-        from app.agent.pipeline_orchestrator import (
+        from diffguard_agent.agent.pipeline_orchestrator import (
             _chunk_diff_entries,
             MAX_CHARS_PER_CHUNK,
             MAX_FILES_PER_CHUNK,
@@ -75,7 +75,7 @@ class TestDiffChunking:
         assert len(chunks) >= 2
 
     def test_all_entries_preserved(self):
-        from app.agent.pipeline_orchestrator import _chunk_diff_entries
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries
 
         entries = self._make_entries(25)
         chunks = _chunk_diff_entries(entries)
@@ -83,7 +83,7 @@ class TestDiffChunking:
         assert total == 25
 
     def test_empty_input(self):
-        from app.agent.pipeline_orchestrator import _chunk_diff_entries
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries
 
         chunks = _chunk_diff_entries([])
         assert chunks == [[]]
@@ -93,7 +93,7 @@ class TestDeduplicateIssues:
     """Tests for _deduplicate_issues in pipeline_orchestrator."""
 
     def test_dedup_same_file_type_message(self):
-        from app.agent.pipeline_orchestrator import _deduplicate_issues
+        from diffguard_agent.agent.pipeline_orchestrator import _deduplicate_issues
 
         issues = [
             IssuePayload(file="a.py", type="sql_injection", message="SQL injection found",
@@ -106,7 +106,7 @@ class TestDeduplicateIssues:
         assert result[0].severity == "CRITICAL"  # higher severity wins
 
     def test_different_issues_kept(self):
-        from app.agent.pipeline_orchestrator import _deduplicate_issues
+        from diffguard_agent.agent.pipeline_orchestrator import _deduplicate_issues
 
         issues = [
             IssuePayload(file="a.py", type="sql_injection", message="SQL injection"),
@@ -116,7 +116,7 @@ class TestDeduplicateIssues:
         assert len(result) == 2
 
     def test_empty_input(self):
-        from app.agent.pipeline_orchestrator import _deduplicate_issues
+        from diffguard_agent.agent.pipeline_orchestrator import _deduplicate_issues
 
         assert _deduplicate_issues([]) == []
 
@@ -129,8 +129,8 @@ class TestAggregationLineMapping:
     """Tests for _map_issue_line_numbers in aggregation stage."""
 
     def test_line_mapping_applied(self):
-        from app.agent.pipeline.stages.aggregation import _map_issue_line_numbers
-        from app.agent.diff_parser import DiffLineMapper
+        from diffguard_agent.agent.pipeline.stages.aggregation import _map_issue_line_numbers
+        from diffguard_agent.agent.diff_parser import DiffLineMapper
 
         diff = (
             "diff --git a/svc.py b/svc.py\n"
@@ -148,8 +148,8 @@ class TestAggregationLineMapping:
         assert result.line == 2
 
     def test_line_mapping_no_file(self):
-        from app.agent.pipeline.stages.aggregation import _map_issue_line_numbers
-        from app.agent.diff_parser import DiffLineMapper
+        from diffguard_agent.agent.pipeline.stages.aggregation import _map_issue_line_numbers
+        from diffguard_agent.agent.diff_parser import DiffLineMapper
 
         mapper = DiffLineMapper("")
         issue = IssuePayload(file="", line=5, type="bug", message="test")
@@ -158,8 +158,8 @@ class TestAggregationLineMapping:
         assert result.line == 5
 
     def test_line_mapping_none_line(self):
-        from app.agent.pipeline.stages.aggregation import _map_issue_line_numbers
-        from app.agent.diff_parser import DiffLineMapper
+        from diffguard_agent.agent.pipeline.stages.aggregation import _map_issue_line_numbers
+        from diffguard_agent.agent.diff_parser import DiffLineMapper
 
         mapper = DiffLineMapper("")
         issue = IssuePayload(file="svc.py", line=None, type="bug", message="test")
@@ -182,52 +182,52 @@ class TestHMACVerification:
     @pytest.mark.asyncio
     async def test_no_secret_skips_verification(self):
         """When WEBHOOK_HMAC_SECRET is not set, verification is skipped."""
-        from app.main import _verify_webhook_signature
+        from diffguard_agent.main import _verify_webhook_signature
 
         mock_req = MagicMock()
         mock_req.headers = {}
         mock_req.body = AsyncMock(return_value=b"test")
 
-        with patch("app.main.settings") as mock_settings:
+        with patch("diffguard_agent.main.settings") as mock_settings:
             mock_settings.WEBHOOK_HMAC_SECRET = None
             result = await _verify_webhook_signature.__wrapped__(b"test", mock_req) \
                 if hasattr(_verify_webhook_signature, "__wrapped__") else None
             # Function is sync, not async — let's call it directly
-        from app.main import _verify_webhook_signature
+        from diffguard_agent.main import _verify_webhook_signature
         mock_req2 = MagicMock()
         mock_req2.headers = {}
 
-        with patch("app.main.settings") as mock_settings:
+        with patch("diffguard_agent.main.settings") as mock_settings:
             mock_settings.WEBHOOK_HMAC_SECRET = None
             result = _verify_webhook_signature(b"test", mock_req2)
             assert result is None  # No error = verification skipped
 
     def test_missing_signature_header_rejected(self):
-        from app.main import _verify_webhook_signature
+        from diffguard_agent.main import _verify_webhook_signature
 
         mock_req = MagicMock()
         mock_req.headers = {}  # No X-DiffGuard-Signature
 
-        with patch("app.main.settings") as mock_settings:
+        with patch("diffguard_agent.main.settings") as mock_settings:
             mock_settings.WEBHOOK_HMAC_SECRET = "test-secret"
             result = _verify_webhook_signature(b"body", mock_req)
             assert result is not None
             assert result.status_code == 401
 
     def test_invalid_signature_rejected(self):
-        from app.main import _verify_webhook_signature
+        from diffguard_agent.main import _verify_webhook_signature
 
         mock_req = MagicMock()
         mock_req.headers = {"X-DiffGuard-Signature": "sha256=invalid"}
 
-        with patch("app.main.settings") as mock_settings:
+        with patch("diffguard_agent.main.settings") as mock_settings:
             mock_settings.WEBHOOK_HMAC_SECRET = "test-secret"
             result = _verify_webhook_signature(b"body", mock_req)
             assert result is not None
             assert result.status_code == 401
 
     def test_valid_signature_accepted(self):
-        from app.main import _verify_webhook_signature
+        from diffguard_agent.main import _verify_webhook_signature
 
         secret = "test-secret"
         body = b'{"repo_full_name": "test/repo", "pr_number": 1}'
@@ -236,13 +236,13 @@ class TestHMACVerification:
         mock_req = MagicMock()
         mock_req.headers = {"X-DiffGuard-Signature": sig}
 
-        with patch("app.main.settings") as mock_settings:
+        with patch("diffguard_agent.main.settings") as mock_settings:
             mock_settings.WEBHOOK_HMAC_SECRET = secret
             result = _verify_webhook_signature(body, mock_req)
             assert result is None  # No error = accepted
 
     def test_expired_timestamp_rejected(self):
-        from app.main import _verify_webhook_signature
+        from diffguard_agent.main import _verify_webhook_signature
 
         secret = "test-secret"
         body = b"body"
@@ -254,7 +254,7 @@ class TestHMACVerification:
             "X-DiffGuard-Timestamp": str(int(time.time()) - 600),  # 10 min ago
         }
 
-        with patch("app.main.settings") as mock_settings:
+        with patch("diffguard_agent.main.settings") as mock_settings:
             mock_settings.WEBHOOK_HMAC_SECRET = secret
             result = _verify_webhook_signature(body, mock_req)
             assert result is not None
@@ -271,7 +271,7 @@ class TestReviewerFallbackFix:
     def test_no_undefined_variable_in_fallback(self):
         """Check that _parse_fallback does not reference 'structured_llm'."""
         import inspect
-        from app.agent.pipeline.stages.reviewer import ReviewerStage
+        from diffguard_agent.agent.pipeline.stages.reviewer import ReviewerStage
 
         stage = ReviewerStage()
         source = inspect.getsource(stage._parse_fallback)

@@ -63,7 +63,7 @@ jobs:
         run: uv sync --dev
 
       - name: Lint (ruff check)
-        run: uv run ruff check app/ tests/ || true
+        run: uv run ruff check src/ tests/ || true
 
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short

@@ -75,7 +75,7 @@ runs:
         echo "Running DiffGuard AI Code Review..."
         cd ${{ github.action_path }}/services/agent
         export PYTHONPATH="${{ github.action_path }}/services/agent"
-        python -m app.github_action_runner 2>&1 | tee review-output.json
+        python -m diffguard_agent.github_action_runner 2>&1 | tee review-output.json
 
         if [ -f review-output.json ]; then
           FINDINGS=$(python -c "import json,sys; d=json.load(open('review-output.json')); print(len(d.get('issues',[])))" 2>/dev/null || echo "0")

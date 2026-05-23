@@ -30,19 +30,19 @@ Generic LLM code reviewers lack project context — they see a diff but not the 
 | High false-positive rate | Two-stage filter: regex rules (zero LLM cost) + optional LLM verification |
 | Expensive per-review LLM costs | Static rules pre-filter before model invocation; diff summarization reduces token usage |
 | Hard to integrate | CLI (Git Hook) · Server (GitHub Webhook) · CI (GitHub Action) — three deployment modes |
-| One-size-fits-all review depth | Three review modes: Simple · Pipeline · Multi-Agent |
+| One-size-fits-all review depth | Pipeline mode with configurable stages; Simple and Multi-Agent on roadmap |
 
 ---
 
 ## Core Features
 
-### Three Review Modes
+### Review Modes
 
-| Mode | Architecture | Best For |
+| Mode | Architecture | Status |
 |---|---|---|
-| **Simple** | Single LLM call via Java Gateway | Quick checks, trivial changes |
-| **Pipeline** | 4-stage pipeline with parallel domain reviewers | Regular PRs, day-to-day reviews |
-| **Multi-Agent** | Autonomous ReAct agents with tool calling | Security-sensitive code, complex changes |
+| **Pipeline** | 4-stage pipeline with parallel domain reviewers | **Current** |
+| **Simple** | Single LLM call via Java Gateway | Roadmap |
+| **Multi-Agent** | Autonomous ReAct agents with tool calling | Roadmap |
 
 ### 4-Stage Review Pipeline
 

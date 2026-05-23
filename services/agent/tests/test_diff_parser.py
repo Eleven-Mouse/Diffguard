@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.diff_parser import DiffLineMapper, map_issue_line
+from diffguard_agent.agent.diff_parser import DiffLineMapper, map_issue_line
 
 
 # ---------------------------------------------------------------------------

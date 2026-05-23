@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.schemas import DiffEntry, ToolResponse
-from app.tools.tool_client import (
+from diffguard_agent.models.schemas import DiffEntry, ToolResponse
+from diffguard_agent.tools.tool_client import (
     JavaToolClient,
     create_tool_session,
     destroy_tool_session,
@@ -230,7 +230,7 @@ class TestClose:
 
 class TestCreateToolSession:
 
-    @patch("app.tools.tool_client.httpx.AsyncClient")
+    @patch("diffguard_agent.tools.tool_client.httpx.AsyncClient")
     async def test_create_session_sends_correct_post(self, MockAsyncClient):
         mock_http = AsyncMock()
         mock_resp = MagicMock()
@@ -253,7 +253,7 @@ class TestCreateToolSession:
         assert client.session_id == "new-sess-1"
         assert client._base_url == "http://localhost:9090"
 
-    @patch("app.tools.tool_client.httpx.AsyncClient")
+    @patch("diffguard_agent.tools.tool_client.httpx.AsyncClient")
     async def test_create_session_sends_correct_payload(self, MockAsyncClient):
         mock_http = AsyncMock()
         mock_resp = MagicMock()
@@ -279,7 +279,7 @@ class TestCreateToolSession:
         assert payload["diff_entries"][0]["file_path"] == "a.java"
         assert payload["allowed_files"] == ["a.java"]
 
-    @patch("app.tools.tool_client.httpx.AsyncClient")
+    @patch("diffguard_agent.tools.tool_client.httpx.AsyncClient")
     async def test_create_session_with_tool_secret(self, MockAsyncClient):
         mock_http = AsyncMock()
         mock_resp = MagicMock()
@@ -304,7 +304,7 @@ class TestCreateToolSession:
         headers = post_call.kwargs.get("headers") or post_call[1].get("headers")
         assert headers["X-Tool-Secret"] == "my-secret"
 
-    @patch("app.tools.tool_client.httpx.AsyncClient")
+    @patch("diffguard_agent.tools.tool_client.httpx.AsyncClient")
     async def test_create_session_raises_on_failure(self, MockAsyncClient):
         mock_http = AsyncMock()
         mock_resp = MagicMock()

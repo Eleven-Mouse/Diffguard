@@ -5,7 +5,7 @@ import inspect
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.tools.definitions import (
+from diffguard_agent.tools.definitions import (
     make_call_graph_tool,
     make_diff_context_tool,
     make_file_content_tool,
@@ -13,7 +13,7 @@ from app.tools.definitions import (
     make_related_files_tool,
     make_semantic_search_tool,
 )
-from app.models.schemas import ToolResponse
+from diffguard_agent.models.schemas import ToolResponse
 
 
 # ---------------------------------------------------------------------------

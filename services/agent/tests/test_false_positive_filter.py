@@ -8,12 +8,12 @@ with both positive (matches) and negative (does not match) cases.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.agent.false_positive_filter import (
+from diffguard_agent.agent.false_positive_filter import (
     FindingsFilter,
     FilterStats,
     HardExclusionRules,
 )
-from app.models.schemas import IssuePayload
+from diffguard_agent.models.schemas import IssuePayload
 
 
 # ---------------------------------------------------------------------------
@@ -735,7 +735,7 @@ class TestFindingsFilterCustomPrecedents:
         assert f._precedents[-1] == custom[0]
 
     def test_no_custom_precedents_default_count(self):
-        from app.agent.false_positive_filter import _DEFAULT_PRECEDENTS
+        from diffguard_agent.agent.false_positive_filter import _DEFAULT_PRECEDENTS
 
         f = FindingsFilter()
         # YAML config has 17 precedents, plus default _DEFAULT_PRECEDENTS (26) gives us the total
