@@ -14,7 +14,6 @@ public class ReviewConfig {
     private IgnoreConfig ignore = new IgnoreConfig();
     private ReviewOptions review = new ReviewOptions();
     private PipelineConfig pipeline = new PipelineConfig();
-    private WebhookConfig webhook = null;
     private EmbeddingConfig embedding = new EmbeddingConfig();
     private AgentServiceConfig agentService = null;
     private ToolServiceConfig toolService = new ToolServiceConfig();
@@ -52,14 +51,6 @@ public class ReviewConfig {
 
     public void setReview(ReviewOptions review) {
         this.review = review;
-    }
-
-    public WebhookConfig getWebhook() {
-        return webhook;
-    }
-
-    public void setWebhook(WebhookConfig webhook) {
-        this.webhook = webhook;
     }
 
     public EmbeddingConfig getEmbedding() {
@@ -254,50 +245,6 @@ public class ReviewConfig {
 
     public PipelineConfig getPipeline() { return pipeline; }
     public void setPipeline(PipelineConfig pipeline) { this.pipeline = pipeline; }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class WebhookConfig {
-        private int port = 8080;
-        private String secret = null;
-
-        @JsonProperty("secret_env")
-        private String secretEnv = "DIFFGUARD_WEBHOOK_SECRET";
-
-        @JsonProperty("github_token_env")
-        private String githubTokenEnv = "DIFFGUARD_GITHUB_TOKEN";
-
-        private List<RepoMapping> repos = List.of();
-
-        public int getPort() { return port; }
-
-        public void setRepos(List<RepoMapping> repos) { this.repos = repos; }
-
-        public String resolveSecret() {
-            if (secret != null && !secret.isBlank()) {
-                return secret.trim();
-            }
-            String env = System.getenv(secretEnv);
-            return (env != null && !env.isBlank()) ? env.trim() : null;
-        }
-
-        public String resolveGitHubToken() {
-            String token = System.getenv(githubTokenEnv);
-            if (token == null || token.isBlank()) {
-                throw new IllegalStateException(
-                    "未找到 GitHub Token。请通过环境变量设置：" + githubTokenEnv);
-            }
-            return token.trim();
-        }
-
-        public Path resolveLocalPath(String repoFullName) {
-            if (repos == null) return null;
-            return repos.stream()
-                .filter(r -> r.getFullName() != null && r.getFullName().equals(repoFullName))
-                .map(r -> Path.of(r.getLocalPath()))
-                .findFirst()
-                .orElse(null);
-        }
-    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class RepoMapping {

@@ -15,7 +15,6 @@ import picocli.CommandLine;
                 ReviewCommand.class,
                 InstallCommand.class,
                 UninstallCommand.class,
-                ServerCommand.class,
                 ToolServerCommand.class,
                 OrchestratorServerCommand.class
         }
@@ -44,5 +43,9 @@ public class DiffGuardMain implements Runnable {
         DiffGuardMain main = new DiffGuardMain();
         new CommandLine(main).execute(args);
         return main.getExitCode();
+    }
+
+    public static void main(String[] args) {
+        System.exit(execute(args));
     }
 }

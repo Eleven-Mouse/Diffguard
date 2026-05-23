@@ -122,7 +122,9 @@ async def review(request: ReviewRequest) -> ReviewResponse:
     request_id = request.request_id or str(uuid.uuid4())
 
     try:
-        if request.mode == ReviewMode.PIPELINE:
+        if request.mode in (ReviewMode.PIPELINE, ReviewMode.MULTI_AGENT):
+            # Keep a single execution path for now; MULTI_AGENT shares the
+            # same transport contract and falls back to pipeline execution.
             orchestrator = PipelineOrchestrator(request)
         else:
             return ReviewResponse(

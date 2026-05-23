@@ -42,9 +42,9 @@
    - `ARCHITECTURE_TARGET.md`
    - `ORCHESTRATOR_CONTRACT.md`
 2. 建立回归最小集（手工或自动）：
-   - `review --staged`
-   - `review --staged --pipeline`
-   - `review --staged --multi-agent`
+   - `review --pr owner/repo#123`
+   - `review --pr owner/repo#123 --pipeline`
+   - `review --pr owner/repo#123 --multi-agent`
 
 交付物：
 
@@ -112,4 +112,3 @@
    - 查询结果
 3. `pipeline`、`multi-agent` 至少各验证一次
 4. `PROGRESS.md` 按约束完成状态迁移更新
-

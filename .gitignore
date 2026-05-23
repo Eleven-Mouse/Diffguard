@@ -18,6 +18,10 @@ application.yml
 .review-config.yml
 
 # Runtime artifacts
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+**/*.pyc
 *.class
 *.log
 *.jar

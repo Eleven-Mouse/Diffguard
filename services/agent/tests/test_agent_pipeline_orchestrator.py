@@ -80,6 +80,13 @@ class TestBuildDefaultPipeline:
         names = [s.name for s in stages]
         assert names == ["summary", "review", "aggregation", "false_positive_filter"]
 
+    def test_stage_names_without_fp_filter(self):
+        from diffguard_agent.agent.pipeline_orchestrator import build_default_pipeline
+
+        stages = build_default_pipeline(enable_fp_filter=False)
+        names = [s.name for s in stages]
+        assert names == ["summary", "review", "aggregation"]
+
 
 # ---------------------------------------------------------------------------
 # Tests: PipelineOrchestrator constructor
@@ -103,6 +110,13 @@ class TestPipelineOrchestratorConstructor:
         req = _make_request()
         orch = PipelineOrchestrator(req)
         assert len(orch.stages) == 4
+
+    def test_can_disable_fp_filter_in_default_pipeline(self):
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
+
+        req = _make_request()
+        orch = PipelineOrchestrator(req, enable_fp_filter=False)
+        assert [s.name for s in orch.stages] == ["summary", "review", "aggregation"]
 
 
 # ---------------------------------------------------------------------------

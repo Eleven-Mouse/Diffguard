@@ -35,11 +35,22 @@ inputs:
     description: 'Timeout for the review in minutes'
     required: false
     default: '10'
+  use-java-tool-server:
+    description: 'Whether to start Java Tool Server and enable tool calls in review pipeline'
+    required: false
+    default: 'false'
+  tool-server-url:
+    description: 'Java Tool Server URL passed to agent when use-java-tool-server is true'
+    required: false
+    default: 'http://127.0.0.1:9090'
 
 outputs:
   findings-count:
     description: 'Number of review findings'
     value: ${{ steps.diffguard-review.outputs.findings_count }}
+  results-file:
+    description: 'Path to the results JSON file'
+    value: ${{ steps.diffguard-review.outputs.results_file }}
 
 runs:
   using: 'composite'
@@ -53,6 +64,53 @@ runs:
       shell: bash
       run: |
         pip install -r ${{ github.action_path }}/services/agent/requirements-github-action.txt
+
+    - name: Set up Java
+      if: inputs.use-java-tool-server == 'true'
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+        cache: maven
+
+    - name: Build gateway (for Tool Server)
+      if: inputs.use-java-tool-server == 'true'
+      shell: bash
+      run: |
+        cd ${{ github.action_path }}/services/gateway
+        mvn -B -DskipTests package
+
+    - name: Start Java Tool Server
+      if: inputs.use-java-tool-server == 'true'
+      shell: bash
+      run: |
+        cd ${{ github.action_path }}
+        JAR_PATH=$(ls services/gateway/target/diffguard-*.jar | head -n 1)
+        if [ -z "$JAR_PATH" ]; then
+          echo "::error::Cannot find gateway jar in services/gateway/target/"
+          exit 1
+        fi
+        nohup java -jar "$JAR_PATH" tool-server --port 9090 > tool-server.log 2>&1 &
+        for i in {1..30}; do
+          if curl -s "http://127.0.0.1:9090/api/v1/tools/session" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"project_dir":".","diff_entries":[]}' | grep -q '"success":true'; then
+            echo "Java Tool Server is up"
+            break
+          fi
+          sleep 1
+        done
+        if ! curl -s "http://127.0.0.1:9090/api/v1/tools/session" \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -d '{"project_dir":".","diff_entries":[]}' | grep -q '"success":true'; then
+          echo "::error::Java Tool Server did not become ready in time"
+          echo "::group::Tool Server Log"
+          cat tool-server.log || true
+          echo "::endgroup::"
+          exit 1
+        fi
 
     - name: Run DiffGuard Review
       id: diffguard-review
@@ -70,12 +128,15 @@ runs:
         DIFFGUARD_EXCLUDE_DIRS: ${{ inputs.exclude-directories }}
         DIFFGUARD_ENABLE_FP_FILTER: ${{ inputs.enable-fp-filter }}
         DIFFGUARD_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+        DIFFGUARD_USE_JAVA_TOOL_SERVER: ${{ inputs.use-java-tool-server }}
+        DIFFGUARD_TOOL_SERVER_URL: ${{ inputs.tool-server-url }}
         REPO_PATH: ${{ github.workspace }}
       run: |
         echo "Running DiffGuard AI Code Review..."
         cd ${{ github.action_path }}/services/agent
-        export PYTHONPATH="${{ github.action_path }}/services/agent"
-        python -m diffguard_agent.github_action_runner 2>&1 | tee review-output.json
+        export PYTHONPATH="${{ github.action_path }}/services/agent/src:${{ github.action_path }}/services/agent"
+        echo "results_file=review-output.json" >> $GITHUB_OUTPUT
+        python -m diffguard_agent.github_action_runner > review-output.json 2>review-error.log || DIFFGUARD_EXIT_CODE=$?
 
         if [ -f review-output.json ]; then
           FINDINGS=$(python -c "import json,sys; d=json.load(open('review-output.json')); print(len(d.get('issues',[])))" 2>/dev/null || echo "0")
@@ -84,6 +145,28 @@ runs:
         else
           echo "findings_count=0" >> $GITHUB_OUTPUT
         fi
+
+        if [ -n "$DIFFGUARD_EXIT_CODE" ]; then
+          echo "::warning::DiffGuard exited with code $DIFFGUARD_EXIT_CODE"
+          if [ -f review-error.log ]; then
+            echo "::group::DiffGuard Error Log"
+            cat review-error.log
+            echo "::endgroup::"
+          fi
+          exit "$DIFFGUARD_EXIT_CODE"
+        fi
+
+    - name: Upload review artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: diffguard-review-results
+        path: |
+          ${{ github.action_path }}/services/agent/review-output.json
+          ${{ github.action_path }}/services/agent/review-error.log
+          ${{ github.action_path }}/tool-server.log
+        retention-days: 7
+        if-no-files-found: ignore
 
 branding:
   icon: 'shield'

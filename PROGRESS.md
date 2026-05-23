@@ -1,6 +1,6 @@
 # DiffGuard 进度文档
 
-更新时间：2026-05-23（完成 Java 包结构业务域收敛，MQ 实联仍受 Docker 权限阻塞）
+更新时间：2026-05-23（完成本地评审 PR-only 入口收敛）
 负责人：待指定
 
 ## 1. 文档目标
@@ -15,14 +15,12 @@
   - Java：`services/gateway`
   - Python：`services/agent`
 - Java 已支持：
-  - CLI 入口（`review/install/uninstall/server`）
-  - Webhook 服务（Javalin）
+  - CLI 入口（`review/install/uninstall/tool-server/orchestrator-server`）
   - Tool Server（`/api/v1/tools/*`）
 
 ## 2.2 核心链路
 
 - CLI 链路：`ReviewCommand -> ReviewApplicationService -> ReviewEngineFactory -> ReviewEngine`
-- Webhook 链路：`WebhookController -> ReviewOrchestrator -> GitHub Comment`
 - Python 联动：`PythonReviewEngine -> /api/v1/review -> Python 回调 Java Tool Server`
 
 ## 2.3 可选基础设施
@@ -36,7 +34,7 @@
 第一阶段目标（低风险）：
 
 1. 拆出 `tool-service`（仅承载 Tool Session + Tool API）
-2. 保持 `gateway` 对外接口不变（CLI/Webhook 命令不变）
+2. 保持 `gateway` 对外接口稳定（CLI 与 Tool/Orchestrator 命令不变）
 3. 通过配置切换 Tool Server 地址，不影响 Python 端调用协议
 
 第二阶段目标（中风险）：
@@ -60,6 +58,12 @@
 | Orchestrator Service 拆分 | 进行中 | 迁移、适配层、契约实现、回归测试、旧 ReviewOrchestrator 下沉去重已完成；真实 MQ 联调受环境权限阻塞 |
 | Session/Result/RAG 架构评估 | 已完成 | 已形成可执行评估与落地方案文档 |
 | Rule/Result Service 拆分 | 未开始 | 可选阶段 |
+| GitHub Action 审查链路稳健性增强 | 已完成 | 输出/错误分流、产物上传、Action 超时与 FP 开关参数接通 |
+| GitHub Action 可选 Java Tool Server 接入 | 已完成 | 增加可选启动 Java Tool Server 并将 URL 透传至 Agent |
+| Action-only 部署收敛 | 已完成 | docker-compose 停用 webhook 端口暴露与 webhook 相关环境变量 |
+| Action-only 文档口径收敛 | 已完成 | README / README.zh-CN 同步为“Action-only + 可选 Tool Server”说明 |
+| Webhook 链路代码移除 | 已完成 | 删除 Java webhook 包、server 子命令与相关测试，主入口切换为 CLI |
+| 本地评审 PR-only 入口收敛 | 已完成 | CLI 改为必填 `--pr owner/repo#number`，移除旧 `--staged/--from/--to` 模式 |
 
 ## 5. 已完成事项（Done）
 
@@ -87,6 +91,13 @@
 22. 完成任务评估文档：`RAG_RESULT_SESSION_EVALUATION.md`（Tool Session 多实例一致性、result-service 所有权边界、外部 RAG 适配方案与 A/B 对比结论）
 23. 完成旧 `ReviewOrchestrator` 下沉：移除 AST/规则/Resilience 重复编排，统一走 `ReviewExecutionAdapter`（remote/legacy），并补齐定向回归测试通过
 24. 完成 Java 目录/包命名去 DDD 收敛：`adapter/domain/infrastructure/service` 迁移为 `webhook/toolserver/orchestrator/review/agent/platform` 业务域结构，并通过关键链路回归测试
+25. 完成 GitHub Action 审查链路稳健性增强：`review-output.json` 与 `review-error.log` 分流、`results-file` 输出、审查产物上传（artifact）
+26. 完成 Action 参数生效接通：`DIFFGUARD_TIMEOUT_MINUTES` -> `llm_config.timeout_seconds`，`DIFFGUARD_ENABLE_FP_FILTER` -> pipeline FP 过滤阶段可开关
+27. 完成 GitHub Action 可选 Java Tool Server 接入：新增 `use-java-tool-server` / `tool-server-url` 输入，支持在 Action 中构建并启动 Java Tool Server，并透传 `tool_server_url` 给 Agent
+28. 完成 Action-only 部署收敛改造：`docker-compose.yml` 移除 `8090:8080` webhook 端口映射，并删除 gateway 的 `DIFFGUARD_WEBHOOK_SECRET` / `DIFFGUARD_GITHUB_TOKEN` 注入
+29. 完成 Action-only 文档收敛：`README.md` / `README.zh-CN.md` 更新为“Action-only 默认部署 + 可选 Tool Server”，并同步 Docker Compose 示例与环境变量说明
+30. 完成 Webhook 链路代码移除：删除 `services/gateway/src/main/java/com/diffguard/webhook/*`、`ServerCommand`、`ReviewOrchestrator` 及其对应测试；`pom.xml` shade 主类切换至 `com.diffguard.cli.DiffGuardMain`
+31. 完成本地评审 PR-only 入口收敛：`review` 子命令新增必填 `--pr`，`ReviewApplicationService` 改为基于 GitHub PR API 收集 diff，移除 `--staged/--from/--to` 本地模式入口
 
 ## 6. 进行中事项（In Progress）
 
@@ -113,6 +124,7 @@
 4. 仓库当前存在较多历史失败测试（与本次改造无直接关系），暂以“可编译 + 关键链路验证”作为阶段验收依据。
 5. 若直接替换现有 `coderag` 实现，可能破坏 `semantic_search` 工具链路与会话隔离约束，需采用“适配器 + 渐进切换”。
 6. 当前执行环境无法启动 Docker Desktop Service（`com.docker.service`），导致 RabbitMQ 容器无法拉起，阻塞真实 MQ 联调验收。
+7. `services/agent/src/diffguard_agent/models/schemas.py` 文件缺失导致 `pytest` 在导入 `diffguard_agent.models.schemas` 时失败，当前仅能完成语法级校验，需先修复该模块路径/文件一致性。
 
 ## 9. 验收标准（第一阶段）
 
@@ -120,8 +132,7 @@
 
 1. `--pipeline`、`--multi-agent` 两种模式可正常完成审查
 2. Python 端 Tool 调用协议不变（Header 与路径保持兼容）
-3. Webhook 路径下至少完成一次端到端 PR 审查回写
-4. 关键自动化测试可通过（Java `mvn test`，Python `pytest`）
+3. 关键自动化测试可通过（Java `mvn test`，Python `pytest`）
 
 ## 10. 更新约束（必须执行）
 

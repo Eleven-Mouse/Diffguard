@@ -11,7 +11,7 @@ import java.util.List;
  * 统一审查引擎接口。
  * <p>
  * 所有审查模式（Simple / Pipeline / Multi-Agent）均实现此接口，
- * 消费方（CLI、Webhook）通过 {@link ReviewEngineFactory} 获取具体实例。
+ * 消费方（CLI、Orchestrator）通过 {@link ReviewEngineFactory} 获取具体实例。
  */
 public interface ReviewEngine extends AutoCloseable {
 

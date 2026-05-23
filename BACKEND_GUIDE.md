@@ -125,7 +125,7 @@ Python 侧通过 `app/tools/tool_client.py`：
 ## 5.1 CLI 审查链
 
 ```text
-java -jar ... review --staged/--from --to
+java -jar ... review --pr owner/repo#number
   -> ReviewCommand
   -> ReviewApplicationService.collectAndEnrich
   -> ReviewEngineFactory.resolveEngineType
@@ -183,9 +183,9 @@ Python：
 
 本地常用审查命令（Java CLI）：
 
-- `java -jar target/diffguard-1.0.0.jar review --staged`
-- `java -jar target/diffguard-1.0.0.jar review --staged --pipeline`
-- `java -jar target/diffguard-1.0.0.jar review --staged --multi-agent`
+- `java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123`
+- `java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline`
+- `java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --multi-agent`
 
 ## 8. 新人推荐阅读顺序
 

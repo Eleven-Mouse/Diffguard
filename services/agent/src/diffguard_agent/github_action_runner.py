@@ -33,6 +33,25 @@ def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default).strip()
 
 
+def _env_bool(key: str, default: bool) -> bool:
+    raw = _env(key, "true" if default else "false").lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _env_timeout_seconds() -> int:
+    raw = _env("DIFFGUARD_TIMEOUT_MINUTES", "")
+    if not raw:
+        return 300
+    try:
+        minutes = int(raw)
+        if minutes <= 0:
+            raise ValueError("timeout must be positive")
+        return minutes * 60
+    except Exception:
+        logger.warning("Invalid DIFFGUARD_TIMEOUT_MINUTES=%r, fallback to 300s", raw)
+        return 300
+
+
 def _build_review_request(diff_text: str):
     """Construct a ReviewRequest from environment variables."""
     from diffguard_agent.models.schemas import (
@@ -50,6 +69,9 @@ def _build_review_request(diff_text: str):
     if not api_key:
         raise RuntimeError("DIFFGUARD_API_KEY is required")
 
+    use_java_tool_server = _env_bool("DIFFGUARD_USE_JAVA_TOOL_SERVER", False)
+    tool_server_url = _env("DIFFGUARD_TOOL_SERVER_URL", "http://127.0.0.1:9090")
+
     return ReviewRequest(
         request_id=f"gh-{_env('GITHUB_REPOSITORY')}-{_env('PR_NUMBER')}",
         mode=ReviewMode.PIPELINE,
@@ -59,11 +81,12 @@ def _build_review_request(diff_text: str):
             provider=provider,
             model=model,
             api_key=api_key,
+            timeout_seconds=_env_timeout_seconds(),
         ),
         review_config=ReviewConfigPayload(
             language=_env("DIFFGUARD_LANGUAGE", "zh"),
         ),
-        tool_server_url="",  # no tool server in action mode
+        tool_server_url=tool_server_url if use_java_tool_server else "",
         allowed_files=[],
     )
 
@@ -120,7 +143,12 @@ def main() -> None:
     from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
 
     request = _build_review_request(diff_text)
-    orchestrator = PipelineOrchestrator(request, historical_context=historical_context)
+    enable_fp_filter = _env_bool("DIFFGUARD_ENABLE_FP_FILTER", True)
+    orchestrator = PipelineOrchestrator(
+        request,
+        historical_context=historical_context,
+        enable_fp_filter=enable_fp_filter,
+    )
 
     import asyncio
 

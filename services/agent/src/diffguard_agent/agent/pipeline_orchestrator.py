@@ -45,14 +45,16 @@ MAX_CHARS_PER_CHUNK = 60_000  # ~15k tokens safety margin
 # --- Default pipeline builder ---
 
 
-def build_default_pipeline() -> list[PipelineStage]:
+def build_default_pipeline(enable_fp_filter: bool = True) -> list[PipelineStage]:
     """Build the standard 4-stage review pipeline."""
-    return [
+    stages: list[PipelineStage] = [
         SummaryStage(),
         ReviewerStage(),
         AggregationStage(),
-        FalsePositiveFilterStage(),
     ]
+    if enable_fp_filter:
+        stages.append(FalsePositiveFilterStage())
+    return stages
 
 
 # --- Orchestrator ---
@@ -72,9 +74,10 @@ class PipelineOrchestrator:
         request: ReviewRequest,
         stages: list[PipelineStage] | None = None,
         historical_context: str = "",
+        enable_fp_filter: bool = True,
     ) -> None:
         self.request = request
-        self.stages = stages or build_default_pipeline()
+        self.stages = stages or build_default_pipeline(enable_fp_filter=enable_fp_filter)
         self.historical_context = historical_context
 
     async def run(self) -> ReviewResponse:

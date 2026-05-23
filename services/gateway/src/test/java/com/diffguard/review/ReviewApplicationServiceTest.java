@@ -30,7 +30,7 @@ import static org.mockito.Mockito.*;
  * Tests for {@link ReviewApplicationService} covering config loading,
  * diff collection and enrichment, and review orchestration.
  * <p>
- * Uses MockedStatic for ConfigLoader, DiffCollector, ASTEnricher,
+ * Uses MockedStatic for ConfigLoader, GitHubPrDiffCollector, ASTEnricher,
  * ReviewEngineFactory since they are static/utility classes.
  */
 @ExtendWith(MockitoExtension.class)
@@ -146,15 +146,15 @@ class ReviewApplicationServiceTest {
         @DisplayName("returns null when diff collection fails")
         void returnsNullOnCollectionFailure() {
             ReviewConfig config = new ReviewConfig();
-            try (MockedStatic<com.diffguard.platform.git.DiffCollector> diffCollectorMock =
-                         mockStatic(com.diffguard.platform.git.DiffCollector.class)) {
+            try (MockedStatic<com.diffguard.platform.git.GitHubPrDiffCollector> prCollectorMock =
+                         mockStatic(com.diffguard.platform.git.GitHubPrDiffCollector.class)) {
 
-                diffCollectorMock.when(() ->
-                        com.diffguard.platform.git.DiffCollector.collectStagedDiff(any(), any()))
+                prCollectorMock.when(() ->
+                        com.diffguard.platform.git.GitHubPrDiffCollector.collectPrDiff(any(), eq("foo/bar#1"), any()))
                         .thenThrow(new DiffCollectionException("git error"));
 
                 List<DiffFileEntry> result = service.collectAndEnrich(
-                        tempDir, config, true, null, null);
+                        tempDir, config, "foo/bar#1");
                 assertNull(result);
             }
         }
@@ -163,93 +163,84 @@ class ReviewApplicationServiceTest {
         @DisplayName("returns empty list when no diff entries")
         void returnsEmptyListWhenNoDiff() {
             ReviewConfig config = new ReviewConfig();
-            try (MockedStatic<com.diffguard.platform.git.DiffCollector> diffCollectorMock =
-                         mockStatic(com.diffguard.platform.git.DiffCollector.class)) {
+            try (MockedStatic<com.diffguard.platform.git.GitHubPrDiffCollector> prCollectorMock =
+                         mockStatic(com.diffguard.platform.git.GitHubPrDiffCollector.class)) {
 
-                diffCollectorMock.when(() ->
-                        com.diffguard.platform.git.DiffCollector.collectStagedDiff(any(), any()))
+                prCollectorMock.when(() ->
+                        com.diffguard.platform.git.GitHubPrDiffCollector.collectPrDiff(any(), eq("foo/bar#1"), any()))
                         .thenReturn(Collections.emptyList());
 
                 List<DiffFileEntry> result = service.collectAndEnrich(
-                        tempDir, config, true, null, null);
+                        tempDir, config, "foo/bar#1");
                 assertNotNull(result);
                 assertTrue(result.isEmpty());
             }
         }
 
         @Test
-        @DisplayName("returns enriched entries for staged diff")
-        void returnsEnrichedEntriesForStaged() {
+        @DisplayName("returns enriched entries for PR diff")
+        void returnsEnrichedEntriesForPr() {
             ReviewConfig config = new ReviewConfig();
             DiffFileEntry rawEntry = new DiffFileEntry("Test.java", "diff content", 10);
             DiffFileEntry enrichedEntry = new DiffFileEntry("Test.java", "enriched content", 15);
             List<DiffFileEntry> rawEntries = List.of(rawEntry);
             List<DiffFileEntry> enrichedEntries = List.of(enrichedEntry);
 
-            try (MockedStatic<com.diffguard.platform.git.DiffCollector> diffCollectorMock =
-                         mockStatic(com.diffguard.platform.git.DiffCollector.class);
+            try (MockedStatic<com.diffguard.platform.git.GitHubPrDiffCollector> prCollectorMock =
+                         mockStatic(com.diffguard.platform.git.GitHubPrDiffCollector.class);
                  org.mockito.MockedConstruction<com.diffguard.review.ast.ASTEnricher> ignored =
                          mockConstruction(com.diffguard.review.ast.ASTEnricher.class,
                                  (mock, context) -> when(mock.enrich(rawEntries)).thenReturn(enrichedEntries))) {
 
-                diffCollectorMock.when(() ->
-                        com.diffguard.platform.git.DiffCollector.collectStagedDiff(any(), any()))
+                prCollectorMock.when(() ->
+                        com.diffguard.platform.git.GitHubPrDiffCollector.collectPrDiff(any(), eq("foo/bar#1"), any()))
                         .thenReturn(rawEntries);
 
                 List<DiffFileEntry> result = service.collectAndEnrich(
-                        tempDir, config, true, null, null);
+                        tempDir, config, "foo/bar#1");
                 assertEquals(1, result.size());
                 assertEquals("enriched content", result.get(0).getContent());
             }
         }
 
         @Test
-        @DisplayName("uses collectDiffBetweenRefs when from/to refs provided")
-        void usesCollectDiffBetweenRefs() {
+        @DisplayName("uses GitHubPrDiffCollector for PR mode")
+        void usesGitHubPrDiffCollector() {
             ReviewConfig config = new ReviewConfig();
-            try (MockedStatic<com.diffguard.platform.git.DiffCollector> diffCollectorMock =
-                         mockStatic(com.diffguard.platform.git.DiffCollector.class)) {
+            try (MockedStatic<com.diffguard.platform.git.GitHubPrDiffCollector> prCollectorMock =
+                         mockStatic(com.diffguard.platform.git.GitHubPrDiffCollector.class)) {
 
-                diffCollectorMock.when(() ->
-                        com.diffguard.platform.git.DiffCollector.collectDiffBetweenRefs(
-                                any(), eq("main"), eq("feature"), any()))
+                prCollectorMock.when(() ->
+                        com.diffguard.platform.git.GitHubPrDiffCollector.collectPrDiff(
+                                any(), eq("foo/bar#1"), any()))
                         .thenReturn(Collections.emptyList());
 
                 List<DiffFileEntry> result = service.collectAndEnrich(
-                        tempDir, config, false, "main", "feature");
+                        tempDir, config, "foo/bar#1");
                 assertNotNull(result);
                 assertTrue(result.isEmpty());
 
-                diffCollectorMock.verify(() ->
-                        com.diffguard.platform.git.DiffCollector.collectDiffBetweenRefs(
-                                any(), eq("main"), eq("feature"), any()));
+                prCollectorMock.verify(() ->
+                        com.diffguard.platform.git.GitHubPrDiffCollector.collectPrDiff(
+                                any(), eq("foo/bar#1"), any()));
             }
         }
 
         @Test
-        @DisplayName("returns null when neither staged nor from/to refs provided")
-        void returnsNullWhenNoModeSpecified() {
+        @DisplayName("returns null when PR spec is null")
+        void returnsNullWhenPrSpecIsNull() {
             ReviewConfig config = new ReviewConfig();
             List<DiffFileEntry> result = service.collectAndEnrich(
-                    tempDir, config, false, null, null);
+                    tempDir, config, null);
             assertNull(result);
         }
 
         @Test
-        @DisplayName("returns null when only fromRef is provided without toRef")
-        void returnsNullWhenOnlyFromRefProvided() {
+        @DisplayName("returns null when PR spec is blank")
+        void returnsNullWhenPrSpecIsBlank() {
             ReviewConfig config = new ReviewConfig();
             List<DiffFileEntry> result = service.collectAndEnrich(
-                    tempDir, config, false, "main", null);
-            assertNull(result);
-        }
-
-        @Test
-        @DisplayName("returns null when only toRef is provided without fromRef")
-        void returnsNullWhenOnlyToRefProvided() {
-            ReviewConfig config = new ReviewConfig();
-            List<DiffFileEntry> result = service.collectAndEnrich(
-                    tempDir, config, false, null, "feature");
+                    tempDir, config, "   ");
             assertNull(result);
         }
     }

@@ -16,14 +16,11 @@ import java.util.List;
 @CommandLine.Command(name = "review", description = "使用AI审查代码变更")
 public class ReviewCommand implements Runnable {
 
-    @CommandLine.Option(names = "--staged", description = "审查暂存区的变更（git diff --cached）")
-    boolean staged;
-
-    @CommandLine.Option(names = "--from", description = "用于差异对比的源引用")
-    String fromRef;
-
-    @CommandLine.Option(names = "--to", description = "用于差异对比的目标引用")
-    String toRef;
+    @CommandLine.Option(
+            names = "--pr",
+            required = true,
+            description = "审查 GitHub PR，格式：owner/repo#number（例如：kunxing/diffguard#123）")
+    String prSpec;
 
     @CommandLine.Option(names = "--force", description = "跳过审查（忽略严重问题）")
     boolean force;
@@ -63,7 +60,7 @@ public class ReviewCommand implements Runnable {
 
         // 2. 收集差异 + AST 增强
         ProgressDisplay.printCollectingDiffs();
-        List<DiffFileEntry> diffEntries = service.collectAndEnrich(projectDir, config, staged, fromRef, toRef);
+        List<DiffFileEntry> diffEntries = service.collectAndEnrich(projectDir, config, prSpec);
         if (diffEntries == null) {
             TerminalUI.error("  Diff collection failed");
             return 1;

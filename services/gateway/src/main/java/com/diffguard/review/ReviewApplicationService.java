@@ -4,7 +4,7 @@ import com.diffguard.review.ast.ASTEnricher;
 import com.diffguard.review.ReviewEngine;
 import com.diffguard.platform.config.ConfigLoader;
 import com.diffguard.platform.config.ReviewConfig;
-import com.diffguard.platform.git.DiffCollector;
+import com.diffguard.platform.git.GitHubPrDiffCollector;
 import com.diffguard.exception.ConfigException;
 import com.diffguard.exception.DiffCollectionException;
 import com.diffguard.review.model.DiffFileEntry;
@@ -47,9 +47,8 @@ public class ReviewApplicationService {
      *
      * @return 差异条目列表，收集失败返回 null，无差异返回空列表
      */
-    public List<DiffFileEntry> collectAndEnrich(Path projectDir, ReviewConfig config,
-                                                 boolean staged, String fromRef, String toRef) {
-        List<DiffFileEntry> diffEntries = collectDiff(projectDir, config, staged, fromRef, toRef);
+    public List<DiffFileEntry> collectAndEnrich(Path projectDir, ReviewConfig config, String prSpec) {
+        List<DiffFileEntry> diffEntries = collectDiff(projectDir, config, prSpec);
         if (diffEntries == null) return null;
 
         if (diffEntries.isEmpty()) return diffEntries;
@@ -70,17 +69,13 @@ public class ReviewApplicationService {
         return new ReviewExecutionAdapter(config).review(projectDir, diffEntries, engineType, noCache);
     }
 
-    private List<DiffFileEntry> collectDiff(Path projectDir, ReviewConfig config,
-                                             boolean staged, String fromRef, String toRef) {
+    private List<DiffFileEntry> collectDiff(Path projectDir, ReviewConfig config, String prSpec) {
         try {
-            if (staged) {
-                return DiffCollector.collectStagedDiff(projectDir, config);
-            } else if (fromRef != null && toRef != null) {
-                return DiffCollector.collectDiffBetweenRefs(projectDir, fromRef, toRef, config);
-            } else {
-                log.error("未指定差异模式：需要 --staged 或 --from/--to");
+            if (prSpec == null || prSpec.isBlank()) {
+                log.error("未指定 PR：需要 --pr owner/repo#number");
                 return null;
             }
+            return GitHubPrDiffCollector.collectPrDiff(projectDir, prSpec, config);
         } catch (DiffCollectionException e) {
             log.error("差异收集失败", e);
             return null;

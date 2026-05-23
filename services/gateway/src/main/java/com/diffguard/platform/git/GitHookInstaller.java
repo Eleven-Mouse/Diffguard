@@ -25,8 +25,14 @@ public class GitHookInstaller {
                 JAVA="java"
             fi
 
+            if [ -z "$DIFFGUARD_PR" ]; then
+                echo "ℹ️ DiffGuard：未设置 DIFFGUARD_PR，跳过 pre-commit 审查。"
+                echo "   仅支持 PR 模式：export DIFFGUARD_PR=owner/repo#number"
+                exit 0
+            fi
+
             echo "🔍 DiffGuard：正在运行AI代码审查..."
-            "$JAVA" -jar "$(dirname "$0")/diffguard.jar" review --staged
+            "$JAVA" -jar "$(dirname "$0")/diffguard.jar" review --pr "$DIFFGUARD_PR"
             exit_code=$?
             if [ $exit_code -ne 0 ]; then
                 echo "❌ DiffGuard：发现严重问题，提交已中止。"
@@ -48,12 +54,18 @@ public class GitHookInstaller {
                 JAVA="java"
             fi
 
+            if [ -z "$DIFFGUARD_PR" ]; then
+                echo "ℹ️ DiffGuard：未设置 DIFFGUARD_PR，跳过 pre-push 审查。"
+                echo "   仅支持 PR 模式：export DIFFGUARD_PR=owner/repo#number"
+                exit 0
+            fi
+
             remote="$1"
             url="$2"
 
             while read local_ref local_sha remote_ref remote_sha; do
                 echo "🔍 DiffGuard：正在审查推送到 $remote 的变更..."
-                "$JAVA" -jar "$(dirname "$0")/diffguard.jar" review --from "$local_sha" --to "$remote_sha"
+                "$JAVA" -jar "$(dirname "$0")/diffguard.jar" review --pr "$DIFFGUARD_PR"
                 exit_code=$?
                 if [ $exit_code -ne 0 ]; then
                     echo "❌ DiffGuard：发现严重问题，推送已中止。"

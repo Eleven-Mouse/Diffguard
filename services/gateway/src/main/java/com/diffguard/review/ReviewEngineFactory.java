@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * 审查引擎工厂。
@@ -56,16 +55,6 @@ public class ReviewEngineFactory {
                 yield new PythonReviewEngine("MULTI_AGENT", config, toolServerUrl);
             }
         };
-    }
-
-    /**
-     * 兼容保留：当前不再使用数据库轮询异步引擎，统一返回同步引擎。
-     */
-    public static CompletableFuture<ReviewEngine> createAsync(
-            EngineType type, ReviewConfig config,
-            Path projectDir, List<DiffFileEntry> diffEntries,
-            boolean noCache) {
-        return CompletableFuture.completedFuture(create(type, config, projectDir, diffEntries, noCache));
     }
 
     static String resolveToolServerUrl(ReviewConfig config) {

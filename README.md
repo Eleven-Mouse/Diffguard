@@ -1,4 +1,4 @@
-
+﻿
 
 <h1 align="center">DiffGuard</h1>
 
@@ -34,7 +34,7 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
 | 单次 LLM 调用容易遗漏深层问题 | 多 Agent 并行 + 共享记忆，交叉验证 |
 | LLM 缺乏代码上下文导致误报 | 6 种代码上下文工具（AST / 调用链 / 语义搜索） |
 | AI 调用成本高 | 静态规则前置过滤 + 两级缓存 + Token 预算控制 |
-| 难以集成到现有工作流 | Git Hook + GitHub Webhook 双模式接入 |
+| 难以集成到现有工作流 | Git Hook + GitHub Action 接入 |
 
 ---
 
@@ -74,7 +74,7 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
 ## 微服务重构进展（2026-05-23）
 
 当前 Java 侧正按“先 Tool，再 Orchestrator”的节奏做增量微服务化改造：  
-已完成 gateway 远程适配与旧 `ReviewOrchestrator` 下沉去重（Webhook 改为薄层触发），当前阻塞点是 Python Agent 的真实 MQ 联调验收。
+已完成 gateway 远程适配与旧编排下沉去重，当前阻塞点是 Python Agent 的真实 MQ 联调验收。
 
 - 进度总览：[PROGRESS.md](PROGRESS.md)
 - 当前架构（As-Is）：[ARCHITECTURE_CURRENT.md](ARCHITECTURE_CURRENT.md)
@@ -92,24 +92,23 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
                         │              DiffGuard 整体架构               │
                         └─────────────────────────────────────────────┘
 
-  ┌──────────────┐                          ┌──────────────────────────┐
-  │   Git Hook   │                          │   GitHub Webhook (PR)    │
-  │ (pre-commit  │                          │  HMAC 签名验证            │
-  │  /pre-push)  │                          │  IP 限流 (30 req/min)     │
-  └──────┬───────┘                          └──────────┬───────────────┘
-         │                                             │
-         ▼                                             ▼
+  ┌──────────────┐
+  │   Git Hook   │
+  │ (pre-commit  │
+  │  /pre-push)  │
+  └──────┬───────┘
+         │
+         ▼
   ┌──────────────────────────────────────────────────────────────────┐
   │                     Java Gateway (Javalin)                       │
-  │  ┌────────────┐  ┌──────────────┐  ┌──────────────────────────┐ │
-  │  │ CLI 入口    │  │ Webhook 控制器│  │ Tool Server (端口 9090)  │ │
-  │  │ (Picocli)   │  │ (端口 8080)  │  │ 会话管理 + 工具路由      │ │
-  │  └──────┬─────┘  └──────┬───────┘  └───────────▲──────────────┘ │
-  │         │               │                       │                │
-  │  ┌──────▼───────────────▼───────────────────────┴─────────────┐ │
+  │  ┌────────────┐                     ┌──────────────────────────┐ │
+  │  │ CLI 入口    │                     │ Tool Server (端口 9090)  │ │
+  │  │ (Picocli)   │                     │ 会话管理 + 工具路由      │ │
+  │  └──────┬─────┘                     └───────────▲──────────────┘ │
+  │         │                                       │                │
+  │  ┌──────▼───────────────────────────────────────┴─────────────┐ │
   │  │                    服务调用层                                │ │
   │  │  CLI: DiffCollector → ASTEnricher → ReviewExecutionAdapter │ │
-  │  │  Webhook: ReviewOrchestrator(thin) → ReviewExecutionAdapter│ │
   │  └─────────────────────────┬──────────────────────────────────┘ │
   │                            │                                    │
   │  ┌─────────────────────────▼──────────────────────────────────┐ │
@@ -190,7 +189,7 @@ $env:DIFFGUARD_API_KEY = "your-api-key-here"
 $env:DIFFGUARD_API_BASE_URL = "https://your-api-endpoint/v1"   # 可选，自定义 API 端点
 
 # 4. 在任意 Git 项目中执行审查
-java -jar services/gateway/target/diffguard-1.0.0.jar review --staged
+java -jar services/gateway/target/diffguard-1.0.0.jar review --pr owner/repo#123
 ```
 
 > **提示：** 如果使用自定义 API 端点（代理/转发），代码会在 `DIFFGUARD_API_BASE_URL` 后拼接 `/messages`，请确保地址正确。例如 Anthropic 兼容接口应设为 `https://your-proxy.com/anthropic/v1`。
@@ -210,20 +209,20 @@ mvn clean package
 $env:DIFFGUARD_API_KEY = "your-api-key"
 $env:DIFFGUARD_API_BASE_URL = "https://your-api-endpoint/v1"  # 可选
 
-# 审查暂存区变更（git add 后执行）
-java -jar target/diffguard-1.0.0.jar review --staged
+# 审查指定 PR
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123
 
-# 审查两个分支之间的差异
-java -jar target/diffguard-1.0.0.jar review --from main --to feature-branch
+# 审查另一个 PR
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123
 
 # Pipeline 多维度审查
-java -jar target/diffguard-1.0.0.jar review --staged --pipeline
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline
 
 # Multi-Agent 深度审查
-java -jar target/diffguard-1.0.0.jar review --staged --multi-agent
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --multi-agent
 
 # 有严重问题也强制通过
-java -jar target/diffguard-1.0.0.jar review --staged --force
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --force
 
 # 安装 Git Hook（pre-commit + pre-push，自动审查）
 java -jar target/diffguard-1.0.0.jar install
@@ -239,14 +238,15 @@ java -jar target/diffguard-1.0.0.jar orchestrator-server --port 8088
 ```
 
 安装 Git Hook 后，每次 `git commit` 或 `git push` 将自动触发代码审查。
+  
+> Hook 仅支持 PR 模式。请提前设置 `DIFFGUARD_PR=owner/repo#number`，未设置时 Hook 会跳过审查。
 
-### 方式二：Docker Compose 部署（Server 模式）
+### 方式二：Docker Compose 部署（Action-only 配套服务）
 
 ```bash
 # 配置环境变量
 export DIFFGUARD_API_KEY="sk-your-api-key"
-export DIFFGUARD_WEBHOOK_SECRET="your-webhook-secret"
-export DIFFGUARD_GITHUB_TOKEN="ghp-your-token"
+export DIFFGUARD_TOOL_SECRET="your-tool-secret"  # 可选，开启后 Tool API 需携带 X-Tool-Secret
 
 # 一键启动所有服务
 docker compose up -d
@@ -256,7 +256,6 @@ docker compose ps
 ```
 
 启动后可访问：
-- **Webhook 端点**: `http://localhost:8080/webhook/github`
 - **Tool Server**: `http://localhost:9090`
 - **Agent 健康检查**: `http://localhost:8000/api/v1/health`
 - **RabbitMQ 管理界面**: `http://localhost:15672`
@@ -292,15 +291,6 @@ review:
   max_tokens_per_file: 4000                 # 单文件最大 Token 数
   language: zh                              # 输出语言
 
-# Webhook 服务（Server 模式）
-# webhook:
-#   port: 8080
-#   secret_env: DIFFGUARD_WEBHOOK_SECRET
-#   github_token_env: DIFFGUARD_GITHUB_TOKEN
-#   repos:
-#     - full_name: "owner/repo"
-#       local_path: "/path/to/local/repo"
-
 # Tool 服务（可独立部署）
 # tool_service:
 #   embedded: true          # true: server 进程内嵌 Tool；false: 需单独运行 tool-server 命令
@@ -323,8 +313,6 @@ review:
 |--------|------|------|
 | `DIFFGUARD_API_KEY` | LLM API Key | 是 |
 | `DIFFGUARD_API_BASE_URL` | 自定义 API 端点（代码会在此地址后拼接 `/messages`） | 使用代理时必需 |
-| `DIFFGUARD_WEBHOOK_SECRET` | GitHub Webhook 签名密钥 | Server 模式 |
-| `DIFFGUARD_GITHUB_TOKEN` | GitHub API Token（用于发布 PR 评论） | Server 模式 |
 
 > **Windows 用户：** 可通过系统设置将 `DIFFGUARD_API_KEY` 和 `DIFFGUARD_API_BASE_URL` 添加为用户环境变量，免去每次手动设置。也可将 JDK 的 `bin` 目录加入系统 PATH，简化 `java` 命令调用。
 
@@ -357,23 +345,23 @@ risk_adjustments:
 ### CLI 审查
 
 ```bash
-# 审查暂存区变更（pre-commit 场景）
-java -jar diffguard.jar review --staged
+# 审查指定 PR
+java -jar diffguard.jar review --pr owner/repo#123
 
-# 审查两个分支之间的差异
-java -jar diffguard.jar review --from main --to feature/login
+# 审查另一个 PR
+java -jar diffguard.jar review --pr owner/repo#123
 
 # Pipeline 模式
-java -jar diffguard.jar review --staged --pipeline
+java -jar diffguard.jar review --pr owner/repo#123 --pipeline
 
 # Multi-Agent 模式
-java -jar diffguard.jar review --staged --multi-agent
+java -jar diffguard.jar review --pr owner/repo#123 --multi-agent
 
 # 忽略严重问题，强制通过
-java -jar diffguard.jar review --staged --force
+java -jar diffguard.jar review --pr owner/repo#123 --force
 
 # 指定配置文件
-java -jar diffguard.jar review --staged --config /path/to/config.yml
+java -jar diffguard.jar review --pr owner/repo#123 --config /path/to/config.yml
 ```
 
 ### 输出示例
@@ -402,11 +390,6 @@ java -jar diffguard.jar review --staged --config /path/to/config.yml
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
-### GitHub Webhook PR 评论
-
-Server 模式下，DiffGuard 会自动在 PR 中发布格式化的 Markdown 审查评论，包含严重级别标签、代码定位和修复建议。
-
----
 
 ## 核心流程说明
 
@@ -495,20 +478,17 @@ DiffGuard/
 │   │   ├── pom.xml                       # Maven 构建（Java 21, 18 个依赖）
 │   │   ├── Dockerfile                    # 基于 eclipse-temurin:21-jre
 │   │   └── src/main/java/com/diffguard/
-│   │       ├── DiffGuard.java            # 程序入口
+│   │       ├── cli/
 │   │       ├── cli/                      # CLI 命令层（Picocli）
-│   │       │   ├── DiffGuardMain.java    # 主命令（review/install/uninstall/server）
+│   │       │   ├── DiffGuardMain.java    # 主命令（review/install/uninstall/tool-server/orchestrator-server）
 │   │       │   ├── ReviewCommand.java    # 审查命令
 │   │       │   ├── InstallCommand.java   # Git Hook 安装
-│   │       │   ├── ServerCommand.java    # Webhook 服务器
 │   │       │   └── UninstallCommand.java # Hook 卸载
-│   │       ├── webhook/                 # Webhook 接入与 GitHub 回写
 │   │       ├── toolserver/              # Tool Server（会话 + 工具路由）
 │   │       ├── orchestrator/            # 独立 orchestrator API（任务/状态/结果）
 │   │       ├── review/                  # 审查核心（引擎、编排、模型、AST、规则、RAG）
 │   │       │   ├── ReviewApplicationService.java # CLI 编排入口
 │   │       │   ├── ReviewExecutionAdapter.java   # remote/legacy 适配
-│   │       │   ├── ReviewOrchestrator.java       # Webhook 薄层异步触发
 │   │       │   ├── ReviewEngineFactory.java      # 引擎工厂
 │   │       │   ├── model/                        # ReviewResult/Issue/Severity
 │   │       │   ├── ast/                          # AST 分析与增强
@@ -587,10 +567,10 @@ DiffGuard/
 
 | 层级 | 技术 | 说明 |
 |------|------|------|
-| **网关语言** | Java 21 | 六边形架构，CLI + Server 双模式 |
+| **网关语言** | Java 21 | 六边形架构，CLI + Tool/Orchestrator 服务能力 |
 | **Agent 语言** | Python 3.11+ | FastAPI + LangChain 异步服务 |
 | **CLI 框架** | Picocli 4.7 | 子命令式 CLI |
-| **HTTP 服务** | Javalin 5.6 | 轻量 Webhook + Tool Server |
+| **HTTP 服务** | Javalin 5.6 | 轻量 Tool Server + Orchestrator API |
 | **AI 框架** | LangChain 0.3+ | ReAct Agent + Tool Calling |
 | **LLM 提供商** | OpenAI / Anthropic | 双 Provider 支持，可扩展 |
 | **AST 解析** | JavaParser 3.26 | Java 语法树分析，SPI 多语言扩展 |
@@ -651,3 +631,4 @@ pytest              # 运行测试
 <p align="center">
   如果 DiffGuard 对你有帮助，欢迎给个 Star ⭐
 </p>
+

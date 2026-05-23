@@ -29,7 +29,7 @@ DiffGuard 融合深度代码理解（AST 分析、代码知识图谱、语义检
 | LLM 审查缺乏项目上下文 | AST 分析 + 代码知识图谱 + Code RAG 提供语义理解 |
 | 误报率高 | 两层过滤：正则规则（零 LLM 成本）+ 可选 LLM 二次验证 |
 | 每次审查 LLM 调用成本高 | 静态规则前置过滤，Diff 摘要压缩降低 Token 消耗 |
-| 难以集成到现有工作流 | CLI（Git Hook）· Server（GitHub Webhook）· CI（GitHub Action）三种部署模式 |
+| 难以集成到现有工作流 | CLI（Git Hook）· CI（GitHub Action）双模式接入 |
 | 不同 PR 需要不同审查深度 | Pipeline 模式可配置阶段；Simple 和 Multi-Agent 在路线图中 |
 
 ---
@@ -74,7 +74,7 @@ Diff → 摘要 → 并行审查 → 聚合 → 误报过滤 → 报告
 
 | 领域 | 实现 |
 |---|---|
-| **安全** | HMAC-SHA256 Webhook 签名验证、路径穿越防护（`FileAccessSandbox`）、基于 Session 的工具访问控制（UUID v4 + 10 分钟 TTL） |
+| **安全** | 路径穿越防护（`FileAccessSandbox`）、基于 Session 的工具访问控制（UUID v4 + 10 分钟 TTL） |
 | **韧性** | 优雅降级链：Multi-Agent → Pipeline → Simple → 静态规则。熔断器 + `CallerRunsPolicy` 背压 |
 | **性能** | Caffeine AST 缓存（内容哈希键）、大 PR 自动分片（`MAX_FILES_PER_CHUNK=10`）、审查器并行执行 |
 | **可观测性** | 每阶段 Token 用量追踪、结构化日志（`request_id` 链路传播）、Prometheus 指标端点 |
@@ -88,12 +88,10 @@ Diff → 摘要 → 并行审查 → 聚合 → 误报过滤 → 报告
 graph TB
     subgraph "接入层"
         CLI["CLI<br/>(Git Hook / Picocli)"]
-        WEB["GitHub Webhook<br/>(HMAC-SHA256)"]
         GHA["GitHub Action<br/>(零基础设施)"]
     end
 
     subgraph "Java Gateway — Javalin 5.6"
-        WEBHOOK["Webhook 控制器"]
         TOOLS["工具服务<br/>(端口 9090)"]
         AST["AST 分析器<br/>(JavaParser)"]
         GRAPH["代码知识图谱<br/>(BFS 影响分析)"]
@@ -109,13 +107,8 @@ graph TB
         LLM["LLM Provider<br/>OpenAI / Anthropic"]
     end
 
-    CLI --> WEBHOOK
-    WEB --> WEBHOOK
+    CLI --> TOOLS
     GHA --> PIPELINE
-
-    WEBHOOK --> TOOLS
-    WEBHOOK --> AST
-    WEBHOOK --> GRAPH
 
     PIPELINE --> AGENTS
     AGENTS --> TOOLS_CLIENT
@@ -129,7 +122,7 @@ graph TB
 
 ### 数据流
 
-1. **Webhook / CLI** 触发审查请求
+1. **CLI / GitHub Action** 触发审查请求
 2. **Java Gateway** 通过 JGit 收集 diff，构建 AST 和 CodeGraph
 3. **Python Agent** 接收请求（diff 条目 + Tool Server URL）
 4. **摘要阶段** — LLM 总结变更并评估风险等级
@@ -161,8 +154,8 @@ cd services/gateway && mvn clean package -DskipTests && cd ../..
 # 设置 LLM API Key
 export DIFFGUARD_API_KEY="sk-your-api-key"
 
-# 审查暂存区变更
-java -jar services/gateway/target/diffguard-*.jar review --staged
+# 审查指定 PR
+java -jar services/gateway/target/diffguard-*.jar review --pr owner/repo#123
 ```
 
 ### GitHub Action（零基础设施）
@@ -171,10 +164,19 @@ java -jar services/gateway/target/diffguard-*.jar review --staged
 
 ```yaml
 - name: DiffGuard Code Review
-  uses: kunxing/diffguard-action@v2
+  uses: kunxing/diffguard@v2
   with:
-    api_key: ${{ secrets.DIFFGUARD_API_KEY }}
-    review_mode: pipeline  # 可选: simple, multi_agent
+    api-key: ${{ secrets.DIFFGUARD_API_KEY }}
+    provider: claude
+    model: claude-sonnet-4-20250514
+    language: zh
+    comment-pr: true
+    exclude-directories: "docs,examples"
+    enable-fp-filter: true
+    timeout-minutes: 10
+    # 可选：启用 Java Tool Server（让 Agent 在审查时调用 AST/调用图/语义检索工具）
+    use-java-tool-server: true
+    tool-server-url: http://127.0.0.1:9090
 ```
 
 ---
@@ -192,28 +194,27 @@ mvn clean package
 java -jar target/diffguard-*.jar install
 
 # 审查命令
-java -jar target/diffguard-*.jar review --staged                # 暂存区变更
-java -jar target/diffguard-*.jar review --from main --to feature  # 分支差异
-java -jar target/diffguard-*.jar review --staged --pipeline      # Pipeline 模式
-java -jar target/diffguard-*.jar review --staged --multi-agent   # 深度审查
+java -jar target/diffguard-*.jar review --pr owner/repo#123                 # 指定 PR
+java -jar target/diffguard-*.jar review --pr owner/repo#123 --pipeline       # Pipeline 模式
+java -jar target/diffguard-*.jar review --pr owner/repo#123 --multi-agent    # 深度审查
 
 # 卸载
 java -jar target/diffguard-*.jar uninstall
 ```
 
-### Server 模式（Docker Compose）
+> Hook 仅支持 PR 模式。请提前设置 `DIFFGUARD_PR=owner/repo#number`，未设置时 Hook 会跳过审查。
+
+### Action-only 配套服务（Docker Compose）
 
 ```bash
 export DIFFGUARD_API_KEY="sk-your-api-key"
-export DIFFGUARD_WEBHOOK_SECRET="your-webhook-secret"
-export DIFFGUARD_GITHUB_TOKEN="ghp-your-token"
+export DIFFGUARD_TOOL_SECRET="your-tool-secret"  # 可选，开启后 Tool API 需携带 X-Tool-Secret
 
 docker compose up -d
 ```
 
 | 服务 | 地址 |
 |---|---|
-| Webhook 接收 | `http://localhost:8080/webhook/github` |
 | 工具服务 | `http://localhost:9090` |
 | Agent API | `http://localhost:8000/api/v1/health` |
 
@@ -246,9 +247,7 @@ review:
 |---|---|---|
 | `DIFFGUARD_API_KEY` | LLM API Key | 是 |
 | `DIFFGUARD_API_BASE_URL` | 自定义 API 端点（用于代理） | 否 |
-| `DIFFGUARD_WEBHOOK_SECRET` | Webhook HMAC 密钥 | Server 模式 |
-| `DIFFGUARD_GITHUB_TOKEN` | GitHub Token（用于发布 PR 评论） | Server 模式 |
-| `DIFFGUARD_TOOL_SECRET` | Tool Server 认证密钥 | Server 模式 |
+| `DIFFGUARD_TOOL_SECRET` | Tool Server 认证密钥 | 可选（启用 Tool Server 认证时） |
 
 ---
 
@@ -258,9 +257,8 @@ review:
 services/
 ├── gateway/                              # Java Gateway (Javalin 5.6)
 │   └── src/main/java/com/diffguard/
-│       ├── DiffGuard.java                # 主入口（CLI + Server）
+│       ├── cli/                          # CLI 主入口与子命令
 │       ├── adapter/
-│       │   ├── webhook/                  # GitHub Webhook: HMAC 验证、限流
 │       │   └── toolserver/               # Tool Server: 会话管理、REST 端点
 │       ├── domain/
 │       │   ├── agent/                    # Agent 工具: 沙箱、注册表、6 个工具定义
@@ -313,7 +311,7 @@ services/
 Java Gateway 严格遵循六边形架构与依赖倒置原则：
 - `domain/` 层**零外部依赖**（仅 JDK）
 - `infrastructure/` 实现 `domain` 定义的接口
-- `adapter/` 处理入站 HTTP（Webhook、Tool Server）
+- `adapter/` 处理入站 HTTP（Tool Server）
 - 所有跨层通信通过接口，从不依赖具体实现
 
 ### 代码知识图谱

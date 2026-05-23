@@ -72,7 +72,7 @@
             <version>3.1.8</version>
         </dependency>
 
-        <!-- HTTP Server (Webhook) — javalin-bundle includes javalin transitively -->
+        <!-- HTTP Server (Tool/Orchestrator APIs) — javalin-bundle includes javalin transitively -->
         <dependency>
             <groupId>io.javalin</groupId>
             <artifactId>javalin-bundle</artifactId>
@@ -189,7 +189,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.diffguard.DiffGuard</mainClass>
+                                    <mainClass>com.diffguard.cli.DiffGuardMain</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
