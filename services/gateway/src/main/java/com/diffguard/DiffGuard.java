@@ -3,6 +3,7 @@ package com.diffguard;
 import com.diffguard.adapter.webhook.WebhookServer;
 import com.diffguard.infrastructure.config.ConfigLoader;
 import com.diffguard.infrastructure.config.ReviewConfig;
+import java.nio.file.Path;
 
 /**
  * DiffGuard entry point.
@@ -10,7 +11,7 @@ import com.diffguard.infrastructure.config.ReviewConfig;
  */
 public class DiffGuard {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         int port = 8080;
         String configPath = null;
 
@@ -30,7 +31,9 @@ public class DiffGuard {
             }
         }
 
-        ReviewConfig config = ConfigLoader.load(configPath);
+        ReviewConfig config = (configPath != null && !configPath.isBlank())
+                ? ConfigLoader.loadFromFile(Path.of(configPath))
+                : ConfigLoader.load(Path.of(System.getProperty("user.dir")));
         WebhookServer server = new WebhookServer(config);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
