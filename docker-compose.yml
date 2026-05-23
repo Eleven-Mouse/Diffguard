@@ -36,13 +36,6 @@ services:
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=diffguard
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-diffguard123}
-      - MYSQL_HOST=blog-mysql
-      - MYSQL_PORT=3306
-      - MYSQL_DB=diffguard
-      - MYSQL_USER=root
-      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD:-}
-      - REDIS_HOST=blog-redis
-      - REDIS_PORT=6379
     volumes:
       - ${PROJECT_DIR:-.}:/project:ro
     depends_on:
@@ -52,7 +45,6 @@ services:
         condition: service_healthy
     networks:
       - diffguard-net
-      - blog-net
 
   diffguard-agent:
     build:
@@ -67,14 +59,11 @@ services:
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=diffguard
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-diffguard123}
-      - REDIS_HOST=blog-redis
-      - REDIS_PORT=6379
     depends_on:
       rabbitmq:
         condition: service_healthy
     networks:
       - diffguard-net
-      - blog-net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 10s
@@ -88,6 +77,3 @@ volumes:
 networks:
   diffguard-net:
     driver: bridge
-  blog-net:
-    external: true
-    name: blog_blog-net

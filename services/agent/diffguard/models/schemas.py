@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ReviewMode(str, Enum):
+    SIMPLE = "SIMPLE"
     PIPELINE = "PIPELINE"
     MULTI_AGENT = "MULTI_AGENT"
 
@@ -34,7 +35,7 @@ class DiffEntry(BaseModel):
 class LlmConfig(BaseModel):
     provider: Literal["openai", "claude"] = "openai"
     model: str = "gpt-4o"
-    api_key: str = ""
+    api_key: str = Field(default="", exclude=True)
     api_key_env: str = "DIFFGUARD_API_KEY"
     base_url: str | None = None
     max_tokens: int = 16384
@@ -62,7 +63,8 @@ class ReviewConfigPayload(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    request_id: str
+    request_id: str = ""
+    task_id: str | None = None
     mode: ReviewMode
     project_dir: str
     diff_entries: list[DiffEntry]
@@ -70,6 +72,14 @@ class ReviewRequest(BaseModel):
     review_config: ReviewConfigPayload = Field(default_factory=ReviewConfigPayload)
     tool_server_url: str = "http://localhost:9090"
     allowed_files: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def sync_ids(self) -> ReviewRequest:
+        if not self.request_id and self.task_id:
+            self.request_id = self.task_id
+        if not self.task_id and self.request_id:
+            self.task_id = self.request_id
+        return self
 
 
 class IssuePayload(BaseModel):
@@ -82,6 +92,7 @@ class IssuePayload(BaseModel):
 
 
 class ReviewResponse(BaseModel):
+    task_id: str | None = None
     request_id: str
     status: ReviewStatus = ReviewStatus.COMPLETED
     has_critical_flag: bool = False
@@ -90,6 +101,12 @@ class ReviewResponse(BaseModel):
     review_duration_ms: int = 0
     summary: str = ""
     error: str | None = None
+
+    @model_validator(mode="after")
+    def sync_ids(self) -> ReviewResponse:
+        if not self.task_id and self.request_id:
+            self.task_id = self.request_id
+        return self
 
 
 # --- Tool server models ---
@@ -119,3 +136,19 @@ class ToolResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     langchain_version: str = ""
+
+
+# --- Context ingest ---
+
+
+class ContextIngestRequest(BaseModel):
+    file_path: str
+    namespace: str = "default"
+
+
+class ContextIngestResponse(BaseModel):
+    success: bool
+    file_path: str
+    chunks: int = 0
+    collection: str = ""
+    error: str | None = None

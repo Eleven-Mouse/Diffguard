@@ -15,6 +15,7 @@ from app.agent.pipeline_orchestrator import PipelineOrchestrator
 from app.config import settings
 from app.models.schemas import (
     DiffEntry,
+    IssuePayload,
     LlmConfig,
     ReviewConfigPayload,
     ReviewMode,
@@ -48,13 +49,16 @@ class ReviewTaskConsumer:
         exchange = await self.channel.declare_exchange(
             "review.exchange", aio_pika.ExchangeType.TOPIC, durable=True,
         )
-        dlx = await self.channel.declare_exchange(
+        await self.channel.declare_exchange(
             "review.dlx", aio_pika.ExchangeType.DIRECT, durable=True,
         )
 
-        # Queues
-        queues = ["review.agent.queue", "review.pipeline.queue"]
-        for q_name in queues:
+        # Queues and precise bindings (avoid duplicate consumption).
+        queue_bindings = {
+            "review.agent.queue": ["review.multi_agent.task", "review.agent.task"],
+            "review.pipeline.queue": ["review.pipeline.task"],
+        }
+        for q_name, bindings in queue_bindings.items():
             queue = await self.channel.declare_queue(
                 q_name,
                 durable=True,
@@ -65,7 +69,8 @@ class ReviewTaskConsumer:
                     "x-message-ttl": 600000,
                 },
             )
-            await queue.bind(exchange, routing_key=f"review.*.task")
+            for routing_key in bindings:
+                await queue.bind(exchange, routing_key=routing_key)
             self._consumer_tag = await queue.consume(self._on_message)
 
         # Result queue for publishing results back
@@ -86,13 +91,20 @@ class ReviewTaskConsumer:
             try:
                 import json
                 data = json.loads(body)
-                task_id = data.get("task_id", "unknown")
+                task_id = self._resolve_task_id(data)
                 mode = data.get("mode", "PIPELINE")
                 logger.info("Received task: id=%s mode=%s", task_id, mode)
 
                 # Build ReviewRequest from message
                 request = self._build_request(data)
                 request.request_id = task_id
+                request.task_id = task_id
+
+                if settings.AGENT_MQ_MOCK_MODE == "success":
+                    result = self._mock_success_result(task_id, mode)
+                    await self._publish_result(result)
+                    logger.info("Task %s completed by mock MQ mode", task_id)
+                    return
 
                 # Dispatch to orchestrator
                 if mode == ReviewMode.PIPELINE.value:
@@ -100,10 +112,10 @@ class ReviewTaskConsumer:
                 elif mode == ReviewMode.MULTI_AGENT.value:
                     orchestrator = MultiAgentOrchestrator(request)
                 else:
-                    logger.warning("Unknown mode: %s, defaulting to MULTI_AGENT", mode)
-                    orchestrator = MultiAgentOrchestrator(request)
+                    raise ValueError(f"Unsupported mode for agent worker: {mode}")
 
                 result = await orchestrator.run()
+                result.task_id = task_id
                 result.request_id = task_id
                 result.review_duration_ms = int((time.monotonic() - start) * 1000)
 
@@ -118,6 +130,7 @@ class ReviewTaskConsumer:
             except Exception as e:
                 logger.exception("Task %s failed: %s", task_id, e)
                 error_result = ReviewResponse(
+                    task_id=task_id,
                     request_id=task_id,
                     status=ReviewStatus.FAILED,
                     error=str(e),
@@ -127,13 +140,15 @@ class ReviewTaskConsumer:
 
     def _build_request(self, data: dict[str, Any]) -> ReviewRequest:
         """Build ReviewRequest from RabbitMQ message payload."""
+        task_id = self._resolve_task_id(data)
         llm_data = data.get("llm_config", {})
         review_data = data.get("review_config", {})
         entries_data = data.get("diff_entries", [])
 
         return ReviewRequest(
-            request_id=data.get("task_id", ""),
-            mode=ReviewMode(data.get("mode", "MULTI_AGENT")),
+            request_id=task_id,
+            task_id=task_id,
+            mode=ReviewMode(data.get("mode", "PIPELINE")),
             project_dir=data.get("project_dir", ""),
             diff_entries=[
                 DiffEntry(
@@ -161,6 +176,16 @@ class ReviewTaskConsumer:
             allowed_files=data.get("allowed_files", []),
         )
 
+    @staticmethod
+    def _resolve_task_id(data: dict[str, Any]) -> str:
+        task_id = (data.get("task_id") or "").strip()
+        if task_id:
+            return task_id
+        request_id = (data.get("request_id") or "").strip()
+        if request_id:
+            return request_id
+        return "unknown"
+
     async def _publish_result(self, result: ReviewResponse) -> None:
         """Publish review result to result queue."""
         if self.channel is None:
@@ -173,6 +198,28 @@ class ReviewTaskConsumer:
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
             ),
             routing_key=f"review.result.{result.status.value}",
+        )
+
+    @staticmethod
+    def _mock_success_result(task_id: str, mode: str) -> ReviewResponse:
+        return ReviewResponse(
+            task_id=task_id,
+            request_id=task_id,
+            status=ReviewStatus.COMPLETED,
+            has_critical_flag=False,
+            issues=[
+                IssuePayload(
+                    severity="INFO",
+                    file="mock/" + mode.lower() + ".txt",
+                    line=1,
+                    type="mock-success",
+                    message="mock MQ integration success",
+                    suggestion="disable AGENT_MQ_MOCK_MODE for real LLM execution",
+                )
+            ],
+            total_tokens_used=0,
+            review_duration_ms=1,
+            summary="mock-success",
         )
 
     async def stop(self) -> None:

@@ -1,13 +1,13 @@
 package com.diffguard.cli;
 
-import com.diffguard.service.ReviewApplicationService;
-import com.diffguard.infrastructure.config.ReviewConfig;
-import com.diffguard.domain.review.model.DiffFileEntry;
-import com.diffguard.domain.review.model.ReviewResult;
-import com.diffguard.infrastructure.output.ReviewReportPrinter;
-import com.diffguard.infrastructure.output.ProgressDisplay;
-import com.diffguard.infrastructure.output.TerminalUI;
-import com.diffguard.service.ReviewEngineFactory;
+import com.diffguard.review.ReviewApplicationService;
+import com.diffguard.platform.config.ReviewConfig;
+import com.diffguard.review.model.DiffFileEntry;
+import com.diffguard.review.model.ReviewResult;
+import com.diffguard.platform.output.ReviewReportPrinter;
+import com.diffguard.platform.output.ProgressDisplay;
+import com.diffguard.platform.output.TerminalUI;
+import com.diffguard.review.ReviewEngineFactory;
 import picocli.CommandLine;
 
 import java.nio.file.Path;

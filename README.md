@@ -71,6 +71,20 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
 
 ---
 
+## 微服务重构进展（2026-05-23）
+
+当前 Java 侧正按“先 Tool，再 Orchestrator”的节奏做增量微服务化改造：  
+已完成 gateway 远程适配与旧 `ReviewOrchestrator` 下沉去重（Webhook 改为薄层触发），当前阻塞点是 Python Agent 的真实 MQ 联调验收。
+
+- 进度总览：[PROGRESS.md](PROGRESS.md)
+- 当前架构（As-Is）：[ARCHITECTURE_CURRENT.md](ARCHITECTURE_CURRENT.md)
+- 目标架构（To-Be）：[ARCHITECTURE_TARGET.md](ARCHITECTURE_TARGET.md)
+- 迁移计划（Day1~Day5）：[MIGRATION_PLAN.md](MIGRATION_PLAN.md)
+- Orchestrator 契约：[ORCHESTRATOR_CONTRACT.md](ORCHESTRATOR_CONTRACT.md)
+- 第一轮验收记录：[REFACTOR_ACCEPTANCE_ROUND1.md](REFACTOR_ACCEPTANCE_ROUND1.md)
+
+---
+
 ## 架构设计
 
 ```
@@ -93,8 +107,9 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
   │  └──────┬─────┘  └──────┬───────┘  └───────────▲──────────────┘ │
   │         │               │                       │                │
   │  ┌──────▼───────────────▼───────────────────────┴─────────────┐ │
-  │  │                    服务编排层                                │ │
-  │  │  DiffCollector → ASTEnricher → RuleEngine → ReviewEngine   │ │
+  │  │                    服务调用层                                │ │
+  │  │  CLI: DiffCollector → ASTEnricher → ReviewExecutionAdapter │ │
+  │  │  Webhook: ReviewOrchestrator(thin) → ReviewExecutionAdapter│ │
   │  └─────────────────────────┬──────────────────────────────────┘ │
   │                            │                                    │
   │  ┌─────────────────────────▼──────────────────────────────────┐ │
@@ -113,7 +128,7 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
   │  ┌────────────────────────────────────────────────────────────┐ │
   │  │                    基础设施层                                │ │
   │  │  LlmClient (重试/批处理) │ Resilience4j │ 缓存 │ 持久化    │ │
-  │  │  RabbitMQ Publisher      │ MySQL        │ Redis │ Metrics  │ │
+  │  │  RabbitMQ Publisher      │ 本地内存结果态 │ 指标监控 │ │
   │  └────────────────────────────────────────────────────────────┘ │
   └──────────────────────┬─────────────────────────────────────────┘
                          │ HTTP REST + RabbitMQ
@@ -215,6 +230,12 @@ java -jar target/diffguard-1.0.0.jar install
 
 # 卸载 Hook
 java -jar target/diffguard-1.0.0.jar uninstall
+
+# 启动独立 Tool 服务（微服务拆分场景）
+java -jar target/diffguard-1.0.0.jar tool-server --port 9090
+
+# 启动独立 Review Orchestrator 服务（第二阶段）
+java -jar target/diffguard-1.0.0.jar orchestrator-server --port 8088
 ```
 
 安装 Git Hook 后，每次 `git commit` 或 `git push` 将自动触发代码审查。
@@ -279,6 +300,21 @@ review:
 #   repos:
 #     - full_name: "owner/repo"
 #       local_path: "/path/to/local/repo"
+
+# Tool 服务（可独立部署）
+# tool_service:
+#   embedded: true          # true: server 进程内嵌 Tool；false: 需单独运行 tool-server 命令
+#   host: localhost
+#   port: 9090
+#   # url: http://localhost:9090
+
+# Orchestrator 远程模式（gateway 调 orchestrator-service）
+# orchestrator:
+#   mode: legacy            # legacy | remote
+#   url: http://localhost:8088
+#   timeout_seconds: 360
+#   poll_interval_ms: 1000
+#   fallback_to_legacy: true
 ```
 
 ### 环境变量
@@ -466,68 +502,27 @@ DiffGuard/
 │   │       │   ├── InstallCommand.java   # Git Hook 安装
 │   │       │   ├── ServerCommand.java    # Webhook 服务器
 │   │       │   └── UninstallCommand.java # Hook 卸载
-│   │       ├── adapter/                  # 适配器层
-│   │       │   ├── webhook/              # GitHub Webhook 接入
-│   │       │   │   ├── WebhookServer.java       # Javalin HTTP 服务器
-│   │       │   │   ├── WebhookController.java   # Webhook 请求处理
-│   │       │   │   ├── SignatureVerifier.java   # HMAC-SHA256 签名验证
-│   │       │   │   ├── RateLimiter.java         # IP 限流（Caffeine）
-│   │       │   │   ├── GitHubPayloadParser.java # PR 载荷解析
-│   │       │   │   └── GitHubApiClient.java     # GitHub API 评论发布
-│   │       │   └── toolserver/           # Agent 工具服务器
-│   │       │       ├── ToolServerController.java  # 工具路由
-│   │       │       └── ToolSessionManager.java    # 会话管理（TTL 10min）
-│   │       ├── domain/                   # 领域层
-│   │       │   ├── review/              # 审查引擎
-│   │       │   │   ├── ReviewEngine.java         # 统一审查接口
-│   │       │   │   ├── ReviewService.java        # Simple 模式实现
-│   │       │   │   ├── AsyncReviewEngine.java    # 异步轮询引擎
-│   │       │   │   ├── ReviewCache.java          # 两级缓存
-│   │       │   │   └── model/                    # ReviewResult/Issue/Severity
-│   │       │   ├── agent/               # Agent 工具体系
-│   │       │   │   ├── core/            # AgentContext/AgentTool/ToolResult
-│   │       │   │   ├── tools/           # 6 种工具实现 + 安全沙箱
-│   │       │   │   ├── python/          # Python Agent HTTP 客户端
-│   │       │   │   └── ToolRegistry.java
-│   │       │   ├── ast/                 # AST 语义分析
-│   │       │   │   ├── ASTAnalyzer.java         # JavaParser 单文件分析
-│   │       │   │   ├── ASTEnricher.java         # Diff AST 上下文增强
-│   │       │   │   ├── ProjectASTAnalyzer.java  # 跨文件关系构建
-│   │       │   │   ├── ASTContextBuilder.java    # Token 预算控制
-│   │       │   │   ├── ASTCache.java            # Caffeine 缓存
-│   │       │   │   ├── spi/                     # 多语言 AST SPI
-│   │       │   │   └── model/                   # 数据模型
-│   │       │   ├── codegraph/           # 代码知识图谱
-│   │       │   │   ├── CodeGraph.java           # 有向图 + 查询 API
-│   │       │   │   ├── CodeGraphBuilder.java    # 4 遍构建器
-│   │       │   │   ├── GraphNode.java           # FILE/CLASS/METHOD/INTERFACE
-│   │       │   │   └── GraphEdge.java           # CALLS/EXTENDS/IMPLEMENTS/IMPORTS
-│   │       │   ├── coderag/             # 代码语义检索
-│   │       │   │   ├── CodeRAGService.java      # 索引 + 检索门面
-│   │       │   │   ├── CodeSlicer.java          # 多粒度切片
-│   │       │   │   ├── LocalTFIDFProvider.java  # TF-IDF 嵌入（零依赖）
-│   │       │   │   ├── OpenAiEmbeddingProvider.java  # OpenAI 嵌入
-│   │       │   │   ├── InMemoryVectorStore.java      # 内存向量库
-│   │       │   │   └── RedisVectorStore.java         # Redis 向量库
-│   │       │   └── rules/               # 静态规则引擎
-│   │       │       └── RuleEngine.java          # 4 条零 LLM 成本规则
-│   │       ├── service/                 # 应用服务层
-│   │       │   ├── ReviewApplicationService.java  # CLI 编排
-│   │       │   ├── ReviewOrchestrator.java        # Server 编排（10 步流水线）
-│   │       │   └── ReviewEngineFactory.java       # 引擎工厂
-│   │       ├── infrastructure/          # 基础设施层
-│   │       │   ├── llm/                # LLM 客户端
-│   │       │   │   ├── LlmClient.java           # 重试 + 批处理 + 格式纠正
-│   │       │   │   ├── provider/                # Claude/OpenAI HTTP Provider
-│   │       │   │   └── BatchReviewExecutor.java # 并发批处理（max 3）
-│   │       │   ├── messaging/          # RabbitMQ 消息队列
-│   │       │   ├── persistence/        # MySQL 持久化（HikariCP）
-│   │       │   ├── prompt/             # Prompt 模板引擎
-│   │       │   ├── resilience/         # Resilience4j 弹性服务
-│   │       │   ├── config/             # 三层配置加载
-│   │       │   ├── git/                # JGit Diff 采集
-│   │       │   ├── observability/      # Micrometer + Prometheus
-│   │       │   └── output/             # 终端 UI（ANSI/Spinner/Markdown）
+│   │       ├── webhook/                 # Webhook 接入与 GitHub 回写
+│   │       ├── toolserver/              # Tool Server（会话 + 工具路由）
+│   │       ├── orchestrator/            # 独立 orchestrator API（任务/状态/结果）
+│   │       ├── review/                  # 审查核心（引擎、编排、模型、AST、规则、RAG）
+│   │       │   ├── ReviewApplicationService.java # CLI 编排入口
+│   │       │   ├── ReviewExecutionAdapter.java   # remote/legacy 适配
+│   │       │   ├── ReviewOrchestrator.java       # Webhook 薄层异步触发
+│   │       │   ├── ReviewEngineFactory.java      # 引擎工厂
+│   │       │   ├── model/                        # ReviewResult/Issue/Severity
+│   │       │   ├── ast/                          # AST 分析与增强
+│   │       │   ├── rules/                        # 静态规则引擎
+│   │       │   ├── codegraph/                    # 代码知识图谱
+│   │       │   └── coderag/                      # 语义检索
+│   │       ├── agent/                   # Agent 工具体系（core/tools/python）
+│   │       ├── platform/                # 平台能力（config/git/llm/messaging/...）
+│   │       │   ├── config/
+│   │       │   ├── git/
+│   │       │   ├── llm/
+│   │       │   ├── messaging/
+│   │       │   ├── output/
+│   │       │   └── resilience/
 │   │       └── resources/
 │   │           ├── application.yml      # 默认配置
 │   │           └── db/schema.sql        # 数据库建表语句
@@ -600,8 +595,7 @@ DiffGuard/
 | **LLM 提供商** | OpenAI / Anthropic | 双 Provider 支持，可扩展 |
 | **AST 解析** | JavaParser 3.26 | Java 语法树分析，SPI 多语言扩展 |
 | **消息队列** | RabbitMQ 3.13 | 异步审查任务，死信队列 |
-| **数据库** | MySQL 8.4 | 任务/结果持久化，HikariCP 连接池 |
-| **向量存储** | Redis 7.2 / 内存 | Code RAG 向量检索 |
+| **向量存储** | 内存 | Code RAG 向量检索 |
 | **缓存** | Caffeine 3.1 | 两级审查结果缓存（内存 + 磁盘） |
 | **弹性** | Resilience4j 2.2 | 熔断、限流、重试 |
 | **可观测** | Micrometer + Prometheus | 审查指标采集与暴露 |

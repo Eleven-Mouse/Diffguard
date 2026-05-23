@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from pathlib import Path
 
 import langchain
 from fastapi import FastAPI
@@ -12,7 +13,10 @@ from fastapi import FastAPI
 from app.agent.pipeline_orchestrator import PipelineOrchestrator
 from app.agent.multi_agent_orchestrator import MultiAgentOrchestrator
 from app.config import settings
+from app.context_ingest import ContextIngestor
 from app.models.schemas import (
+    ContextIngestRequest,
+    ContextIngestResponse,
     HealthResponse,
     ReviewMode,
     ReviewRequest,
@@ -24,6 +28,7 @@ app = FastAPI(title="DiffGuard Agent Service", version="0.1.0")
 
 # RabbitMQ consumer (lazy init)
 _rabbitmq_consumer = None
+_context_ingestor = ContextIngestor()
 
 
 @app.get("/api/v1/health", response_model=HealthResponse)
@@ -38,6 +43,7 @@ async def health() -> HealthResponse:
 async def review(request: ReviewRequest) -> ReviewResponse:
     start = time.monotonic()
     request_id = request.request_id or str(uuid.uuid4())
+    task_id = request.task_id or request_id
 
     # Propagate trace ID for cross-service correlation
     import logging
@@ -51,6 +57,7 @@ async def review(request: ReviewRequest) -> ReviewResponse:
             orchestrator = MultiAgentOrchestrator(request)
         else:
             return ReviewResponse(
+                task_id=task_id,
                 request_id=request_id,
                 status=ReviewStatus.FAILED,
                 error=f"Unsupported mode: {request.mode}",
@@ -58,16 +65,45 @@ async def review(request: ReviewRequest) -> ReviewResponse:
 
         result = await orchestrator.run()
 
+        result.task_id = task_id
         result.request_id = request_id
         result.review_duration_ms = int((time.monotonic() - start) * 1000)
         return result
 
     except Exception as e:
         return ReviewResponse(
+            task_id=task_id,
             request_id=request_id,
             status=ReviewStatus.FAILED,
             error=str(e),
             review_duration_ms=int((time.monotonic() - start) * 1000),
+        )
+
+
+@app.post("/api/v1/context/ingest", response_model=ContextIngestResponse)
+async def context_ingest(request: ContextIngestRequest) -> ContextIngestResponse:
+    if not settings.CONTEXT_INGEST_ENABLED:
+        return ContextIngestResponse(
+            success=False,
+            file_path=request.file_path,
+            error="context ingest disabled by CONTEXT_INGEST_ENABLED",
+        )
+    try:
+        result = _context_ingestor.ingest_file(
+            path=Path(request.file_path),
+            namespace=request.namespace,
+        )
+        return ContextIngestResponse(
+            success=True,
+            file_path=result.path,
+            chunks=result.chunks,
+            collection=result.collection,
+        )
+    except Exception as e:
+        return ContextIngestResponse(
+            success=False,
+            file_path=request.file_path,
+            error=str(e),
         )
 
 

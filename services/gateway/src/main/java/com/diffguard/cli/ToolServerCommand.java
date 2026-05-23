@@ -1,18 +1,18 @@
 package com.diffguard.cli;
 
+import com.diffguard.toolserver.ToolServerApp;
+import com.diffguard.exception.ConfigException;
 import com.diffguard.platform.config.ConfigLoader;
 import com.diffguard.platform.config.ReviewConfig;
-import com.diffguard.exception.ConfigException;
 import com.diffguard.platform.output.TerminalUI;
-import com.diffguard.webhook.WebhookServer;
 import picocli.CommandLine;
 
 import java.nio.file.Path;
 
-@CommandLine.Command(name = "server", description = "启动 Webhook 服务器接收 GitHub PR 事件")
-public class ServerCommand implements Runnable {
+@CommandLine.Command(name = "tool-server", description = "启动独立 Tool 服务（/api/v1/tools/*）")
+public class ToolServerCommand implements Runnable {
 
-    @CommandLine.Option(names = {"--port"}, description = "监听端口（默认从配置读取或 8080）")
+    @CommandLine.Option(names = {"--port"}, description = "监听端口（默认从配置读取或 9090）")
     Integer port;
 
     @CommandLine.Option(names = {"--config"}, description = "配置文件路径")
@@ -23,7 +23,6 @@ public class ServerCommand implements Runnable {
 
     @Override
     public void run() {
-        // 1. 加载配置
         ReviewConfig config;
         try {
             config = configPath != null
@@ -35,28 +34,16 @@ public class ServerCommand implements Runnable {
             return;
         }
 
-        // 2. 校验 webhook 配置
-        if (config.getWebhook() == null) {
-            TerminalUI.error("Error: webhook section missing in config.");
-            parent.setExitCode(1);
-            return;
-        }
+        ToolServerApp server = new ToolServerApp(config);
+        int effectivePort = port != null ? port : server.resolvePort();
 
-        // 3. 确定端口
-        int effectivePort = port != null ? port : config.getWebhook().getPort();
-
-        // 4. 启动服务器
-        WebhookServer server = new WebhookServer(config);
-
-        // 注册关闭钩子
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            TerminalUI.println("\nShutting down webhook server...");
+            TerminalUI.println("\nShutting down tool server...");
             server.stop();
         }));
 
         server.start(effectivePort);
 
-        // 主线程阻塞，保持 JVM 存活
         try {
             Thread.currentThread().join();
         } catch (InterruptedException e) {
@@ -65,3 +52,4 @@ public class ServerCommand implements Runnable {
         parent.setExitCode(0);
     }
 }
+

@@ -1,4 +1,0 @@
-请合并以下专项审查结果：
-
-变更总结：{{summary}}
-{{reviewer_results}}

@@ -44,11 +44,36 @@ review:
 #   model: text-embedding-3-small  # OpenAI embedding 模型
 #   dimensions: 1536           # 向量维度
 
+# Code RAG 向量存储（ChromaDB）
+# coderag_store:
+#   provider: chromadb
+#   chroma_url: http://localhost:8000
+#   chroma_tenant: default_tenant
+#   chroma_database: default_database
+#   chroma_collection: diffguard_code_chunks
+#   chroma_api_token_env: CHROMA_API_TOKEN
+#   timeout_seconds: 30
+
 # Agent 服务配置（微服务部署时使用）
 # agent_service:
 #   url: http://localhost:8000
 #   timeout_seconds: 300
 #   tool_server_port: 9090
+
+# Tool 服务配置（可独立部署）
+# tool_service:
+#   embedded: true          # true: 随 gateway server 进程内嵌启动；false: 独立 tool-server 进程
+#   host: localhost
+#   port: 9090
+#   # url: http://localhost:9090   # 可直接指定完整 URL（优先级高于 host/port）
+
+# Review Orchestrator 配置（gateway -> orchestrator 远程调用）
+# orchestrator:
+#   mode: legacy                 # legacy | remote
+#   url: http://localhost:8088
+#   timeout_seconds: 360
+#   poll_interval_ms: 1000
+#   fallback_to_legacy: true
 
 # 消息队列配置（微服务部署时使用）
 # message_queue:
@@ -57,21 +82,6 @@ review:
 #   port: 5672
 #   user: guest
 #   password_env: RABBITMQ_PASSWORD
-
-# 数据库配置（微服务部署时使用）
-# database:
-#   enabled: false
-#   host: localhost
-#   port: 3306
-#   name: diffguard
-#   user: diffguard
-#   password_env: MYSQL_PASSWORD
-
-# Redis 配置（微服务部署时使用）
-# redis:
-#   enabled: false
-#   host: localhost
-#   port: 6379
 
 # Webhook 服务器配置（仅 server 模式需要）
 # webhook:

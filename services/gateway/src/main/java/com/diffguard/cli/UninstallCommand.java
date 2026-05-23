@@ -1,7 +1,7 @@
 package com.diffguard.cli;
 
-import com.diffguard.infrastructure.git.GitHookInstaller;
-import com.diffguard.infrastructure.output.TerminalUI;
+import com.diffguard.platform.git.GitHookInstaller;
+import com.diffguard.platform.output.TerminalUI;
 import picocli.CommandLine;
 
 import java.nio.file.Path;

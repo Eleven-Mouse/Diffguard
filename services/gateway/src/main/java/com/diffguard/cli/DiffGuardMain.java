@@ -15,7 +15,9 @@ import picocli.CommandLine;
                 ReviewCommand.class,
                 InstallCommand.class,
                 UninstallCommand.class,
-                ServerCommand.class
+                ServerCommand.class,
+                ToolServerCommand.class,
+                OrchestratorServerCommand.class
         }
 )
 public class DiffGuardMain implements Runnable {

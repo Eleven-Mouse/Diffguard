@@ -1,6 +1,6 @@
 package com.diffguard.cli;
 
-import com.diffguard.infrastructure.git.GitHookInstaller;
+import com.diffguard.platform.git.GitHookInstaller;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

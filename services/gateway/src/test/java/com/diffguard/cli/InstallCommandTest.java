@@ -155,7 +155,7 @@ class InstallCommandTest {
             Path gitRepo = createGitRepo(tempDir);
 
             // Directly test GitHookInstaller for verification
-            com.diffguard.infrastructure.git.GitHookInstaller.installPreCommit(gitRepo);
+            com.diffguard.platform.git.GitHookInstaller.installPreCommit(gitRepo);
             Path hookFile = gitRepo.resolve(".git").resolve("hooks").resolve("pre-commit");
             assertTrue(Files.exists(hookFile), "pre-commit hook should be created");
 
@@ -168,7 +168,7 @@ class InstallCommandTest {
         void prePushHookCreatedInGitRepo() throws IOException {
             Path gitRepo = createGitRepo(tempDir);
 
-            com.diffguard.infrastructure.git.GitHookInstaller.installPrePush(gitRepo);
+            com.diffguard.platform.git.GitHookInstaller.installPrePush(gitRepo);
             Path hookFile = gitRepo.resolve(".git").resolve("hooks").resolve("pre-push");
             assertTrue(Files.exists(hookFile), "pre-push hook should be created");
 
@@ -186,7 +186,7 @@ class InstallCommandTest {
             Files.writeString(hookFile, "#!/bin/sh\nexisting hook content");
 
             // Install should back it up
-            com.diffguard.infrastructure.git.GitHookInstaller.installPreCommit(gitRepo);
+            com.diffguard.platform.git.GitHookInstaller.installPreCommit(gitRepo);
 
             Path backup = gitRepo.resolve(".git").resolve("hooks").resolve("pre-commit.diffguard-backup");
             assertTrue(Files.exists(backup), "Backup should exist");
@@ -198,9 +198,9 @@ class InstallCommandTest {
         void throwsWhenNotGitRepo() {
             // tempDir has no .git directory
             assertThrows(IOException.class, () ->
-                    com.diffguard.infrastructure.git.GitHookInstaller.installPreCommit(tempDir));
+                    com.diffguard.platform.git.GitHookInstaller.installPreCommit(tempDir));
             assertThrows(IOException.class, () ->
-                    com.diffguard.infrastructure.git.GitHookInstaller.installPrePush(tempDir));
+                    com.diffguard.platform.git.GitHookInstaller.installPrePush(tempDir));
         }
     }
 }
