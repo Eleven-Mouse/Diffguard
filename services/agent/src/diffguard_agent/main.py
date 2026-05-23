@@ -123,8 +123,9 @@ async def review(request: ReviewRequest) -> ReviewResponse:
 
     try:
         if request.mode in (ReviewMode.PIPELINE, ReviewMode.MULTI_AGENT):
-            # Keep a single execution path for now; MULTI_AGENT shares the
-            # same transport contract and falls back to pipeline execution.
+            # Keep a single execution path for now.
+            # MULTI_AGENT is currently an API-compatible alias that
+            # reuses pipeline execution.
             orchestrator = PipelineOrchestrator(request)
         else:
             return ReviewResponse(

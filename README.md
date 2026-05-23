@@ -3,7 +3,7 @@
 <h1 align="center">DiffGuard</h1>
 
 <p align="center">
-  <strong>AI 驱动的多 Agent 智能代码审查系统</strong>
+  <strong>AI 驱动的分层智能代码审查系统</strong>
 </p>
 
 <p align="center">
@@ -22,16 +22,16 @@
 
 ## 项目简介
 
-DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Agent 协作**、**AST 语义理解** 和 **代码知识图谱** 提供深度、精准的自动化 Code Review。
+DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **分层审查编排**、**AST 语义理解** 和 **代码知识图谱** 提供深度、精准的自动化 Code Review。
 
-与传统的 LLM 单次调用审查不同，DiffGuard 将代码审查拆解为多个专业维度——安全、性能、架构，由独立的 AI Agent 并行审查后聚合结论，并支持 Agent 间的知识共享。同时，内置的静态规则引擎可在 **零 LLM 开销** 下拦截常见问题。
+与传统的 LLM 单次调用审查不同，DiffGuard 将代码审查拆解为多个专业维度——安全、逻辑、质量，由并行域审查器协同分析后聚合结论。同时，内置的静态规则引擎可在 **零 LLM 开销** 下拦截常见问题。
 
 ### 为什么选择 DiffGuard？
 
 | 痛点 | DiffGuard 的解决方案 |
 |------|----------------------|
 | 人工 Code Review 耗时且标准不一 | AI 多维度自动审查，输出结构化结果 |
-| 单次 LLM 调用容易遗漏深层问题 | 多 Agent 并行 + 共享记忆，交叉验证 |
+| 单次 LLM 调用容易遗漏深层问题 | 并行域审查 + 共享上下文，交叉验证 |
 | LLM 缺乏代码上下文导致误报 | 6 种代码上下文工具（AST / 调用链 / 语义搜索） |
 | AI 调用成本高 | 静态规则前置过滤 + 两级缓存 + Token 预算控制 |
 | 难以集成到现有工作流 | Git Hook + GitHub Action 接入 |
@@ -46,13 +46,15 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
 |------|------|----------|------|
 | **Simple** | 单次 LLM 调用 | 快速检查、日常提交 | 低 |
 | **Pipeline** | 3 阶段流水线（摘要 → 并行审查 → 聚合） | 中等复杂度变更 | 中 |
-| **Multi-Agent** | 策略规划 + 并行 ReAct Agent + 共享记忆 | 大型 PR、高风险变更 | 较高 |
+| **Multi-Agent** | 兼容入口（当前回退到 Pipeline） | 大型 PR、高风险变更 | 较高 |
 
-### 智能体系统
+> 说明：当前 `services/agent/src` 主实现是 `Pipeline`；`MULTI_AGENT` 仅保留为兼容入口，与 `PIPELINE` 共用执行链路。
 
-- **Security Agent** — SQL 注入、XSS、命令注入、硬编码密钥、路径遍历、SSRF、认证缺陷
-- **Performance Agent** — N+1 查询、IO 密集循环、资源泄漏、低效数据结构
-- **Architecture Agent** — 层次违规、职责混乱、循环依赖、过度耦合
+### 审查器系统（当前实现）
+
+- **Security Reviewer** — SQL 注入、XSS、命令注入、硬编码密钥、路径遍历、SSRF、认证缺陷
+- **Logic Reviewer** — 空指针风险、并发问题、资源泄漏、边界条件与流程错误
+- **Quality Reviewer** — 代码可维护性、复杂度、风格一致性、可读性改进
 
 ### 深度代码理解
 
@@ -137,7 +139,7 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
   │  ┌────────────────────────────────────────────────────────────┐ │
   │  │                    编排器层                                  │ │
   │  │  ┌──────────────────┐    ┌───────────────────────────────┐ │ │
-  │  │  │ PipelineOrchestrator│  │ MultiAgentOrchestrator       │ │ │
+  │  │  │ PipelineOrchestrator│  │ MultiAgentOrchestrator(路线图)│ │ │
   │  │  │ 摘要→审查→聚合     │  │ 策略规划→并行Agent→去重聚合  │ │ │
   │  │  └──────────────────┘    └───────────────────────────────┘ │ │
   │  └────────────────────────────────────────────────────────────┘ │
@@ -148,14 +150,16 @@ DiffGuard 是一个面向开发团队的 AI 代码审查系统，通过 **多 Ag
   │  │  │ Agent    │  │ Agent        │  │ Agent        │         │ │
   │  │  │ (权重1.2) │  │ (权重1.0)    │  │ (权重1.0)    │         │ │
   │  │  └──────────┘  └──────────────┘  └──────────────┘         │ │
-  │  │  共享记忆 (AgentMemory): 跨 Agent 知识共享                    │ │
-  │  │  策略规划器 (StrategyPlanner): 基于 Diff 特征动态分配权重       │ │
+  │  │  共享记忆 (AgentMemory): 跨 Agent 知识共享（路线图）            │ │
+  │  │  策略规划器 (StrategyPlanner): 基于 Diff 特征动态分配权重（路线图）│ │
   │  └────────────────────────────────────────────────────────────┘ │
   │  ┌────────────────────────────────────────────────────────────┐ │
   │  │  ToolClient ←→ Java Tool Server (HTTP, 会话隔离)            │ │
   │  └────────────────────────────────────────────────────────────┘ │
   └──────────────────────────────────────────────────────────────────┘
 ```
+
+> 当前运行链路说明：Python Agent 生产主链为 `PipelineOrchestrator`。图中 `MultiAgentOrchestrator / AgentMemory / StrategyPlanner` 为路线图能力。
 
 ---
 
@@ -218,7 +222,7 @@ java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123
 # Pipeline 多维度审查
 java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline
 
-# Multi-Agent 深度审查
+# Multi-Agent 兼容入口（当前与 Pipeline 同链路）
 java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --multi-agent
 
 # 有严重问题也强制通过
@@ -318,7 +322,7 @@ review:
 
 ### Agent 策略配置
 
-策略规划器根据文件类型和风险级别动态调整 Agent 权重（`agent/strategy/config.yaml`）：
+策略规划器配置用于 Multi-Agent 路线图能力，当前 Pipeline 主链不依赖它（`agent/strategy/config.yaml`）：
 
 ```yaml
 categories:
@@ -354,7 +358,7 @@ java -jar diffguard.jar review --pr owner/repo#123
 # Pipeline 模式
 java -jar diffguard.jar review --pr owner/repo#123 --pipeline
 
-# Multi-Agent 模式
+# Multi-Agent 兼容入口（当前与 Pipeline 同链路）
 java -jar diffguard.jar review --pr owner/repo#123 --multi-agent
 
 # 忽略严重问题，强制通过
@@ -425,7 +429,9 @@ Diff 输入
         结构化审查报告
 ```
 
-### Multi-Agent 模式流程
+### Multi-Agent 路线图（当前未独立落地）
+
+> 当前 Python Agent 主实现是 Pipeline；下图保留为目标形态参考。
 
 ```
 Diff 输入
@@ -510,48 +516,30 @@ DiffGuard/
 │   └── agent/                            # Python Agent 服务
 │       ├── pyproject.toml               # 依赖管理（hatchling）
 │       ├── Dockerfile                   # 基于 python:3.12-slim
-│       └── diffguard/
-│           ├── main.py                  # FastAPI 入口（HTTP + RabbitMQ）
-│           ├── config.py                # 环境变量配置
-│           ├── models/schemas.py        # Pydantic 数据模型
-│           ├── messaging/
-│           │   └── rabbitmq_consumer.py # 异步消息消费（aio-pika）
-│           ├── agent/
-│           │   ├── base.py              # ReviewAgent 抽象基类
-│           │   ├── registry.py          # 装饰器自注册 Agent Registry
-│           │   ├── memory.py            # 跨 Agent 共享记忆
-│           │   ├── strategy_planner.py  # Diff 特征分析 + 策略规划
-│           │   ├── multi_agent_orchestrator.py   # 多 Agent 并行编排
-│           │   ├── pipeline_orchestrator.py      # Pipeline 流水线编排
-│           │   ├── builtin_agents/              # 内置 Agent 实现
-│           │   │   ├── security.py              # 安全审查 Agent (ReAct)
-│           │   │   ├── performance.py           # 性能审查 Agent (ReAct)
-│           │   │   └── architecture.py          # 架构审查 Agent (ReAct)
-│           │   ├── pipeline/                    # Pipeline 阶段
-│           │   │   └── stages/
-│           │   │       ├── summary.py           # Diff 摘要（结构化输出）
-│           │   │       ├── reviewer.py          # 并行审查器（ReAct）
-│           │   │       ├── aggregation.py       # 结果聚合
-│           │   │       ├── static_rules.py      # 静态规则（零 LLM）
-│           │   │       └── pipeline_config.py   # YAML Pipeline DSL
-│           │   └── strategy/
-│           │       ├── config.yaml              # 策略权重配置
-│           │       └── config_loader.py         # 策略加载器
-│           ├── tools/
-│           │   ├── tool_client.py               # Java Tool Server HTTP 客户端
-│           │   └── definitions.py               # LangChain @tool 工具定义
-│           └── prompts/                         # Prompt 模板
-│               ├── react-user.txt               # ReAct Agent 用户提示
-│               ├── reviewagents/                # Agent 专用 System Prompt
-│               │   ├── security-system.txt
-│               │   ├── performance-system.txt
-│               │   └── architecture-system.txt
-│               └── pipeline/                    # Pipeline 专用 Prompt
-│                   ├── diff-summary-*.txt
-│                   ├── security-*.txt
-│                   ├── logic-*.txt
-│                   ├── quality-*.txt
-│                   └── aggregation-*.txt
+│       ├── src/diffguard_agent/
+│       │   ├── main.py                  # FastAPI 入口（/api/v1/review, /webhook-review）
+│       │   ├── config.py                # 环境变量配置
+│       │   ├── models/schemas.py        # Pydantic 数据模型
+│       │   ├── metrics.py               # 审查指标追踪
+│       │   ├── github/                  # GitHub API 客户端与评论构建
+│       │   ├── utils/                   # diff 切分工具
+│       │   ├── agent/
+│       │   │   ├── pipeline_orchestrator.py      # Pipeline 编排 + 自动分片
+│       │   │   ├── llm_utils.py                  # LLM 工厂 + 重试
+│       │   │   ├── false_positive_filter.py      # 两阶段误报过滤
+│       │   │   ├── diff_parser.py                # Diff 行号映射器
+│       │   │   └── pipeline/
+│       │   │       ├── pipeline-config.yaml      # Pipeline 配置
+│       │   │       ├── pipeline_config.py        # YAML DSL 解析
+│       │   │       └── stages/
+│       │   │           ├── summary.py            # 阶段1：摘要
+│       │   │           ├── reviewer.py           # 阶段2：并行域审查
+│       │   │           ├── aggregation.py        # 阶段3：聚合
+│       │   │           ├── fp_filter_stage.py    # 阶段4：误报过滤
+│       │   │           └── static_rules.py       # 可选静态规则阶段
+│       │   ├── llm/prompts/pipeline/             # Pipeline Prompt 模板
+│       │   └── tools/                            # Tool 客户端包装（当前仓库存在迁移残留）
+│       └── tests/                                # pytest 测试
 │
 ├── shared/
 │   └── config/
@@ -614,8 +602,8 @@ pytest              # 运行测试
 
 ### 扩展点
 
-- **自定义 Agent** — 实现 `ReviewAgent` 基类，使用 `@AgentRegistry.register("name")` 注册
 - **自定义 Pipeline 阶段** — 继承 `PipelineStage`，在 `pipeline-config.yaml` 中配置
+- **自定义多 Agent 能力** — 目前为路线图，需先补齐 `MultiAgentOrchestrator` / `StrategyPlanner`
 - **自定义静态规则** — 实现 `StaticRule` 接口，注册到 `RuleEngine`
 - **多语言 AST** — 实现 `LanguageASTProvider` SPI 接口
 - **自定义 LLM Provider** — 实现 `LlmProvider` 接口

@@ -10,6 +10,12 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ReviewMode(str, Enum):
+    """Supported review modes.
+
+    ``MULTI_AGENT`` is kept for API compatibility, but the current Python
+    agent routes it through the same pipeline execution path as ``PIPELINE``.
+    """
+
     PIPELINE = "PIPELINE"
     MULTI_AGENT = "MULTI_AGENT"
 

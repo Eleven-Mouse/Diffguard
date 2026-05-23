@@ -2,7 +2,7 @@
 
 # DiffGuard
 
-**AI 驱动的多 Agent 智能代码审查系统**
+**AI 驱动的分层智能代码审查系统**
 
 [![Java 21](https://img.shields.io/badge/Java-21-orange?logo=eclipse-temurin&logoColor=white)](https://adoptium.net/)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)](https://www.python.org/)
@@ -12,7 +12,7 @@
 
 [English](README.md) | **中文**
 
-DiffGuard 融合深度代码理解（AST 分析、代码知识图谱、语义检索）与 LLM 驱动的多 Agent 审查，提供生产级的上下文感知代码审查能力。
+DiffGuard 融合深度代码理解（AST 分析、代码知识图谱、语义检索）与 LLM 驱动的分层审查编排，提供生产级的上下文感知代码审查能力。
 
 [架构设计](#架构设计) · [快速开始](#快速开始) · [核心特性](#核心特性) · [部署方案](#部署方案) · [贡献指南](#贡献指南)
 
@@ -42,7 +42,9 @@ DiffGuard 融合深度代码理解（AST 分析、代码知识图谱、语义检
 |---|---|---|
 | **Pipeline** | 4 阶段 Pipeline + 并行域审查器 | **当前版本** |
 | **Simple** | Java Gateway 直接调用 LLM | 路线图 |
-| **Multi-Agent** | 自主 ReAct Agent + 工具调用 | 路线图 |
+| **Multi-Agent** | 兼容入口（当前回退到 Pipeline） | 兼容保留 |
+
+> 说明：当前 `services/agent/src` 主实现为 Pipeline；`MULTI_AGENT` 在接口层保留，并与 `PIPELINE` 共用执行链路。
 
 ### 4 阶段审查 Pipeline
 
@@ -75,7 +77,7 @@ Diff → 摘要 → 并行审查 → 聚合 → 误报过滤 → 报告
 | 领域 | 实现 |
 |---|---|
 | **安全** | 路径穿越防护（`FileAccessSandbox`）、基于 Session 的工具访问控制（UUID v4 + 10 分钟 TTL） |
-| **韧性** | 优雅降级链：Multi-Agent → Pipeline → Simple → 静态规则。熔断器 + `CallerRunsPolicy` 背压 |
+| **韧性** | 当前主链：Pipeline（摘要→审查→聚合→过滤）；`--multi-agent` 兼容回退到 Pipeline。熔断器 + `CallerRunsPolicy` 背压 |
 | **性能** | Caffeine AST 缓存（内容哈希键）、大 PR 自动分片（`MAX_FILES_PER_CHUNK=10`）、审查器并行执行 |
 | **可观测性** | 每阶段 Token 用量追踪、结构化日志（`request_id` 链路传播）、Prometheus 指标端点 |
 | **多模型** | OpenAI / Anthropic / 任意 OpenAI 兼容 Provider。YAML + 环境变量配置 |
@@ -196,7 +198,7 @@ java -jar target/diffguard-*.jar install
 # 审查命令
 java -jar target/diffguard-*.jar review --pr owner/repo#123                 # 指定 PR
 java -jar target/diffguard-*.jar review --pr owner/repo#123 --pipeline       # Pipeline 模式
-java -jar target/diffguard-*.jar review --pr owner/repo#123 --multi-agent    # 深度审查
+java -jar target/diffguard-*.jar review --pr owner/repo#123 --multi-agent    # 兼容入口（当前与 Pipeline 同链路）
 
 # 卸载
 java -jar target/diffguard-*.jar uninstall
@@ -258,48 +260,35 @@ services/
 ├── gateway/                              # Java Gateway (Javalin 5.6)
 │   └── src/main/java/com/diffguard/
 │       ├── cli/                          # CLI 主入口与子命令
-│       ├── adapter/
-│       │   └── toolserver/               # Tool Server: 会话管理、REST 端点
-│       ├── domain/
-│       │   ├── agent/                    # Agent 工具: 沙箱、注册表、6 个工具定义
-│       │   │   └── tools/                # FileAccessSandbox, GetCallGraphTool, SemanticSearchTool...
-│       │   ├── ast/                      # JavaParser AST 分析 + SPI 多语言扩展
-│       │   │   ├── model/                # ASTAnalysisResult, MethodInfo, CallEdge, DataFlowNode...
-│       │   │   └── spi/                  # LanguageASTProvider SPI 接口
-│       │   ├── codegraph/                # 代码知识图谱: BFS 影响分析、最短路径
-│       │   └── coderag/                  # Code RAG: 切片、TF-IDF / OpenAI Embedding、向量存储
-│       ├── infrastructure/
-│       │   ├── config/                   # 三层配置加载
-│       │   ├── git/                      # JGit Diff 收集
-│       │   └── common/                   # TokenEstimator, JacksonMapper
+│       ├── toolserver/                   # Tool Server: 会话管理、REST 端点
+│       ├── orchestrator/                 # Orchestrator API: 任务创建/状态/结果
+│       ├── review/                       # 审查核心: 引擎、AST、规则、RAG
+│       ├── agent/                        # Agent 工具体系: core/tools/python
+│       ├── platform/                     # 平台能力: config/git/llm/messaging/...
 │       └── pom.xml                       # Maven 构建（shade plugin fat JAR）
 │
 └── agent/                                # Python Agent (FastAPI + LangChain)
-    └── app/
-        ├── main.py                       # FastAPI 入口 + Uvicorn
-        ├── config.py                     # 配置（基于环境变量）
-        ├── agent/
-        │   ├── pipeline_orchestrator.py  # Pipeline 编排 + 自动分片
-        │   ├── llm_utils.py              # 多 Provider LLM 工厂 + 重试
-        │   ├── false_positive_filter.py  # 两阶段误报过滤（正则 + LLM）
-        │   ├── diff_parser.py            # Diff 行号映射器
-        │   └── pipeline/
-        │       └── stages/
-        │           ├── summary.py        # 阶段 1: LLM Diff 摘要
-        │           ├── reviewer.py       # 阶段 2: 并行域审查器（ReAct）
-        │           ├── aggregation.py    # 阶段 3: 合并、去重、行号映射
-        │           └── false_positive_filter.py  # 阶段 4: 误报过滤
-        ├── tools/
-        │   ├── tool_client.py            # Java Tool Server HTTP 客户端
-        │   └── definitions.py            # LangChain @tool 工厂函数
-        ├── models/
-        │   └── schemas.py                # Pydantic v2 请求/响应模型
-        ├── llm/prompts/
-        │   ├── pipeline/                 # Pipeline 阶段提示词（system + user）
-        │   └── reviewagents/             # Multi-Agent 域提示词
-        ├── config/
-        │   └── false_positive_rules.yaml # 基于正则的误报规则
-        └── metrics.py                    # 审查指标追踪
+    ├── src/diffguard_agent/
+    │   ├── main.py                       # FastAPI 入口 + Uvicorn
+    │   ├── config.py                     # 配置（基于环境变量）
+    │   ├── models/schemas.py             # Pydantic v2 请求/响应模型
+    │   ├── metrics.py                    # 审查指标追踪
+    │   ├── github/                       # GitHub API 客户端与评论构建
+    │   ├── utils/                        # diff 切分工具
+    │   ├── agent/
+    │   │   ├── pipeline_orchestrator.py  # Pipeline 编排 + 自动分片
+    │   │   ├── llm_utils.py              # 多 Provider LLM 工厂 + 重试
+    │   │   ├── false_positive_filter.py  # 两阶段误报过滤（正则 + LLM）
+    │   │   ├── diff_parser.py            # Diff 行号映射器
+    │   │   └── pipeline/stages/
+    │   │       ├── summary.py            # 阶段 1: LLM Diff 摘要
+    │   │       ├── reviewer.py           # 阶段 2: 并行域审查器（ReAct）
+    │   │       ├── aggregation.py        # 阶段 3: 合并、去重、行号映射
+    │   │       ├── fp_filter_stage.py    # 阶段 4: 误报过滤
+    │   │       └── static_rules.py       # 可选静态规则阶段
+    │   ├── llm/prompts/pipeline/         # Pipeline 阶段提示词（system + user）
+    │   └── tools/                        # Tool 客户端包装（当前仓库存在迁移残留）
+    └── tests/                            # pytest 测试
 ```
 
 ---
@@ -331,13 +320,13 @@ Java Gateway 严格遵循六边形架构与依赖倒置原则：
 3. Agent 输出结构化 JSON 结果
 4. Fallback 解析器处理非 JSON 响应（正则提取 → LLM 重新解析）
 
-### 优雅降级链
+### 模式兼容说明
 
 ```
-Multi-Agent（Python ReAct）→ Pipeline（Python）→ Simple（Java 直连 LLM）→ 静态规则
+`MULTI_AGENT`（兼容入口）→ `PIPELINE`（当前执行链）
 ```
 
-每一层失败时自动降级到下一级更简单的策略，确保审查始终能产出结果。
+当前 Python Agent 的稳定主链是 Pipeline；`MULTI_AGENT` 参数在接口层保留，并复用 Pipeline 执行。
 
 ### 误报过滤器
 
@@ -383,7 +372,7 @@ mvn clean verify           # 构建 + 测试 + 覆盖率
 cd services/agent
 uv sync --dev               # 安装含开发依赖
 uv run pytest tests/ -v     # 运行测试
-uv run ruff check app/ tests/  # 代码检查
+uv run ruff check src/diffguard_agent tests/  # 代码检查
 ```
 
 欢迎提交 Pull Request，请详细描述变更内容和动机。

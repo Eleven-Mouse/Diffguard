@@ -1,6 +1,6 @@
 # DiffGuard 进度文档
 
-更新时间：2026-05-23（完成本地评审 PR-only 入口收敛）
+更新时间：2026-05-24（完成 README 目录与术语口径同步）
 负责人：待指定
 
 ## 1. 文档目标
@@ -64,6 +64,8 @@
 | Action-only 文档口径收敛 | 已完成 | README / README.zh-CN 同步为“Action-only + 可选 Tool Server”说明 |
 | Webhook 链路代码移除 | 已完成 | 删除 Java webhook 包、server 子命令与相关测试，主入口切换为 CLI |
 | 本地评审 PR-only 入口收敛 | 已完成 | CLI 改为必填 `--pr owner/repo#number`，移除旧 `--staged/--from/--to` 模式 |
+| MULTI_AGENT 术语口径统一 | 已完成 | 统一为“兼容入口（当前回退到 Pipeline）”，避免误解为独立编排已落地 |
+| README 目录与审查器命名对齐 | 已完成 | README / README.zh-CN 同步到 `src/diffguard_agent` 路径与 `security/logic/quality` 术语 |
 
 ## 5. 已完成事项（Done）
 
@@ -98,6 +100,8 @@
 29. 完成 Action-only 文档收敛：`README.md` / `README.zh-CN.md` 更新为“Action-only 默认部署 + 可选 Tool Server”，并同步 Docker Compose 示例与环境变量说明
 30. 完成 Webhook 链路代码移除：删除 `services/gateway/src/main/java/com/diffguard/webhook/*`、`ServerCommand`、`ReviewOrchestrator` 及其对应测试；`pom.xml` shade 主类切换至 `com.diffguard.cli.DiffGuardMain`
 31. 完成本地评审 PR-only 入口收敛：`review` 子命令新增必填 `--pr`，`ReviewApplicationService` 改为基于 GitHub PR API 收集 diff，移除 `--staged/--from/--to` 本地模式入口
+32. 完成 MULTI_AGENT 术语口径统一：更新 `README.md` / `README.zh-CN.md` / `BACKEND_GUIDE.md` 与 Python 入口注释，明确 `MULTI_AGENT` 当前为兼容入口并复用 Pipeline 链路
+33. 完成 README 目录与审查器命名对齐：同步 `services/agent/src/diffguard_agent` 主路径与 `security/logic/quality` 审查器口径，移除 `ReviewAgent/AgentRegistry` 作为当前可用扩展点的误导表述
 
 ## 6. 进行中事项（In Progress）
 

@@ -3,7 +3,7 @@
 ## 1. 先用一句话理解后端
 
 `DiffGuard` 不是单一服务，而是一个 **Java Gateway + Orchestrator + Python Agent** 的协同后端：  
-Java Gateway 负责入口与调用适配，Orchestrator 负责审查编排，Python 负责 `PIPELINE` / `MULTI_AGENT` 智能审查执行。
+Java Gateway 负责入口与调用适配，Orchestrator 负责审查编排，Python 负责 Pipeline 审查执行（`MULTI_AGENT` 当前为兼容入口，复用 Pipeline 链路）。
 
 ## 2. 模块结构怎么理解
 
@@ -88,31 +88,30 @@ Webhook (Java)
 
 ## 4.1 当前代码结构要点
 
-`services/agent` 下同时存在 `app/` 和 `diffguard/` 两套同构目录；  
-从 `pyproject.toml` 与 `Dockerfile` 看，运行/打包主路径是 `app` 包。
+`services/agent` 当前运行主路径是 `src/diffguard_agent/*`；  
+`services/agent/diffguard/*` 主要是兼容入口与历史迁移残留。
 
-重点：新增功能优先延续 `app/*` 主链，避免两套目录行为再分叉。
+重点：新增功能优先延续 `src/diffguard_agent/*` 主链，避免双目录行为分叉。
 
 ## 4.2 HTTP 与 Worker 入口
 
-- `app/main.py`
+- `src/diffguard_agent/main.py`
   - `GET /api/v1/health`
   - `POST /api/v1/review`
   - 按配置可同时启动 RabbitMQ consumer（`AGENT_MODE`）
 
-## 4.3 两种编排器
+## 4.3 当前编排器
 
 - `PipelineOrchestrator`
-  - 默认阶段：`SummaryStage -> ReviewerStage -> AggregationStage`
-  - 阶段顺序执行
-- `MultiAgentOrchestrator`
-  - `StrategyPlanner` 决策
-  - 多 Agent 并行执行（`Security/Performance/Architecture`）
-  - `AgentMemory` 做跨 Agent 共享，最后去重聚合
+  - 默认阶段：`SummaryStage -> ReviewerStage -> AggregationStage -> FalsePositiveFilterStage`
+  - 阶段顺序执行；超大 PR 自动分片后逐片执行并合并结果
+- `MULTI_AGENT` 模式说明
+  - API 枚举仍保留 `MULTI_AGENT`
+  - 当前入口实现会将其回退到 `PipelineOrchestrator` 执行（兼容行为）
 
 ## 4.4 Tool 回调链
 
-Python 侧通过 `app/tools/tool_client.py`：
+Python 侧通过 `src/diffguard_agent/tools/tool_client.py`：
 
 1. `create_tool_session` 到 Java `/api/v1/tools/session`
 2. 执行工具调用（带 `X-Session-Id`，可带 `X-Tool-Secret`）
@@ -144,7 +143,7 @@ POST /webhook/github
   -> 回写 GitHub PR 评论
 ```
 
-## 5.3 Java-Python 联动链（PIPELINE/MULTI_AGENT）
+## 5.3 Java-Python 联动链（PIPELINE + MULTI_AGENT 兼容）
 
 ```text
 Java PythonReviewEngine -> Python /api/v1/review
@@ -163,8 +162,8 @@ Java PythonReviewEngine -> Python /api/v1/review
   - `DIFFGUARD_API_KEY`
   - `DIFFGUARD_API_BASE_URL`（可选）
   - `DIFFGUARD_AGENT_URL`
-  - `DIFFGUARD_WEBHOOK_SECRET`
-  - `DIFFGUARD_GITHUB_TOKEN`
+  - `DIFFGUARD_WEBHOOK_HMAC_SECRET`
+  - `GITHUB_TOKEN`
   - `DIFFGUARD_TOOL_SECRET`
   - `RABBITMQ_*`
 
@@ -185,7 +184,7 @@ Python：
 
 - `java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123`
 - `java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline`
-- `java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --multi-agent`
+- `java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --multi-agent`（兼容入口，当前复用 pipeline）
 
 ## 8. 新人推荐阅读顺序
 
@@ -195,10 +194,10 @@ Python：
 4. `services/gateway/src/main/java/com/diffguard/review/ReviewEngineFactory.java`
 5. `services/gateway/src/main/java/com/diffguard/toolserver/ToolServerController.java`
 6. `services/gateway/src/main/java/com/diffguard/review/rules/RuleEngine.java`
-7. `services/agent/app/main.py`
-8. `services/agent/app/agent/pipeline_orchestrator.py`
-9. `services/agent/app/agent/multi_agent_orchestrator.py`
-10. `services/agent/app/tools/tool_client.py`
+7. `services/agent/src/diffguard_agent/main.py`
+8. `services/agent/src/diffguard_agent/agent/pipeline_orchestrator.py`
+9. `services/agent/src/diffguard_agent/agent/pipeline/stages/reviewer.py`
+10. `services/agent/src/diffguard_agent/tools/tool_client.py`
 
 ## 9. 你最容易踩的坑
 
@@ -215,7 +214,7 @@ Python：
 当前代码就是“可选依赖 + 自动降级”，改动不能破坏降级路径。
 
 5. 在 `services/agent` 双目录结构里随意改  
-应明确改动目标路径（当前运行主链是 `app/*`）。
+应明确改动目标路径（当前运行主链是 `src/diffguard_agent/*`）。
 
 ## 10. 一句话建议
 
