@@ -10,6 +10,7 @@ import java.util.List;
 public class ReviewConfig {
 
     private LlmConfig llm = new LlmConfig();
+    private RulesConfig rules = new RulesConfig();
     private IgnoreConfig ignore = new IgnoreConfig();
     private ReviewOptions review = new ReviewOptions();
     private WebhookConfig webhook = null;
@@ -18,6 +19,8 @@ public class ReviewConfig {
 
     public LlmConfig getLlm() { return llm; }
     public void setLlm(LlmConfig llm) { this.llm = llm; }
+    public RulesConfig getRules() { return rules; }
+    public void setRules(RulesConfig rules) { this.rules = rules; }
     public IgnoreConfig getIgnore() { return ignore; }
     public void setIgnore(IgnoreConfig ignore) { this.ignore = ignore; }
     public ReviewOptions getReview() { return review; }
@@ -27,6 +30,30 @@ public class ReviewConfig {
     public EmbeddingConfig getEmbedding() { return embedding; }
     public AgentServiceConfig getAgentService() { return agentService; }
     public void setAgentService(AgentServiceConfig agentService) { this.agentService = agentService; }
+
+    public void validate() {
+        if (llm == null) {
+            throw new IllegalArgumentException("llm 配置不能为空");
+        }
+        if (llm.getProvider() == null || llm.getProvider().isBlank()) {
+            throw new IllegalArgumentException("llm.provider 不能为空");
+        }
+        if (llm.getModel() == null || llm.getModel().isBlank()) {
+            throw new IllegalArgumentException("llm.model 不能为空");
+        }
+        if (llm.getApiKeyEnv() == null || llm.getApiKeyEnv().isBlank()) {
+            throw new IllegalArgumentException("llm.api_key_env 不能为空");
+        }
+        if (review == null) {
+            throw new IllegalArgumentException("review 配置不能为空");
+        }
+        if (review.getMaxDiffFiles() <= 0) {
+            throw new IllegalArgumentException("review.max_diff_files 必须大于 0");
+        }
+        if (review.getMaxTokensPerFile() <= 0) {
+            throw new IllegalArgumentException("review.max_tokens_per_file 必须大于 0");
+        }
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class LlmConfig {
@@ -97,6 +124,19 @@ public class ReviewConfig {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class RulesConfig {
+        private List<String> enabled = List.of("security", "bug-risk", "code-style", "performance");
+
+        @JsonProperty("severity_threshold")
+        private String severityThreshold = "info";
+
+        public List<String> getEnabled() { return enabled; }
+        public void setEnabled(List<String> enabled) { this.enabled = enabled; }
+        public String getSeverityThreshold() { return severityThreshold; }
+        public void setSeverityThreshold(String severityThreshold) { this.severityThreshold = severityThreshold; }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ReviewOptions {
         @JsonProperty("max_diff_files")
         private int maxDiffFiles = 20;
@@ -132,6 +172,11 @@ public class ReviewConfig {
             if (secret != null && !secret.isBlank()) return secret.trim();
             String env = System.getenv(secretEnv);
             return (env != null && !env.isBlank()) ? env.trim() : null;
+        }
+
+        public String resolveGitHubToken() {
+            String token = System.getenv(githubTokenEnv);
+            return (token != null && !token.isBlank()) ? token.trim() : null;
         }
 
         public Path resolveLocalPath(String repoFullName) {
