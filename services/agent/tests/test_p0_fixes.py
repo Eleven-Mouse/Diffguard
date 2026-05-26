@@ -1,22 +1,10 @@
-"""Tests for P0 fixes: chunking, HMAC verification, aggregation line mapping."""
+"""Tests for P0 fixes: chunking and aggregation line mapping."""
 
 from __future__ import annotations
-
-import hashlib
-import hmac
-import json
-import time
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from diffguard_agent.models.schemas import (
     DiffEntry,
     IssuePayload,
-    LlmConfig,
-    ReviewMode,
-    ReviewRequest,
-    ReviewStatus,
 )
 
 
@@ -165,100 +153,6 @@ class TestAggregationLineMapping:
         issue = IssuePayload(file="svc.py", line=None, type="bug", message="test")
         result = _map_issue_line_numbers(issue, mapper, "")
         assert result.line is None
-
-
-# ---------------------------------------------------------------------------
-# P0-4: HMAC signature verification tests
-# ---------------------------------------------------------------------------
-
-class TestHMACVerification:
-    """Tests for webhook HMAC signature verification in main.py."""
-
-    def _make_sig(self, body: bytes, secret: str) -> str:
-        return "sha256=" + hmac.new(
-            secret.encode(), body, hashlib.sha256
-        ).hexdigest()
-
-    @pytest.mark.asyncio
-    async def test_no_secret_skips_verification(self):
-        """When WEBHOOK_HMAC_SECRET is not set, verification is skipped."""
-        from diffguard_agent.main import _verify_webhook_signature
-
-        mock_req = MagicMock()
-        mock_req.headers = {}
-        mock_req.body = AsyncMock(return_value=b"test")
-
-        with patch("diffguard_agent.main.settings") as mock_settings:
-            mock_settings.WEBHOOK_HMAC_SECRET = None
-            result = await _verify_webhook_signature.__wrapped__(b"test", mock_req) \
-                if hasattr(_verify_webhook_signature, "__wrapped__") else None
-            # Function is sync, not async — let's call it directly
-        from diffguard_agent.main import _verify_webhook_signature
-        mock_req2 = MagicMock()
-        mock_req2.headers = {}
-
-        with patch("diffguard_agent.main.settings") as mock_settings:
-            mock_settings.WEBHOOK_HMAC_SECRET = None
-            result = _verify_webhook_signature(b"test", mock_req2)
-            assert result is None  # No error = verification skipped
-
-    def test_missing_signature_header_rejected(self):
-        from diffguard_agent.main import _verify_webhook_signature
-
-        mock_req = MagicMock()
-        mock_req.headers = {}  # No X-DiffGuard-Signature
-
-        with patch("diffguard_agent.main.settings") as mock_settings:
-            mock_settings.WEBHOOK_HMAC_SECRET = "test-secret"
-            result = _verify_webhook_signature(b"body", mock_req)
-            assert result is not None
-            assert result.status_code == 401
-
-    def test_invalid_signature_rejected(self):
-        from diffguard_agent.main import _verify_webhook_signature
-
-        mock_req = MagicMock()
-        mock_req.headers = {"X-DiffGuard-Signature": "sha256=invalid"}
-
-        with patch("diffguard_agent.main.settings") as mock_settings:
-            mock_settings.WEBHOOK_HMAC_SECRET = "test-secret"
-            result = _verify_webhook_signature(b"body", mock_req)
-            assert result is not None
-            assert result.status_code == 401
-
-    def test_valid_signature_accepted(self):
-        from diffguard_agent.main import _verify_webhook_signature
-
-        secret = "test-secret"
-        body = b'{"repo_full_name": "test/repo", "pr_number": 1}'
-        sig = self._make_sig(body, secret)
-
-        mock_req = MagicMock()
-        mock_req.headers = {"X-DiffGuard-Signature": sig}
-
-        with patch("diffguard_agent.main.settings") as mock_settings:
-            mock_settings.WEBHOOK_HMAC_SECRET = secret
-            result = _verify_webhook_signature(body, mock_req)
-            assert result is None  # No error = accepted
-
-    def test_expired_timestamp_rejected(self):
-        from diffguard_agent.main import _verify_webhook_signature
-
-        secret = "test-secret"
-        body = b"body"
-        sig = self._make_sig(body, secret)
-
-        mock_req = MagicMock()
-        mock_req.headers = {
-            "X-DiffGuard-Signature": sig,
-            "X-DiffGuard-Timestamp": str(int(time.time()) - 600),  # 10 min ago
-        }
-
-        with patch("diffguard_agent.main.settings") as mock_settings:
-            mock_settings.WEBHOOK_HMAC_SECRET = secret
-            result = _verify_webhook_signature(body, mock_req)
-            assert result is not None
-            assert result.status_code == 401
 
 
 # ---------------------------------------------------------------------------

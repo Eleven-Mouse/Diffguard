@@ -13,7 +13,6 @@ from diffguard_agent.models.schemas import (
     ToolRequest,
     ToolResponse,
     ToolSessionRequest,
-    WebhookReviewRequest,
 )
 
 __all__ = [
@@ -29,5 +28,4 @@ __all__ = [
     "ToolRequest",
     "ToolResponse",
     "ToolSessionRequest",
-    "WebhookReviewRequest",
 ]

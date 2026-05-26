@@ -127,16 +127,3 @@ class ToolResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     langchain_version: str = ""
-
-
-class WebhookReviewRequest(BaseModel):
-    request_id: str = ""
-    repo_full_name: str
-    pr_number: int
-    project_dir: str = "."
-    llm_config: LlmConfig
-    review_config: ReviewConfigPayload = Field(default_factory=ReviewConfigPayload)
-    tool_server_url: str = "http://localhost:9090"
-    github_token_env: str = "GITHUB_TOKEN"
-    excluded_dirs: list[str] = Field(default_factory=list)
-    head_sha: Optional[str] = None
