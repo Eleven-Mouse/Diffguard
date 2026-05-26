@@ -118,12 +118,12 @@ runs:
 
     - name: Run DiffGuard Review
       id: diffguard-review
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' || env.PR_NUMBER != ''
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_NUMBER: ${{ env.PR_NUMBER || github.event.pull_request.number }}
         DIFFGUARD_API_KEY: ${{ inputs.api-key }}
         DIFFGUARD_API_BASE_URL: ${{ inputs.api-base-url }}
         DIFFGUARD_PROVIDER: ${{ inputs.provider }}

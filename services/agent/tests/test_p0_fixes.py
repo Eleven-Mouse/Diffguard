@@ -6,6 +6,7 @@ from diffguard_agent.models.schemas import (
     DiffEntry,
     IssuePayload,
 )
+from diffguard_agent.config import settings
 
 
 # ---------------------------------------------------------------------------
@@ -42,8 +43,9 @@ class TestDiffChunking:
         entries = self._make_entries(MAX_FILES_PER_CHUNK + 1)
         chunks = _chunk_diff_entries(entries)
         assert len(chunks) == 2
-        assert len(chunks[0]) == MAX_FILES_PER_CHUNK
-        assert len(chunks[1]) == 1
+        # Packing is token-aware and may reorder entries; only assert totals and limits.
+        assert sum(len(c) for c in chunks) == MAX_FILES_PER_CHUNK + 1
+        assert all(len(c) <= MAX_FILES_PER_CHUNK for c in chunks)
 
     def test_large_diff_splits_by_chars(self):
         from diffguard_agent.agent.pipeline_orchestrator import (
@@ -76,6 +78,64 @@ class TestDiffChunking:
         chunks = _chunk_diff_entries([])
         assert chunks == [[]]
 
+    def test_small_file_count_can_still_chunk_by_token_budget(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries, MAX_TOKENS_PER_CHUNK
+
+        # 5 files only, but token_count forces split
+        entries = [
+            DiffEntry(file_path=f"f{i}.py", content="x" * 200, token_count=MAX_TOKENS_PER_CHUNK // 2 + 200)
+            for i in range(5)
+        ]
+        chunks = _chunk_diff_entries(entries)
+        assert len(chunks) > 1
+
+    def test_oversized_single_file_is_split_by_hunks(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries, MAX_CHARS_PER_CHUNK
+
+        big_hunks = []
+        for i in range(6):
+            big_hunks.append(
+                f"@@ -{i+1},1 +{i+1},1 @@\n" + "+" + ("x" * (MAX_CHARS_PER_CHUNK // 4)) + "\n"
+            )
+        content = (
+            "diff --git a/big.py b/big.py\n"
+            "--- a/big.py\n"
+            "+++ b/big.py\n"
+            + "".join(big_hunks)
+        )
+        entries = [DiffEntry(file_path="big.py", content=content)]
+        chunks = _chunk_diff_entries(entries)
+        # Should split a single oversized diff into multiple packed entries/chunks
+        assert len(chunks) >= 2
+        assert sum(len(c) for c in chunks) >= 2
+
+    def test_chunk_builder_preserves_original_file_path(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries
+
+        content = (
+            "diff --git a/a.py b/a.py\n"
+            "--- a/a.py\n"
+            "+++ b/a.py\n"
+            "@@ -1,1 +1,1 @@\n"
+            "+x\n"
+        )
+        entries = [DiffEntry(file_path="a.py", content=content)]
+        chunks = _chunk_diff_entries(entries)
+        assert chunks[0][0].file_path == "a.py"
+
+    def test_respects_configured_max_files(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries
+
+        original = settings.CHUNK_MAX_FILES
+        settings.CHUNK_MAX_FILES = 2
+        try:
+            entries = self._make_entries(5, chars_per_entry=50)
+            chunks = _chunk_diff_entries(entries)
+            assert len(chunks) >= 3
+            assert all(len(c) <= 2 for c in chunks)
+        finally:
+            settings.CHUNK_MAX_FILES = original
+
 
 class TestDeduplicateIssues:
     """Tests for _deduplicate_issues in pipeline_orchestrator."""
@@ -107,6 +167,51 @@ class TestDeduplicateIssues:
         from diffguard_agent.agent.pipeline_orchestrator import _deduplicate_issues
 
         assert _deduplicate_issues([]) == []
+
+    def test_same_message_different_lines_not_deduped(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _deduplicate_issues
+
+        issues = [
+            IssuePayload(
+                file="a.py",
+                line=10,
+                type="sql_injection",
+                message="Potential SQL injection found",
+                severity="WARNING",
+            ),
+            IssuePayload(
+                file="a.py",
+                line=20,
+                type="sql_injection",
+                message="Potential SQL injection found",
+                severity="WARNING",
+            ),
+        ]
+        result = _deduplicate_issues(issues)
+        assert len(result) == 2
+
+    def test_message_normalization_keeps_single_issue(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _deduplicate_issues
+
+        issues = [
+            IssuePayload(
+                file="a.py",
+                line=10,
+                type="xss",
+                message="Reflected   XSS vulnerability",
+                severity="WARNING",
+            ),
+            IssuePayload(
+                file="a.py",
+                line=10,
+                type="xss",
+                message="reflected xss vulnerability",
+                severity="CRITICAL",
+            ),
+        ]
+        result = _deduplicate_issues(issues)
+        assert len(result) == 1
+        assert result[0].severity == "CRITICAL"
 
 
 # ---------------------------------------------------------------------------

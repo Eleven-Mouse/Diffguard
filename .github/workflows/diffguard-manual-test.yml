@@ -1,0 +1,85 @@
+name: DiffGuard Manual Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: "Pull Request number to review"
+        required: true
+        type: string
+      provider:
+        description: "LLM provider"
+        required: false
+        default: "openai"
+        type: choice
+        options:
+          - openai
+          - claude
+      model:
+        description: "Model name"
+        required: false
+        default: "mimo-v2.5-pro"
+        type: string
+      api-base-url:
+        description: "Custom API base URL"
+        required: false
+        default: "https://token-plan-cn.xiaomimimo.com/v1"
+        type: string
+      language:
+        description: "Review output language"
+        required: false
+        default: "zh"
+        type: choice
+        options:
+          - zh
+          - en
+      comment-pr:
+        description: "Post inline PR comments"
+        required: false
+        default: true
+        type: boolean
+      enable-fp-filter:
+        description: "Enable false-positive filter"
+        required: false
+        default: true
+        type: boolean
+      timeout-minutes:
+        description: "Action timeout minutes"
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  manual-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate secret
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.DIFFGUARD_API_KEY }}" ]; then
+            echo "::error::Missing required secret DIFFGUARD_API_KEY"
+            exit 1
+          fi
+
+      - name: Run DiffGuard local action (manual PR)
+        uses: ./
+        with:
+          api-key: ${{ secrets.DIFFGUARD_API_KEY }}
+          provider: ${{ inputs.provider }}
+          model: ${{ inputs.model }}
+          api-base-url: ${{ inputs.api-base-url }}
+          language: ${{ inputs.language }}
+          comment-pr: ${{ inputs.comment-pr }}
+          enable-fp-filter: ${{ inputs.enable-fp-filter }}
+          timeout-minutes: ${{ inputs.timeout-minutes }}
+        env:
+          PR_NUMBER: ${{ inputs.pr-number }}
+

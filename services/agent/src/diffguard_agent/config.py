@@ -17,4 +17,11 @@ class Settings:
     AGENT_PORT: int = int(os.getenv("AGENT_PORT", "8000"))
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "info")
 
+    # Chunking / fallback controls
+    CHUNK_MAX_FILES: int = int(os.getenv("DIFFGUARD_CHUNK_MAX_FILES", "10"))
+    CHUNK_MAX_CHARS: int = int(os.getenv("DIFFGUARD_CHUNK_MAX_CHARS", "60000"))
+    CHUNK_MAX_TOKENS: int = int(os.getenv("DIFFGUARD_CHUNK_MAX_TOKENS", "12000"))
+    CHUNK_SOFT_TOKENS: int = int(os.getenv("DIFFGUARD_CHUNK_SOFT_TOKENS", "9000"))
+    CHUNK_MAX_FAILED_RATIO: float = float(os.getenv("DIFFGUARD_CHUNK_MAX_FAILED_RATIO", "0.5"))
+
 settings = Settings()

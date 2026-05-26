@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from diffguard_agent.agent.pipeline.stages.base import PipelineContext, PipelineStage
+from diffguard_agent.config import settings
 from diffguard_agent.models.schemas import (
     DiffEntry,
     LlmConfig,
@@ -213,3 +214,184 @@ class TestPipelineOrchestratorRun:
 
         mock_create.assert_awaited_once()
         mock_destroy.assert_awaited_once_with(mock_tool_client)
+
+    @patch(_CREATE_LLM)
+    @patch(_DESTROY_TOOL_SESSION, new_callable=AsyncMock)
+    @patch(_CREATE_TOOL_SESSION, new_callable=AsyncMock)
+    async def test_chunked_all_chunks_failed_returns_failed(
+        self, mock_create, mock_destroy, mock_create_llm,
+    ):
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
+
+        mock_create.return_value = MagicMock()
+        mock_create_llm.return_value = MagicMock()
+
+        async def _boom(_ctx):
+            raise RuntimeError("stage exploded")
+
+        stage = MagicMock(spec=PipelineStage)
+        stage.name = "boom"
+        stage.execute = _boom
+
+        req = _make_request(
+            diff_entries=[
+                DiffEntry(file_path=f"f{i}.py", content="x")
+                for i in range(11)  # trigger chunking by file count
+            ],
+        )
+        orch = PipelineOrchestrator(req, stages=[stage])
+        resp = await orch.run()
+
+        assert resp.status == ReviewStatus.FAILED
+        assert "All" in (resp.error or "")
+        assert "chunks failed" in (resp.error or "")
+
+    @patch(_CREATE_LLM)
+    @patch(_DESTROY_TOOL_SESSION, new_callable=AsyncMock)
+    @patch(_CREATE_TOOL_SESSION, new_callable=AsyncMock)
+    async def test_chunked_partial_failure_marks_summary(
+        self, mock_create, mock_destroy, mock_create_llm,
+    ):
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
+
+        mock_create.return_value = MagicMock()
+        mock_create_llm.return_value = MagicMock()
+
+        call_count = {"n": 0}
+
+        async def _sometimes_fail(ctx):
+            call_count["n"] += 1
+            # First chunk succeeds, second chunk fails
+            if call_count["n"] == 2:
+                raise RuntimeError("chunk failed")
+            ctx.aggregation.final_summary = "ok"
+            return ctx
+
+        stage = MagicMock(spec=PipelineStage)
+        stage.name = "mixed"
+        stage.execute = _sometimes_fail
+
+        req = _make_request(
+            diff_entries=[
+                DiffEntry(file_path=f"f{i}.py", content="x")
+                for i in range(11)  # two chunks
+            ],
+        )
+        orch = PipelineOrchestrator(req, stages=[stage])
+        resp = await orch.run()
+
+        assert resp.status == ReviewStatus.COMPLETED
+        assert "[partial review]" in (resp.summary or "")
+
+    @patch(_CREATE_LLM)
+    @patch(_DESTROY_TOOL_SESSION, new_callable=AsyncMock)
+    @patch(_CREATE_TOOL_SESSION, new_callable=AsyncMock)
+    async def test_chunk_prompt_too_long_uses_fallback(
+        self, mock_create, mock_destroy, mock_create_llm,
+    ):
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
+
+        mock_create.return_value = MagicMock()
+        mock_create_llm.return_value = MagicMock()
+
+        calls = {"n": 0}
+
+        async def _stage_with_prompt_error(ctx):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("Prompt is too long")
+            ctx.aggregation.final_summary = "fallback ok"
+            return ctx
+
+        stage = MagicMock(spec=PipelineStage)
+        stage.name = "recoverable"
+        stage.execute = _stage_with_prompt_error
+
+        req = _make_request(
+            diff_entries=[
+                DiffEntry(file_path=f"f{i}.py", content="x")
+                for i in range(11)  # force chunk mode
+            ],
+        )
+        orch = PipelineOrchestrator(req, stages=[stage])
+        resp = await orch.run()
+
+        assert resp.status == ReviewStatus.COMPLETED
+        assert "[fallback-applied]" in (resp.summary or "")
+
+    @patch(_CREATE_LLM)
+    @patch(_DESTROY_TOOL_SESSION, new_callable=AsyncMock)
+    @patch(_CREATE_TOOL_SESSION, new_callable=AsyncMock)
+    async def test_chunk_failure_ratio_over_threshold_returns_failed(
+        self, mock_create, mock_destroy, mock_create_llm,
+    ):
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
+
+        mock_create.return_value = MagicMock()
+        mock_create_llm.return_value = MagicMock()
+
+        call_count = {"n": 0}
+
+        async def _mostly_fail(_ctx):
+            call_count["n"] += 1
+            # For 3 chunks: fail first 2, succeed last -> failure ratio 2/3 > 0.5
+            if call_count["n"] <= 2:
+                raise RuntimeError("non-recoverable failure")
+            return _ctx
+
+        stage = MagicMock(spec=PipelineStage)
+        stage.name = "ratio"
+        stage.execute = _mostly_fail
+
+        req = _make_request(
+            diff_entries=[
+                DiffEntry(file_path=f"f{i}.py", content="x")
+                for i in range(21)  # 3 chunks by file limit
+            ],
+        )
+        orch = PipelineOrchestrator(req, stages=[stage])
+        resp = await orch.run()
+
+        assert resp.status == ReviewStatus.FAILED
+        assert "Too many chunk failures" in (resp.error or "")
+
+    @patch(_CREATE_LLM)
+    @patch(_DESTROY_TOOL_SESSION, new_callable=AsyncMock)
+    @patch(_CREATE_TOOL_SESSION, new_callable=AsyncMock)
+    async def test_chunk_failure_ratio_threshold_is_configurable(
+        self, mock_create, mock_destroy, mock_create_llm,
+    ):
+        from diffguard_agent.agent.pipeline_orchestrator import PipelineOrchestrator
+
+        mock_create.return_value = MagicMock()
+        mock_create_llm.return_value = MagicMock()
+
+        original_ratio = settings.CHUNK_MAX_FAILED_RATIO
+        settings.CHUNK_MAX_FAILED_RATIO = 0.8
+        try:
+            call_count = {"n": 0}
+
+            async def _mostly_fail(_ctx):
+                call_count["n"] += 1
+                # 3 chunks: fail 2, success 1 -> 0.67 (should pass if threshold=0.8)
+                if call_count["n"] <= 2:
+                    raise RuntimeError("non-recoverable failure")
+                return _ctx
+
+            stage = MagicMock(spec=PipelineStage)
+            stage.name = "ratio_cfg"
+            stage.execute = _mostly_fail
+
+            req = _make_request(
+                diff_entries=[
+                    DiffEntry(file_path=f"f{i}.py", content="x")
+                    for i in range(21)
+                ],
+            )
+            orch = PipelineOrchestrator(req, stages=[stage])
+            resp = await orch.run()
+
+            assert resp.status == ReviewStatus.COMPLETED
+            assert "[partial review]" in (resp.summary or "")
+        finally:
+            settings.CHUNK_MAX_FAILED_RATIO = original_ratio

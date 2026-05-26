@@ -1,0 +1,10 @@
+请根据以下输入，合并多个 Reviewer 的审查结果并输出最终 JSON。
+
+## Diff 总结
+{{summary}}
+
+## Reviewer 结果
+{{reviewer_results}}
+
+请严格按系统提示中的 JSON schema 输出，不要包含额外文本。
+
