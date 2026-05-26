@@ -4,6 +4,7 @@ import com.diffguard.review.ast.spi.LanguageASTProvider.Language;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 
 import java.util.List;
 import java.util.Optional;
@@ -13,6 +14,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("ASTProviderRegistry")
 class ASTProviderRegistryTest {
+
+    @AfterEach
+    void resetProviderState() {
+        ASTProviderRegistry.unregister(Language.PYTHON);
+    }
 
     @Nested
     @DisplayName("getProvider() 根据文件路径")
@@ -131,9 +137,6 @@ class ASTProviderRegistryTest {
             Optional<LanguageASTProvider> found = ASTProviderRegistry.getProvider(Language.PYTHON);
 
             assertTrue(found.isPresent());
-
-            // Clean up - re-register Java to restore default state
-            // Python provider will remain registered but that's fine for testing
         }
     }
 

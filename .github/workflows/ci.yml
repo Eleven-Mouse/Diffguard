@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -60,7 +64,10 @@ jobs:
         run: uv sync --dev
 
       - name: Lint (ruff check)
-        run: uv run ruff check src/ tests/ || true
+        run: uv run ruff check src/ tests/
+
+      - name: Type check (mypy)
+        run: uv run mypy src/
 
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short

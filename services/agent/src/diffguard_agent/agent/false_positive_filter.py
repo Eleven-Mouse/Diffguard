@@ -13,7 +13,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -173,7 +173,7 @@ class _RuleLoader:
             ]
             self._path = next((p for p in candidates if p.exists()), candidates[0])
 
-        self._config: dict | None = None
+        self._config: dict[str, Any] | None = None
         self._load()
 
     def _load(self) -> None:
@@ -190,10 +190,12 @@ class _RuleLoader:
             logger.warning("Failed to load rule config: %s, using defaults", e)
             self._config = None
 
-    def get_exclusion_rules(self) -> list[dict]:
+    def get_exclusion_rules(self) -> list[dict[str, Any]]:
         """Get exclusion rules from config."""
         if self._config and "exclusion_rules" in self._config:
-            return self._config["exclusion_rules"]
+            raw = self._config["exclusion_rules"]
+            if isinstance(raw, list):
+                return [cast(dict[str, Any], item) for item in raw if isinstance(item, dict)]
         return []
 
     def get_precedents(self) -> list[dict[str, str]]:
@@ -238,9 +240,9 @@ class HardExclusionRules:
         # Compile patterns from config
         self._compiled_rules = self._compile_rules()
 
-    def _compile_rules(self) -> dict:
+    def _compile_rules(self) -> dict[str, Any]:
         """Compile exclusion rules into efficient structures."""
-        compiled = {
+        compiled: dict[str, Any] = {
             "text_patterns": [],  # list of (re.Pattern, description)
             "doc_extensions": set(_DEFAULT_DOC_EXTENSIONS),
             "test_patterns": [],   # compiled test file patterns
@@ -323,20 +325,25 @@ class HardExclusionRules:
         text = f"{issue.type} {issue.message} {issue.suggestion}".lower()
 
         # Check doc files
-        if ext in self._compiled_rules["doc_extensions"]:
+        doc_extensions = cast(set[str], self._compiled_rules["doc_extensions"])
+        test_patterns = cast(list[tuple[re.Pattern[str], str]], self._compiled_rules["test_patterns"])
+        text_patterns = cast(list[tuple[re.Pattern[str], str]], self._compiled_rules["text_patterns"])
+        cpp_extensions = cast(frozenset[str], self._compiled_rules["cpp_extensions"])
+
+        if ext in doc_extensions:
             return "Finding in documentation file"
 
         # Check test files
-        for pattern, desc in self._compiled_rules["test_patterns"]:
+        for pattern, desc in test_patterns:
             if pattern.search(file_name) or pattern.search(file_path):
                 return desc or "Finding in test file"
 
         # Check text patterns
-        for pattern, desc in self._compiled_rules["text_patterns"]:
+        for pattern, desc in text_patterns:
             if pattern.search(text):
                 # Special handling for memory safety: only exclude for non-C/C++
                 if "memory safety" in desc.lower():
-                    if ext not in self._compiled_rules["cpp_extensions"]:
+                    if ext not in cpp_extensions:
                         return desc
                     continue  # Don't exclude C/C++ memory safety issues
                 return desc

@@ -5,7 +5,6 @@ filter is the core P0 feature of DiffGuard. Every exclusion category is tested
 with both positive (matches) and negative (does not match) cases.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from diffguard_agent.agent.false_positive_filter import (
@@ -735,8 +734,6 @@ class TestFindingsFilterCustomPrecedents:
         assert f._precedents[-1] == custom[0]
 
     def test_no_custom_precedents_default_count(self):
-        from diffguard_agent.agent.false_positive_filter import _DEFAULT_PRECEDENTS
-
         f = FindingsFilter()
         # YAML config has 17 precedents, plus default _DEFAULT_PRECEDENTS (26) gives us the total
         # The filter merges both sources, so count will be >= YAML precedents

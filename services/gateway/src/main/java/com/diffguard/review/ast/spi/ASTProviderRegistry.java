@@ -36,6 +36,13 @@ public class ASTProviderRegistry {
     }
 
     /**
+     * 注销一个语言 Provider。
+     */
+    public static void unregister(Language language) {
+        providers.remove(language);
+    }
+
+    /**
      * 根据文件路径获取对应的 Provider。
      */
     public static Optional<LanguageASTProvider> getProvider(String filePath) {

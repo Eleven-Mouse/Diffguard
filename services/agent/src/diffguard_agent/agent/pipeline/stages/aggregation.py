@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from diffguard_agent.agent.diff_parser import DiffLineMapper
 from diffguard_agent.models.schemas import IssuePayload
 from diffguard_agent.agent.pipeline.stages.base import PipelineContext, PipelineStage
-from diffguard_agent.agent.llm_utils import load_prompt, invoke_with_retry, sanitize_diff_for_prompt
+from diffguard_agent.agent.llm_utils import load_prompt, invoke_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,8 @@ class AggregationStage(PipelineStage):
     async def execute(self, context: PipelineContext) -> PipelineContext:
         logger.info("Pipeline Stage [aggregation]: Merging %d reviewer results",
                     len(context.review.review_results))
+        if context.input.llm is None:
+            raise RuntimeError("LLM client is not initialized")
 
         # Build diff line mapper for accurate line number mapping
         line_mapper = DiffLineMapper(context.input.diff_text)

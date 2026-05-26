@@ -10,11 +10,9 @@ import picocli.CommandLine;
         name = "diffguard",
         mixinStandardHelpOptions = true,
         versionProvider = VersionProvider.class,
-        description = "基于AI的代码审查命令行工具，集成Git钩子",
+        description = "基于AI的代码审查命令行工具",
         subcommands = {
                 ReviewCommand.class,
-                InstallCommand.class,
-                UninstallCommand.class,
                 ToolServerCommand.class,
                 OrchestratorServerCommand.class
         }
