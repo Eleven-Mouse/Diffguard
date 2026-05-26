@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import time
 import re
+import asyncio
 from dataclasses import dataclass
 
 from diffguard_agent.agent.llm_utils import create_llm
@@ -192,60 +193,39 @@ class PipelineOrchestrator:
             # Attach tracker so all LLM calls report token usage
             llm_with_tracking = llm.with_config(callbacks=[tracker])
 
-            for idx, chunk_entries in enumerate(chunks):
-                chunk_label = f"chunk {idx + 1}/{len(chunks)}"
-                logger.info("Processing %s (%d files)", chunk_label, len(chunk_entries))
+            chunk_parallelism = _effective_chunk_parallelism(tool_client)
+            logger.info(
+                "Chunk execution mode: parallelism=%d, chunks=%d, tool_session=%s",
+                chunk_parallelism, len(chunks), "enabled" if tool_client is not None else "disabled",
+            )
+            tasks = [
+                self._process_single_chunk(
+                    idx=idx,
+                    total_chunks=len(chunks),
+                    chunk_entries=chunk_entries,
+                    llm_with_tracking=llm_with_tracking,
+                    tool_client=tool_client,
+                    tracker=tracker,
+                    stages=stages,
+                    metrics=metrics,
+                )
+                for idx, chunk_entries in enumerate(chunks)
+            ]
+            results = await _run_with_limited_concurrency(tasks, limit=chunk_parallelism)
 
-                chunk_diff = "\n".join(e.content for e in chunk_entries)
-                chunk_file_diffs = _build_file_diff_map(chunk_entries)
+            for result in results:
+                if result["error"] is not None:
+                    failed_chunks.append(result["error"])
+                    logger.warning("[%s] failed: %s", result["chunk_label"], result["exception"])
+                    continue
 
-                try:
-                    context = await self._run_chunk_pipeline(
-                        chunk_diff=chunk_diff,
-                        chunk_file_diffs=chunk_file_diffs,
-                        llm=llm_with_tracking,
-                        tool_client=tool_client,
-                        tracker=tracker,
-                        stages=stages,
-                        chunk_index=idx + 1,
-                        metrics=metrics,
-                    )
-
-                    all_issues.extend(context.aggregation.final_issues)
-                    if context.aggregation.final_summary:
-                        all_summaries.append(context.aggregation.final_summary)
-                    if context.aggregation.has_critical:
-                        has_critical = True
-
-                except Exception as e:
-                    if _is_prompt_too_long_error(e):
-                        logger.warning("[%s] prompt too long, retrying with compact context", chunk_label)
-                        compact_diff = _build_compact_chunk_diff(chunk_entries)
-                        try:
-                            context = await self._run_chunk_pipeline(
-                                chunk_diff=compact_diff,
-                                chunk_file_diffs=chunk_file_diffs,
-                                llm=llm_with_tracking,
-                                tool_client=tool_client,
-                                tracker=tracker,
-                                stages=stages,
-                                chunk_index=idx + 1,
-                                metrics=metrics,
-                                stage_name_suffix="_fallback",
-                            )
-                            fallback_chunks += 1
-                            all_issues.extend(context.aggregation.final_issues)
-                            if context.aggregation.final_summary:
-                                all_summaries.append(context.aggregation.final_summary)
-                            if context.aggregation.has_critical:
-                                has_critical = True
-                            continue
-                        except Exception as fallback_error:
-                            e = fallback_error
-
-                    failure = f"{chunk_label}: {e}"
-                    failed_chunks.append(failure)
-                    logger.warning("[%s] failed: %s", chunk_label, e)
+                all_issues.extend(result["issues"])
+                if result["summary"]:
+                    all_summaries.append(result["summary"])
+                if result["has_critical"]:
+                    has_critical = True
+                if result["used_fallback"]:
+                    fallback_chunks += 1
 
         finally:
             await self._maybe_destroy_tool_session(tool_client)
@@ -368,6 +348,83 @@ class PipelineOrchestrator:
                     (time.monotonic() - t0) * 1000,
                 )
         return context
+
+    async def _process_single_chunk(
+        self,
+        *,
+        idx: int,
+        total_chunks: int,
+        chunk_entries: list[object],
+        llm_with_tracking,
+        tool_client,
+        tracker: TokenUsageTracker,
+        stages: list[PipelineStage],
+        metrics: ReviewMetrics,
+    ) -> dict:
+        chunk_label = f"chunk {idx + 1}/{total_chunks}"
+        logger.info("Processing %s (%d files)", chunk_label, len(chunk_entries))
+
+        chunk_diff = "\n".join(e.content for e in chunk_entries)
+        chunk_file_diffs = _build_file_diff_map(chunk_entries)
+
+        try:
+            context = await self._run_chunk_pipeline(
+                chunk_diff=chunk_diff,
+                chunk_file_diffs=chunk_file_diffs,
+                llm=llm_with_tracking,
+                tool_client=tool_client,
+                tracker=tracker,
+                stages=stages,
+                chunk_index=idx + 1,
+                metrics=metrics,
+            )
+            return {
+                "chunk_label": chunk_label,
+                "issues": context.aggregation.final_issues,
+                "summary": context.aggregation.final_summary,
+                "has_critical": context.aggregation.has_critical,
+                "used_fallback": False,
+                "error": None,
+                "exception": None,
+            }
+
+        except Exception as e:
+            if _is_prompt_too_long_error(e):
+                logger.warning("[%s] prompt too long, retrying with compact context", chunk_label)
+                compact_diff = _build_compact_chunk_diff(chunk_entries)
+                try:
+                    context = await self._run_chunk_pipeline(
+                        chunk_diff=compact_diff,
+                        chunk_file_diffs=chunk_file_diffs,
+                        llm=llm_with_tracking,
+                        tool_client=tool_client,
+                        tracker=tracker,
+                        stages=stages,
+                        chunk_index=idx + 1,
+                        metrics=metrics,
+                        stage_name_suffix="_fallback",
+                    )
+                    return {
+                        "chunk_label": chunk_label,
+                        "issues": context.aggregation.final_issues,
+                        "summary": context.aggregation.final_summary,
+                        "has_critical": context.aggregation.has_critical,
+                        "used_fallback": True,
+                        "error": None,
+                        "exception": None,
+                    }
+                except Exception as fallback_error:
+                    e = fallback_error
+
+            return {
+                "chunk_label": chunk_label,
+                "issues": [],
+                "summary": "",
+                "has_critical": False,
+                "used_fallback": False,
+                "error": f"{chunk_label}: {e}",
+                "exception": e,
+            }
 
 
 # ---------------------------------------------------------------------------
@@ -717,6 +774,26 @@ def _max_failed_chunk_ratio() -> float:
     if raw > 1:
         return 1.0
     return raw
+
+
+def _effective_chunk_parallelism(tool_client) -> int:
+    """Bound chunk parallelism; force serial mode when tool session is shared."""
+    if tool_client is not None:
+        return 1
+    raw = int(getattr(settings, "CHUNK_PARALLELISM", 1))
+    return max(1, raw)
+
+
+async def _run_with_limited_concurrency(tasks: list, limit: int):
+    """Run awaitables with bounded concurrency and preserve input order."""
+    semaphore = asyncio.Semaphore(max(1, limit))
+
+    async def _run_one(coro):
+        async with semaphore:
+            return await coro
+
+    wrapped = [_run_one(t) for t in tasks]
+    return await asyncio.gather(*wrapped)
 
 
 def _deduplicate_issues(issues: list[IssuePayload]) -> list[IssuePayload]:
