@@ -51,7 +51,7 @@ public final class ReviewReportPrinter {
     }
 
     static void printCleanVerdict() {
-        TerminalUI.println("  " + GREEN + BOLD + "  ✓ All clear" + RESET + GRAY + " — no issues found" + RESET);
+        TerminalUI.println("  " + GREEN + BOLD + "  ✓ 代码质量优秀" + RESET + GRAY + " — no issues found, safe to merge" + RESET);
         TerminalUI.println();
     }
 
