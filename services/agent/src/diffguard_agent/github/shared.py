@@ -76,7 +76,11 @@ def build_summary_comment(issues: list[dict[str, Any]]) -> str:
         if not i.get("filter_metadata", {}).get("excluded")
     ]
     if not visible:
-        return "**DiffGuard**: No actionable findings."
+        return (
+            "**DiffGuard AI Code Review**\n\n"
+            "Code quality is excellent. No actionable findings, safe to merge."
+            "\n\n---\n*Powered by [DiffGuard](https://github.com/user/diffguard)*"
+        )
 
     critical = sum(1 for i in visible if i.get("severity") == "CRITICAL")
     warning = sum(1 for i in visible if i.get("severity") == "WARNING")
