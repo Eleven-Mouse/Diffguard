@@ -253,6 +253,58 @@ class TestFalsePositiveFilterStageExecute:
         assert len(excluded) == 1
         assert excluded[0].message == "Code could be improved"
 
+    @patch("diffguard_agent.agent.pipeline.stages.fp_filter_stage.FindingsFilter")
+    async def test_recomputes_has_critical_after_exclusion(self, mock_fp_cls):
+        from diffguard_agent.agent.pipeline.stages.fp_filter_stage import FalsePositiveFilterStage
+
+        excluded_critical = IssuePayload(
+            severity="CRITICAL",
+            file="src/Auth.java",
+            line=42,
+            type="auth_bypass",
+            message="Authentication bypass",
+            suggestion="Add permission check",
+            confidence=0.0,
+            filter_metadata={
+                "excluded": True,
+                "reason": "false positive",
+                "stage": "hard_rules",
+            },
+        )
+        visible_warning = IssuePayload(
+            severity="WARNING",
+            file="src/User.java",
+            line=12,
+            type="logic",
+            message="Potential null access",
+            suggestion="Add guard",
+            confidence=0.9,
+            filter_metadata={},
+        )
+
+        mock_stats = MagicMock()
+        mock_stats.total_input = 2
+        mock_stats.excluded_by_hard_rules = 1
+
+        fp_instance = MagicMock()
+        fp_instance.filter_issues = AsyncMock(
+            return_value=([excluded_critical, visible_warning], mock_stats),
+        )
+        mock_fp_cls.return_value = fp_instance
+
+        ctx = PipelineContext(
+            input=PipelineInput(diff_text="some diff"),
+            aggregation=AggregationOutput(
+                final_issues=[excluded_critical, visible_warning],
+                has_critical=True,
+            ),
+        )
+
+        stage = FalsePositiveFilterStage()
+        result_ctx = await stage.execute(ctx)
+
+        assert result_ctx.aggregation.has_critical is False
+
 
 # ---------------------------------------------------------------------------
 # AggregationStage.execute
@@ -310,3 +362,27 @@ class TestAggregationStageExecute:
         assert result_ctx.aggregation.final_summary == "Merged: 1 critical issue"
         assert result_ctx.aggregation.highlights == ["a.java:10"]
         assert result_ctx.aggregation.test_suggestions == ["Test edge cases"]
+
+    @patch("diffguard_agent.agent.pipeline.stages.aggregation.load_prompt")
+    async def test_reviewer_section_preserves_source_reviewer(self, mock_load_prompt):
+        from diffguard_agent.agent.pipeline.stages.aggregation import _build_reviewer_section
+
+        mock_load_prompt.side_effect = [
+            "aggregation system prompt",
+            "aggregation user prompt with {{summary}} and {{reviewer_results}}",
+        ]
+
+        review_results = {
+            "logic": (
+                '{"summary":"logic review",'
+                '"issues":[{"severity":"WARNING","file":"a.java","line":12,'
+                '"type":"logic_check","message":"auth token may be null","suggestion":"guard"}]}'
+            ),
+            "security": '{"summary":"security review","issues":[]}',
+        }
+
+        section, total = _build_reviewer_section(review_results)
+
+        assert total == 1
+        assert "【logic】" in section
+        assert '"issue_count": 1' in section

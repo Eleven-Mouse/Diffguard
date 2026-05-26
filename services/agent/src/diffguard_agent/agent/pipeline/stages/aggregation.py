@@ -35,13 +35,13 @@ def _build_reviewer_section(review_results: dict[str, str]) -> tuple[str, int]:
 
     Returns (reviewer_section_text, total_issues_count).
     """
-    all_issues: list[tuple[int, dict]] = []
+    all_issues: list[tuple[int, str, dict]] = []
 
     for name, result_json in review_results.items():
         try:
             data = json.loads(result_json)
             for issue in data.get("issues", []):
-                all_issues.append((_severity_weight(issue.get("severity", "INFO")), issue))
+                all_issues.append((_severity_weight(issue.get("severity", "INFO")), name, issue))
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Failed to parse reviewer result '%s': %s", name, e)
 
@@ -51,9 +51,9 @@ def _build_reviewer_section(review_results: dict[str, str]) -> tuple[str, int]:
 
     # Group by reviewer (simple approach: keep original grouping by name)
     by_reviewer: dict[str, list[dict]] = {}
-    for _, issue in top_issues:
-        # Determine reviewer from issue type/message (best-effort heuristic)
-        reviewer = _guess_reviewer(issue)
+    for _, source_name, issue in top_issues:
+        # Keep source reviewer when available; only fall back to heuristic for malformed source.
+        reviewer = source_name or _guess_reviewer(issue)
         if reviewer not in by_reviewer:
             by_reviewer[reviewer] = []
         by_reviewer[reviewer].append(issue)

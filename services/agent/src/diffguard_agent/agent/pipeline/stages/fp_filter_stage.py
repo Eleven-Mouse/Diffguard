@@ -43,6 +43,12 @@ class FalsePositiveFilterStage(PipelineStage):
         filtered, stats = await fp_filter.filter_issues(context.aggregation.final_issues)
         context.aggregation.final_issues = filtered
         context.aggregation.filter_stats = stats
+        # Recompute critical flag using only visible findings after filtering.
+        context.aggregation.has_critical = any(
+            i.severity.upper() == "CRITICAL"
+            and not i.filter_metadata.get("excluded", False)
+            for i in filtered
+        )
 
         visible = sum(
             1 for i in filtered if not i.filter_metadata.get("excluded", False)
