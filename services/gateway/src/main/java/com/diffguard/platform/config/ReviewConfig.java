@@ -485,7 +485,10 @@ public class ReviewConfig {
                 return password.trim();
             }
             String env = System.getenv(passwordEnv);
-            return (env != null && !env.isBlank()) ? env.trim() : "guest";
+            if (env != null && !env.isBlank()) {
+                return env.trim();
+            }
+            throw new IllegalStateException("RabbitMQ password is required. Set " + passwordEnv + " or configure message_queue.password");
         }
     }
 

@@ -20,6 +20,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Literal, cast
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,6 +64,9 @@ def _build_review_request(diff_text: str):
     from diffguard_agent.utils.diff_utils import split_diff
 
     provider = _env("DIFFGUARD_PROVIDER", "claude")
+    if provider not in {"openai", "claude"}:
+        logger.warning("Unsupported provider=%s, fallback to claude", provider)
+        provider = "claude"
     model = _env("DIFFGUARD_MODEL", "claude-sonnet-4-20250514")
     api_key = _env("DIFFGUARD_API_KEY")
     api_base_url = _env("DIFFGUARD_API_BASE_URL")
@@ -79,7 +83,7 @@ def _build_review_request(diff_text: str):
         project_dir=_env("REPO_PATH", str(Path.cwd())),
         diff_entries=split_diff(diff_text),
         llm_config=LlmConfig(
-            provider=provider,
+            provider=cast(Literal["openai", "claude"], provider),
             model=model,
             api_key=api_key,
             base_url=api_base_url or None,

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from diffguard_agent.agent.diff_parser import DiffLineMapper, map_issue_line
 
 

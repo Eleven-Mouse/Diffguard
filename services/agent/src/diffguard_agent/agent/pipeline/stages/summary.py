@@ -29,6 +29,8 @@ class SummaryStage(PipelineStage):
 
     async def execute(self, context: PipelineContext) -> PipelineContext:
         logger.info("Pipeline Stage [summary]: Analyzing diff")
+        if context.input.llm is None:
+            raise RuntimeError("LLM client is not initialized")
         system = load_prompt("pipeline/diff-summary-system.txt")
         user_tpl = load_prompt("pipeline/diff-summary-user.txt")
         user = user_tpl.replace("{{diff}}", sanitize_diff_for_prompt(context.input.diff_text))

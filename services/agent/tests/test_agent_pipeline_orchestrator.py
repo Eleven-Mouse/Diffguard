@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from diffguard_agent.agent.pipeline.stages.base import PipelineContext, PipelineStage
+from diffguard_agent.agent.pipeline.stages.base import PipelineStage
 from diffguard_agent.config import settings
 from diffguard_agent.models.schemas import (
     DiffEntry,
