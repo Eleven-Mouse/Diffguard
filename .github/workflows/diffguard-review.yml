@@ -33,9 +33,9 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run DiffGuard (local action)
+      - name: Run DiffGuard (released action)
         if: steps.precheck.outputs.enabled == 'true'
-        uses: ./
+        uses: Eleven-Mouse/Diffguard@v1.0.0
         with:
           api-key: ${{ secrets.DIFFGUARD_API_KEY }}
           provider: openai
