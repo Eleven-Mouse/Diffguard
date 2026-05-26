@@ -33,14 +33,14 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run DiffGuard (released action)
+      - name: Run DiffGuard (local action)
         if: steps.precheck.outputs.enabled == 'true'
-        uses: Eleven-Mouse/Diffguard@v1.0.0
+        uses: ./
         with:
           api-key: ${{ secrets.DIFFGUARD_API_KEY }}
           provider: openai
           model: mimo-v2.5-pro
-          api-base-url: ${{ secrets.DIFFGUARD_API_BASE_URL }} # 可选；不用代理可删掉
+          api-base-url: ${{ secrets.DIFFGUARD_API_BASE_URL }}
           language: zh
           comment-pr: true
           enable-fp-filter: true
