@@ -26,17 +26,68 @@ class TokenUsageTracker(BaseCallbackHandler):
 
     def on_llm_end(self, response, *, run_id, parent_run_id=None, **kwargs):
         try:
-            usage = response.llm_output.get("token_usage", {}) if response.llm_output else {}
-            if not usage and hasattr(response, "generations") and response.generations:
-                gen = response.generations[0][0]
-                if hasattr(gen, "generation_info") and gen.generation_info:
-                    usage = gen.generation_info.get("usage", {}) or gen.generation_info.get("token_usage", {})
-            self.total_prompt_tokens += usage.get("prompt_tokens", 0)
-            self.total_completion_tokens += usage.get("completion_tokens", 0)
-            self.total_tokens += usage.get("total_tokens", 0)
+            usage = self._extract_usage(response)
+            prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+            completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+            total_tokens = int(usage.get("total_tokens", 0) or 0)
+            if total_tokens <= 0:
+                total_tokens = prompt_tokens + completion_tokens
+
+            self.total_prompt_tokens += prompt_tokens
+            self.total_completion_tokens += completion_tokens
+            self.total_tokens += total_tokens
             self.call_count += 1
         except Exception:
             pass
+
+    @staticmethod
+    def _extract_usage(response) -> dict[str, int]:
+        """Extract token usage across provider-specific response shapes."""
+        llm_output = getattr(response, "llm_output", None) or {}
+
+        # Priority 1: canonical llm_output usage.
+        usage = llm_output.get("token_usage", {}) or llm_output.get("usage", {})
+        if usage:
+            return TokenUsageTracker._normalize_usage_keys(usage)
+
+        if hasattr(response, "generations") and response.generations:
+            gen = response.generations[0][0]
+
+            # Priority 2: generation_info usage.
+            gen_info = getattr(gen, "generation_info", None) or {}
+            usage = gen_info.get("usage", {}) or gen_info.get("token_usage", {})
+            if usage:
+                return TokenUsageTracker._normalize_usage_keys(usage)
+
+            # Priority 3: message usage_metadata (newer LangChain providers).
+            message = getattr(gen, "message", None)
+            usage_meta = getattr(message, "usage_metadata", None) if message is not None else None
+            if usage_meta:
+                return TokenUsageTracker._normalize_usage_keys(usage_meta)
+
+        return {}
+
+    @staticmethod
+    def _normalize_usage_keys(usage: dict) -> dict[str, int]:
+        """Map provider-specific usage keys to prompt/completion/total."""
+        prompt = (
+            usage.get("prompt_tokens")
+            or usage.get("input_tokens")
+            or usage.get("prompt_token_count")
+            or 0
+        )
+        completion = (
+            usage.get("completion_tokens")
+            or usage.get("output_tokens")
+            or usage.get("candidate_tokens")
+            or 0
+        )
+        total = usage.get("total_tokens") or usage.get("total_token_count") or 0
+        return {
+            "prompt_tokens": int(prompt or 0),
+            "completion_tokens": int(completion or 0),
+            "total_tokens": int(total or 0),
+        }
 
 
 @dataclass
