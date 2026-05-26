@@ -65,6 +65,7 @@ def _build_review_request(diff_text: str):
     provider = _env("DIFFGUARD_PROVIDER", "claude")
     model = _env("DIFFGUARD_MODEL", "claude-sonnet-4-20250514")
     api_key = _env("DIFFGUARD_API_KEY")
+    api_base_url = _env("DIFFGUARD_API_BASE_URL")
 
     if not api_key:
         raise RuntimeError("DIFFGUARD_API_KEY is required")
@@ -81,6 +82,7 @@ def _build_review_request(diff_text: str):
             provider=provider,
             model=model,
             api_key=api_key,
+            base_url=api_base_url or None,
             timeout_seconds=_env_timeout_seconds(),
         ),
         review_config=ReviewConfigPayload(
