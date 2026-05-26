@@ -15,9 +15,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Java-21-orange" alt="Java 21" />
   <img src="https://img.shields.io/badge/Python-3.11+-blue" alt="Python 3.11+" />
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License" />
-  <img src="https://img.shields.io/badge/GitHub_Action-Supported-purple" alt="GitHub Action" />
-  <img src="https://img.shields.io/badge/LLM-Claude%20%7C%20OpenAI-ff69b4" alt="LLM Providers" />
+  <img src="https://img.shields.io/badge/LangChain-0.3+-green" alt="LangChain" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow" alt="MIT License" />
+  <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen" alt="PRs Welcome" />
+  <!-- release-badge:start -->
+  <a href="./releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Release-v1.0.0-2ea44f" alt="Release v1.0.0" /></a>
+  <!-- release-badge:end -->
 </p>
 
 ---
@@ -271,6 +274,53 @@ mvn -DskipTests package
 export GITHUB_TOKEN=ghp_your_token
 export DIFFGUARD_API_KEY=sk-ant-your-key
 java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline
+
+# Multi-Agent 兼容入口（当前与 Pipeline 同链路）
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --multi-agent
+
+# 有严重问题也强制通过
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --force
+
+# 安装 Git Hook（pre-commit + pre-push，自动审查）
+java -jar target/diffguard-1.0.0.jar install
+
+# 卸载 Hook
+java -jar target/diffguard-1.0.0.jar uninstall
+
+# 启动独立 Tool 服务（微服务拆分场景）
+java -jar target/diffguard-1.0.0.jar tool-server --port 9090
+
+# 启动独立 Review Orchestrator 服务（第二阶段）
+java -jar target/diffguard-1.0.0.jar orchestrator-server --port 8088
+```
+
+安装 Git Hook 后，每次 `git commit` 或 `git push` 将自动触发代码审查。
+  
+> Hook 仅支持 PR 模式。请提前设置 `DIFFGUARD_PR=owner/repo#number`，未设置时 Hook 会跳过审查。
+
+### GitHub Action（零基础设施）
+
+在 workflow YAML 中添加：
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
+- name: DiffGuard Code Review
+  uses: kunxing/diffguard@v1
+  with:
+    api-key: ${{ secrets.DIFFGUARD_API_KEY }}
+    provider: claude
+    model: claude-sonnet-4-20250514
+    language: zh
+    comment-pr: true
+    exclude-directories: "docs,examples"
+    enable-fp-filter: true
+    timeout-minutes: 10
+    # 可选：启用 Java Tool Server（让 Agent 在审查时调用 AST/调用图/语义检索工具）
+    use-java-tool-server: true
+    tool-server-url: http://127.0.0.1:9090
 ```
 
 ### Option 3: Docker Compose
