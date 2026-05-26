@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/images/logo.png" alt="DiffGuard" width="120" />
-</p>
-
 <h1 align="center">DiffGuard</h1>
 
 <p align="center">
@@ -13,11 +9,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Java-21-orange" alt="Java 21" />
-  <img src="https://img.shields.io/badge/Python-3.11+-blue" alt="Python 3.11+" />
-  <img src="https://img.shields.io/badge/LangChain-0.3+-green" alt="LangChain" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow" alt="MIT License" />
-  <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen" alt="PRs Welcome" />
+  <img src="https://img.shields.io/badge/Java-21-orange?logo=eclipse-temurin&logoColor=white" alt="Java 21" />
+  <img src="https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12" />
+  <img src="https://img.shields.io/badge/LangChain-0.3-green?logo=langchain&logoColor=white" alt="LangChain" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" />
+  <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg" alt="PRs Welcome" />
+  <img src="https://img.shields.io/badge/LLM-Claude%20%7C%20OpenAI-ff69b4" alt="LLM Providers" />
   <!-- release-badge:start -->
   <a href="./releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Release-v1.0.0-2ea44f" alt="Release v1.0.0" /></a>
   <!-- release-badge:end -->
@@ -57,10 +54,10 @@ When Java Tool Server is enabled, reviewers become **LangChain ReAct agents** wi
 Two-stage filter: **deterministic regex rules** (zero LLM cost) followed by optional **LLM verification**. 28 built-in precedent rules covering Spring, MyBatis, React, JPA, and more.
 
 ### Static Rule Engine (Zero LLM Cost)
-Pre-review rules that scan added lines for: SQL injection patterns, hardcoded secrets, dangerous function calls, excessive nesting depth.
+Pre-review rules that scan added lines for: SQL injection patterns, hardcoded secrets (AWS keys, GitHub tokens), dangerous function calls (`Runtime.exec`, `eval`), excessive nesting depth.
 
 ### Token-Aware Diff Chunking
-Large PRs are automatically split into chunks using first-fit-decreasing packing with hunk-level splitting. Issues are deduplicated across chunks.
+Large PRs are automatically split into chunks using first-fit-decreasing packing with hunk-level splitting. Configurable limits: max 10 files, 60K chars, 12K tokens per chunk. Issues are deduplicated across chunks.
 
 ### Multi-Model Support
 - **Claude** — via Anthropic API (native)
@@ -68,13 +65,13 @@ Large PRs are automatically split into chunks using first-fit-decreasing packing
 - **Proxies** — automatic detection and fallback for OpenAI-compatible proxies
 
 ### GitHub Action (Composite Action)
-Drop-in GitHub Action with PR inline comments, severity icons, and review summaries. Outputs `findings-count` for downstream workflow gates.
+Drop-in GitHub Action with PR inline comments, severity icons, and review summaries. Outputs `findings-count` for downstream workflow gates. Optional Java Tool Server for deep code analysis.
 
 ### Resilience & Observability
-- Circuit breaker (Resilience4j) for LLM and Agent calls
+- Circuit breaker (Resilience4j) for LLM and Agent calls — 50% failure rate threshold, 30s open state
 - Rate limiter (10 req/s token bucket)
-- Retry with exponential backoff and jitter
-- Prometheus metrics (review count, issue count, token usage, duration)
+- Retry with exponential backoff and jitter (3 max retries)
+- Prometheus metrics: review count, issue count, token usage, duration, static rule hits
 - Review caching (Caffeine + disk, 24h TTL)
 
 ---
@@ -142,7 +139,6 @@ graph TB
         S --> Reviewers --> AGG --> FPF
     end
 
-    PR -->|"webhook"| OS
     CLI --> RC
     OCS -->|"HTTP"| PO
     Reviewers -.->|"tool calls"| TS
@@ -184,7 +180,7 @@ DiffGuard/
 │   │       │   └── output/             # Terminal UI, Markdown formatter, progress display
 │   │       └── exception/              # Domain exceptions
 │   │
-│   └── agent/                          # Python 3.11+ Agent
+│   └── agent/                          # Python 3.12 Agent
 │       ├── pyproject.toml              # FastAPI, LangChain, httpx, ChromaDB, ...
 │       ├── Dockerfile                  # python:3.12-slim + uv
 │       ├── .env.example
@@ -224,9 +220,10 @@ DiffGuard/
 │           ├── utils/                  # Diff splitting utilities
 │           └── metrics.py             # Per-stage metrics collector
 └── .github/workflows/
-    ├── ci.yml                          # Java mvn verify + Python pytest
+    ├── ci.yml                          # Manual CI: Java mvn verify + Python pytest
     ├── diffguard-review.yml            # Auto PR review
-    └── diffguard-manual-test.yml       # Manual review trigger
+    ├── diffguard-manual-test.yml       # Manual review trigger
+    └── release.yml                     # Tag-based release pipeline
 ```
 
 ---
@@ -243,12 +240,16 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: DiffGuard/diffguard@main
+      - uses: Eleven-Mouse/Diffguard@v1.0.0
         with:
           api-key: ${{ secrets.DIFFGUARD_API_KEY }}
           provider: claude
@@ -275,53 +276,23 @@ export GITHUB_TOKEN=ghp_your_token
 export DIFFGUARD_API_KEY=sk-ant-your-key
 java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline
 
-# Multi-Agent 兼容入口（当前与 Pipeline 同链路）
-java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --multi-agent
+# With Java Tool Server enabled (for deep AST/code graph analysis)
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline --force
 
-# 有严重问题也强制通过
-java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --force
-
-# 安装 Git Hook（pre-commit + pre-push，自动审查）
+# Install Git Hook (pre-commit + pre-push, auto-review)
 java -jar target/diffguard-1.0.0.jar install
 
-# 卸载 Hook
+# Uninstall Hook
 java -jar target/diffguard-1.0.0.jar uninstall
 
-# 启动独立 Tool 服务（微服务拆分场景）
+# Start standalone Tool Server
 java -jar target/diffguard-1.0.0.jar tool-server --port 9090
 
-# 启动独立 Review Orchestrator 服务（第二阶段）
+# Start standalone Orchestrator Server
 java -jar target/diffguard-1.0.0.jar orchestrator-server --port 8088
 ```
 
-安装 Git Hook 后，每次 `git commit` 或 `git push` 将自动触发代码审查。
-  
-> Hook 仅支持 PR 模式。请提前设置 `DIFFGUARD_PR=owner/repo#number`，未设置时 Hook 会跳过审查。
-
-### GitHub Action（零基础设施）
-
-在 workflow YAML 中添加：
-
-```yaml
-permissions:
-  contents: read
-  pull-requests: write
-
-- name: DiffGuard Code Review
-  uses: kunxing/diffguard@v1
-  with:
-    api-key: ${{ secrets.DIFFGUARD_API_KEY }}
-    provider: claude
-    model: claude-sonnet-4-20250514
-    language: zh
-    comment-pr: true
-    exclude-directories: "docs,examples"
-    enable-fp-filter: true
-    timeout-minutes: 10
-    # 可选：启用 Java Tool Server（让 Agent 在审查时调用 AST/调用图/语义检索工具）
-    use-java-tool-server: true
-    tool-server-url: http://127.0.0.1:9090
-```
+> Git Hook only supports PR mode. Set `DIFFGUARD_PR=owner/repo#number` beforehand; the hook will skip review if unset.
 
 ### Option 3: Docker Compose
 
@@ -372,7 +343,7 @@ This starts:
 | `DIFFGUARD_API_BASE_URL` | Custom LLM API base URL |
 | `DIFFGUARD_AGENT_URL` | Python Agent service URL |
 | `DIFFGUARD_TOOL_SERVER_URL` | Tool Server URL (overrides host+port) |
-| `DIFFGUARD_TOOL_SERVER_HOST` | Tool Server host (default: `0.0.0.0`) |
+| `DIFFGUARD_TOOL_SERVER_HOST` | Tool Server host (default: `localhost`) |
 | `DIFFGUARD_TOOL_SERVER_PORT` | Tool Server port (default: `9090`) |
 | `DIFFGUARD_TOOL_SECRET` | Shared secret for Tool Server auth |
 | `DIFFGUARD_ORCHESTRATOR_URL` | Orchestrator Server URL |
@@ -510,7 +481,7 @@ ruff check .        # Lint (optional)
 
 ### CI
 
-The project runs CI on every push/PR to `main`:
+The project provides CI workflows for manual verification:
 - **Java**: `mvn -B verify` with Surefire report upload
 - **Python**: `uv sync --dev` → `ruff check` → `pytest`
 
@@ -521,7 +492,7 @@ The project runs CI on every push/PR to `main`:
 | Layer | Technology |
 |---|---|
 | **Gateway** | Java 21, Maven, Javalin (HTTP), picocli (CLI) |
-| **Agent** | Python 3.11+, FastAPI, LangChain, Pydantic, httpx |
+| **Agent** | Python 3.12, FastAPI, LangChain, Pydantic, httpx |
 | **LLM** | Claude (Anthropic API), OpenAI (Chat Completions) |
 | **AST** | JavaParser (Java source analysis) |
 | **Code Graph** | Custom graph engine (nodes: FILE/CLASS/METHOD, edges: CALLS/IMPLEMENTS/EXTENDS) |
@@ -532,23 +503,6 @@ The project runs CI on every push/PR to `main`:
 | **Observability** | Micrometer + Prometheus |
 | **Container** | Docker, Docker Compose |
 | **CI/CD** | GitHub Actions |
-
----
-
-## Roadmap
-
-Based on the project's [PROGRESS.md](./PROGRESS.md):
-
-- [x] Tool Service extraction (standalone Tool Server)
-- [x] Pipeline orchestrator with 4-stage review
-- [x] False-positive filter with regex + LLM verification
-- [x] GitHub Action composite action
-- [x] RabbitMQ task dispatch
-- [x] ChromaDB vector store for Code RAG
-- [x] AST analysis + Code Graph
-- [ ] Orchestrator Service full MQ integration testing
-- [ ] RAG adapter PoC (external embedding providers)
-- [ ] Rule/Result Service extraction
 
 ---
 
