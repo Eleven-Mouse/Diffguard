@@ -395,3 +395,26 @@ class TestPipelineOrchestratorRun:
             assert "[partial review]" in (resp.summary or "")
         finally:
             settings.CHUNK_MAX_FAILED_RATIO = original_ratio
+
+
+class TestChunkParallelism:
+
+    def test_effective_chunk_parallelism_without_tool_client_uses_config(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _effective_chunk_parallelism
+
+        original = settings.CHUNK_PARALLELISM
+        settings.CHUNK_PARALLELISM = 3
+        try:
+            assert _effective_chunk_parallelism(None) == 3
+        finally:
+            settings.CHUNK_PARALLELISM = original
+
+    def test_effective_chunk_parallelism_with_tool_client_forces_serial(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _effective_chunk_parallelism
+
+        original = settings.CHUNK_PARALLELISM
+        settings.CHUNK_PARALLELISM = 8
+        try:
+            assert _effective_chunk_parallelism(MagicMock()) == 1
+        finally:
+            settings.CHUNK_PARALLELISM = original
