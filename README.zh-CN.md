@@ -8,9 +8,14 @@
   <strong>AI 驱动的多 Pipeline 代码审查 — 安全、逻辑、质量，一个 Action 搞定。</strong>
 </p>
 
-<p align="center">
-  中文 | <a href="./README.md">English</a>
-</p>
+[![Java 21](https://img.shields.io/badge/Java-21-orange?logo=eclipse-temurin&logoColor=white)](https://adoptium.net/)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![LangChain](https://img.shields.io/badge/LangChain-0.3-green?logo=langchain&logoColor=white)](https://langchain.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](CONTRIBUTING.md)
+<!-- release-badge:start -->
+[![Release](https://img.shields.io/badge/Release-v1.0.0-2ea44f)](./releases/tag/v1.0.0)
+<!-- release-badge:end -->
 
 <p align="center">
   <img src="https://img.shields.io/badge/Java-21-orange" alt="Java 21" />
@@ -283,8 +288,25 @@ cd DiffGuard
 cp services/gateway/.env.example services/gateway/.env
 # 编辑 .env 填入你的 API Key
 
-# 启动所有服务
-docker compose up -d
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
+- name: DiffGuard Code Review
+  uses: kunxing/diffguard@v1
+  with:
+    api-key: ${{ secrets.DIFFGUARD_API_KEY }}
+    provider: claude
+    model: claude-sonnet-4-20250514
+    language: zh
+    comment-pr: true
+    exclude-directories: "docs,examples"
+    enable-fp-filter: true
+    timeout-minutes: 10
+    # 可选：启用 Java Tool Server（让 Agent 在审查时调用 AST/调用图/语义检索工具）
+    use-java-tool-server: true
+    tool-server-url: http://127.0.0.1:9090
 ```
 
 启动的服务：
