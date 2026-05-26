@@ -9,6 +9,9 @@
 [![LangChain](https://img.shields.io/badge/LangChain-0.3-green?logo=langchain&logoColor=white)](https://langchain.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](CONTRIBUTING.md)
+<!-- release-badge:start -->
+[![Release](https://img.shields.io/badge/Release-v1.0.0-2ea44f)](./releases/tag/v1.0.0)
+<!-- release-badge:end -->
 
 [English](README.md) | **中文**
 
@@ -170,7 +173,7 @@ permissions:
   pull-requests: write
 
 - name: DiffGuard Code Review
-  uses: kunxing/diffguard@v2
+  uses: kunxing/diffguard@v1
   with:
     api-key: ${{ secrets.DIFFGUARD_API_KEY }}
     provider: claude

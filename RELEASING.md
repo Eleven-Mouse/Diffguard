@@ -31,6 +31,7 @@ Pipeline:
    - `diffguard-<tag>.jar`
    - `diffguard-<tag>.jar.sha256`
 6. Create (or update) GitHub Release and upload assets
+7. Update release badges in `README.md` and `README.zh-CN.md` on default branch
 
 ## Recommended Release Steps
 

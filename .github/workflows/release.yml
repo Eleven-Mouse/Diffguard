@@ -157,3 +157,46 @@ jobs:
           else
             gh release create "$TAG" dist/* --title "$TAG" --generate-notes
           fi
+
+  update-readme-badge:
+    needs: [meta, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Update release badge in READMEs
+        env:
+          TAG: ${{ needs.meta.outputs.release_tag }}
+        shell: bash
+        run: |
+          EN_LINE="  <a href=\"./releases/tag/${TAG}\"><img src=\"https://img.shields.io/badge/Release-${TAG}-2ea44f\" alt=\"Release ${TAG}\" /></a>"
+          ZH_LINE="[![Release](https://img.shields.io/badge/Release-${TAG}-2ea44f)](./releases/tag/${TAG})"
+
+          awk -v repl="$EN_LINE" '
+            /<!-- release-badge:start -->/ { print; print repl; in_block=1; next }
+            /<!-- release-badge:end -->/   { in_block=0; print; next }
+            !in_block                       { print }
+          ' README.md > README.md.tmp && mv README.md.tmp README.md
+
+          awk -v repl="$ZH_LINE" '
+            /<!-- release-badge:start -->/ { print; print repl; in_block=1; next }
+            /<!-- release-badge:end -->/   { in_block=0; print; next }
+            !in_block                       { print }
+          ' README.zh-CN.md > README.zh-CN.md.tmp && mv README.zh-CN.md.tmp README.zh-CN.md
+
+      - name: Commit and push badge update
+        shell: bash
+        run: |
+          if git diff --quiet -- README.md README.zh-CN.md; then
+            echo "No README badge changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md README.zh-CN.md
+          git commit -m "docs: update release badge to ${{ needs.meta.outputs.release_tag }}"
+          git push origin HEAD:${{ github.event.repository.default_branch }}

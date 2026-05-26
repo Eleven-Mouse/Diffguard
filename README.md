@@ -16,6 +16,9 @@
   <img src="https://img.shields.io/badge/LangChain-0.3+-green" alt="LangChain" />
   <img src="https://img.shields.io/badge/License-MIT-yellow" alt="MIT License" />
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen" alt="PRs Welcome" />
+  <!-- release-badge:start -->
+  <a href="./releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Release-v1.0.0-2ea44f" alt="Release v1.0.0" /></a>
+  <!-- release-badge:end -->
 </p>
 
 ---
@@ -255,7 +258,7 @@ permissions:
   pull-requests: write
 
 - name: DiffGuard Code Review
-  uses: kunxing/diffguard@v2
+  uses: kunxing/diffguard@v1
   with:
     api-key: ${{ secrets.DIFFGUARD_API_KEY }}
     provider: claude
