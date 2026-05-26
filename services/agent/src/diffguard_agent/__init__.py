@@ -1,5 +1,3 @@
-"""DiffGuard Agent Service - FastAPI application entry point."""
+"""DiffGuard Agent package."""
 
-from diffguard_agent.main import app
-
-__all__ = ["app"]
+__all__: list[str] = []

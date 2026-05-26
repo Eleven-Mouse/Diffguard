@@ -1,6 +1,6 @@
 # DiffGuard 进度文档
 
-更新时间：2026-05-24（完成 README 目录与术语口径同步）
+更新时间：2026-05-26（补充执行策略原则：pipeline 为主，multi-agent 为辅）
 负责人：待指定
 
 ## 1. 文档目标
@@ -28,6 +28,12 @@
 - RabbitMQ：任务分发
 - Metrics：Micrometer 指标
 - Resilience4j：熔断/重试/限流
+
+## 2.4 执行策略原则
+
+- 默认执行路径：`pipeline` 为主
+- 增强能力定位：`multi-agent` 为辅（用于复杂分析、解释与建议增强）
+- 落地约束：不以 `multi-agent` 替代主审查链路，优先保证稳定性与可回归性
 
 ## 3. 微服务拆分目标（Java）
 
@@ -65,7 +71,11 @@
 | Webhook 链路代码移除 | 已完成 | 删除 Java webhook 包、server 子命令与相关测试，主入口切换为 CLI |
 | 本地评审 PR-only 入口收敛 | 已完成 | CLI 改为必填 `--pr owner/repo#number`，移除旧 `--staged/--from/--to` 模式 |
 | MULTI_AGENT 术语口径统一 | 已完成 | 统一为“兼容入口（当前回退到 Pipeline）”，避免误解为独立编排已落地 |
+| 执行策略原则固化 | 已完成 | 明确“pipeline 为主，multi-agent 为辅”并写入进度文档 |
 | README 目录与审查器命名对齐 | 已完成 | README / README.zh-CN 同步到 `src/diffguard_agent` 路径与 `security/logic/quality` 术语 |
+| GitHub Action 落地阻塞修复 | 已完成 | 补齐 `tools/tool_client.py` 与 `tools/definitions.py`，去除 `diffguard_agent/__init__.py` 启动副作用，修复 Action 运行时导入阻塞 |
+| GitHub Action 权限文档补齐 | 已完成 | README / README.zh-CN 增加 `permissions: contents: read + pull-requests: write` 示例，并补充 README Action 使用片段 |
+| ReAct/多Agent/Safety 架构对照评审 | 已完成 | 已基于代码逐条给出已实现机制与缺口清单，形成可执行改进方向 |
 
 ## 5. 已完成事项（Done）
 
@@ -102,6 +112,13 @@
 31. 完成本地评审 PR-only 入口收敛：`review` 子命令新增必填 `--pr`，`ReviewApplicationService` 改为基于 GitHub PR API 收集 diff，移除 `--staged/--from/--to` 本地模式入口
 32. 完成 MULTI_AGENT 术语口径统一：更新 `README.md` / `README.zh-CN.md` / `BACKEND_GUIDE.md` 与 Python 入口注释，明确 `MULTI_AGENT` 当前为兼容入口并复用 Pipeline 链路
 33. 完成 README 目录与审查器命名对齐：同步 `services/agent/src/diffguard_agent` 主路径与 `security/logic/quality` 审查器口径，移除 `ReviewAgent/AgentRegistry` 作为当前可用扩展点的误导表述
+34. 完成 GitHub Action 运行链路阻塞修复：新增 `services/agent/src/diffguard_agent/tools/tool_client.py` 与 `services/agent/src/diffguard_agent/tools/definitions.py`，打通 reviewer 工具调用与 tool session 生命周期
+35. 完成 Action 启动副作用修复：`services/agent/src/diffguard_agent/__init__.py` 移除对 `main` 的强依赖导入，避免 `python -m diffguard_agent.github_action_runner` 触发 FastAPI 依赖阻塞
+36. 完成 reviewer 工具封装兼容修复：`ReviewerStage` 内将工具函数转换为 `StructuredTool`，兼容 `create_tool_calling_agent` 与现有测试契约
+37. 完成 Action 关键链路回归测试：本地通过 `test_tools_tool_client.py`、`test_tools_definitions.py`、`test_github_action_runner.py`、`test_agent_pipeline_orchestrator.py`、`test_pipeline_stages.py`
+38. 完成 Action 权限文档补齐：`README.md` / `README.zh-CN.md` 新增 GitHub Action `permissions` 配置与完整接入示例
+39. 完成 ReAct 循环、多Agent协作、Safety/Alignment 三类问题项目级对照评审：已沉淀“现状能力 + 缺口”清单，明确后续应补齐的循环检测、策略治理与多Agent编排增强项
+40. 完成执行策略原则固化：在进度文档明确“pipeline 为主，multi-agent 为辅”，并约束 multi-agent 作为增强能力使用
 
 ## 6. 进行中事项（In Progress）
 
@@ -128,7 +145,7 @@
 4. 仓库当前存在较多历史失败测试（与本次改造无直接关系），暂以“可编译 + 关键链路验证”作为阶段验收依据。
 5. 若直接替换现有 `coderag` 实现，可能破坏 `semantic_search` 工具链路与会话隔离约束，需采用“适配器 + 渐进切换”。
 6. 当前执行环境无法启动 Docker Desktop Service（`com.docker.service`），导致 RabbitMQ 容器无法拉起，阻塞真实 MQ 联调验收。
-7. `services/agent/src/diffguard_agent/models/schemas.py` 文件缺失导致 `pytest` 在导入 `diffguard_agent.models.schemas` 时失败，当前仅能完成语法级校验，需先修复该模块路径/文件一致性。
+7. 仓库首页仍引用不存在的 `README_EN.md`，中英文入口存在断链风险，建议补齐英文文档或修正入口链接。
 
 ## 9. 验收标准（第一阶段）
 

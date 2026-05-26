@@ -165,6 +165,10 @@ java -jar services/gateway/target/diffguard-*.jar review --pr owner/repo#123
 在 workflow YAML 中添加：
 
 ```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
 - name: DiffGuard Code Review
   uses: kunxing/diffguard@v2
   with:

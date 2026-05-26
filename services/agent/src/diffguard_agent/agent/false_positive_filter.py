@@ -165,8 +165,13 @@ class _RuleLoader:
         if config_path:
             self._path = Path(config_path)
         else:
-            # Default to config/false_positive_rules.yaml relative to this file
-            self._path = Path(__file__).parent.parent.parent / "config" / "false-positive-rules.yaml"
+            # Prefer repo-level config/ next to services/agent, fallback to src/config.
+            this_file = Path(__file__).resolve()
+            candidates = [
+                this_file.parents[3] / "config" / "false-positive-rules.yaml",
+                this_file.parents[2] / "config" / "false-positive-rules.yaml",
+            ]
+            self._path = next((p for p in candidates if p.exists()), candidates[0])
 
         self._config: dict | None = None
         self._load()

@@ -245,6 +245,31 @@ java -jar target/diffguard-1.0.0.jar orchestrator-server --port 8088
   
 > Hook 仅支持 PR 模式。请提前设置 `DIFFGUARD_PR=owner/repo#number`，未设置时 Hook 会跳过审查。
 
+### GitHub Action（零基础设施）
+
+在 workflow YAML 中添加：
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
+- name: DiffGuard Code Review
+  uses: kunxing/diffguard@v2
+  with:
+    api-key: ${{ secrets.DIFFGUARD_API_KEY }}
+    provider: claude
+    model: claude-sonnet-4-20250514
+    language: zh
+    comment-pr: true
+    exclude-directories: "docs,examples"
+    enable-fp-filter: true
+    timeout-minutes: 10
+    # 可选：启用 Java Tool Server（让 Agent 在审查时调用 AST/调用图/语义检索工具）
+    use-java-tool-server: true
+    tool-server-url: http://127.0.0.1:9090
+```
+
 ### 方式二：Docker Compose 部署（Action-only 配套服务）
 
 ```bash

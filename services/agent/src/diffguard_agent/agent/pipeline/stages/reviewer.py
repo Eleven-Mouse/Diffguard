@@ -123,6 +123,7 @@ class ReviewerStage(PipelineStage):
     ) -> _TargetedReviewResult:
         from langchain.agents import AgentExecutor, create_tool_calling_agent
         from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.tools import StructuredTool
 
         from diffguard_agent.tools.definitions import (
             make_call_graph_tool,
@@ -133,7 +134,7 @@ class ReviewerStage(PipelineStage):
             make_semantic_search_tool,
         )
 
-        tools = [
+        raw_tools = [
             make_file_content_tool(tool_client),
             make_diff_context_tool(tool_client),
             make_method_definition_tool(tool_client),
@@ -141,6 +142,7 @@ class ReviewerStage(PipelineStage):
             make_related_files_tool(tool_client),
             make_semantic_search_tool(tool_client),
         ]
+        tools = [StructuredTool.from_function(coroutine=t) for t in raw_tools]
 
         # 追加 JSON 输出约束到 user prompt
         user_with_constraint = user + _JSON_OUTPUT_CONSTRAINT

@@ -1,7 +1,16 @@
 """DiffGuard Agent - shared test fixtures."""
 
+import os
+import sys
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+# Ensure src-layout package import works in local and CI pytest runs.
+_TESTS_DIR = os.path.dirname(__file__)
+_SRC_DIR = os.path.abspath(os.path.join(_TESTS_DIR, "..", "src"))
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
 from diffguard_agent.models.schemas import (
     IssuePayload,
