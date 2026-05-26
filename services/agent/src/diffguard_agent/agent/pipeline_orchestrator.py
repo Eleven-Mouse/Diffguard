@@ -528,28 +528,87 @@ def _split_oversized_entry(entry) -> list:
 
 
 def _split_large_hunk(hunk: str, max_chars: int) -> list[str]:
-    """Split a very large hunk into smaller pseudo-hunks."""
+    """Split a very large hunk into smaller valid hunks.
+
+    Rewrites each split hunk header with accurate old/new start + counts so
+    downstream line mapping remains correct.
+    """
     lines = hunk.splitlines(keepends=True)
     if not lines:
         return [hunk]
     header = lines[0]
     body = lines[1:]
+    parsed = _parse_unified_hunk_header(header)
+    if parsed is None:
+        return [hunk]
+
+    old_cursor = parsed["old_start"]
+    new_cursor = parsed["new_start"]
+
     pieces: list[str] = []
-    cur: list[str] = [header]
+    cur_body: list[str] = []
     cur_chars = len(header)
 
     for line in body:
-        if cur_chars + len(line) > max_chars and len(cur) > 1:
-            pieces.append("".join(cur))
-            cur = [header, line]
-            cur_chars = len(header) + len(line)
-        else:
-            cur.append(line)
-            cur_chars += len(line)
+        # Ensure each piece has at least one body line.
+        if cur_body and cur_chars + len(line) > max_chars:
+            pieces.append(_render_split_hunk(parsed["suffix"], old_cursor, new_cursor, cur_body))
+            old_delta, new_delta = _count_old_new_progress(cur_body)
+            old_cursor += old_delta
+            new_cursor += new_delta
+            cur_body = []
+            cur_chars = len(header)
 
-    if cur:
-        pieces.append("".join(cur))
-    return pieces
+        cur_body.append(line)
+        cur_chars += len(line)
+
+    if cur_body:
+        pieces.append(_render_split_hunk(parsed["suffix"], old_cursor, new_cursor, cur_body))
+
+    return pieces if pieces else [hunk]
+
+
+def _parse_unified_hunk_header(header_line: str) -> dict[str, int | str] | None:
+    line = header_line.rstrip("\n")
+    m = re.match(
+        r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
+        r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@(?P<suffix>.*)$",
+        line,
+    )
+    if not m:
+        return None
+    return {
+        "old_start": int(m.group("old_start")),
+        "new_start": int(m.group("new_start")),
+        "suffix": m.group("suffix") or "",
+    }
+
+
+def _count_old_new_progress(lines: list[str]) -> tuple[int, int]:
+    old_delta = 0
+    new_delta = 0
+    for raw in lines:
+        if raw.startswith(" "):
+            old_delta += 1
+            new_delta += 1
+        elif raw.startswith("-"):
+            old_delta += 1
+        elif raw.startswith("+"):
+            new_delta += 1
+        elif raw.startswith("\\"):
+            # '\ No newline at end of file' doesn't consume file lines.
+            continue
+        else:
+            # Defensive default: treat unknown body lines like context.
+            old_delta += 1
+            new_delta += 1
+    return old_delta, new_delta
+
+
+def _render_split_hunk(suffix: str, old_start: int, new_start: int, body: list[str]) -> str:
+    old_count, new_count = _count_old_new_progress(body)
+    header = f"@@ -{old_start},{old_count} +{new_start},{new_count} @@{suffix}\n"
+    return header + "".join(body)
 
 
 def _extract_diff_hunks(content: str) -> dict | None:

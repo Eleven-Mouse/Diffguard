@@ -136,6 +136,55 @@ class TestDiffChunking:
         finally:
             settings.CHUNK_MAX_FILES = original
 
+    def test_split_large_hunk_rewrites_header_offsets(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _split_large_hunk
+
+        hunk = (
+            "@@ -10,8 +20,8 @@ optional suffix\n"
+            " line_a\n"
+            "-old_1\n"
+            "+new_1\n"
+            " line_b\n"
+            "-old_2\n"
+            "+new_2\n"
+            " line_c\n"
+            "+new_3\n"
+        )
+        # Small limit forces multiple pieces.
+        pieces = _split_large_hunk(hunk, max_chars=55)
+        assert len(pieces) >= 2
+        # Headers should be rewritten and shifted, not all identical to original.
+        assert pieces[0].startswith("@@ -10,")
+        assert any(p.startswith("@@ -13,") or p.startswith("@@ -14,") for p in pieces[1:])
+
+    def test_split_hunk_preserves_line_mapping(self):
+        from diffguard_agent.agent.pipeline_orchestrator import _split_large_hunk
+        from diffguard_agent.agent.diff_parser import DiffLineMapper
+
+        hunk = (
+            "@@ -1,4 +1,5 @@\n"
+            " keep1\n"
+            "-old1\n"
+            "+new1\n"
+            " keep2\n"
+            "-old2\n"
+            "+new2\n"
+            "+new3\n"
+        )
+        pieces = _split_large_hunk(hunk, max_chars=45)
+        rebuilt = (
+            "diff --git a/a.py b/a.py\n"
+            "--- a/a.py\n"
+            "+++ b/a.py\n"
+            + "".join(pieces)
+        )
+        mapper = DiffLineMapper(rebuilt)
+        # Locate line numbers of added lines in rebuilt diff and ensure mapping exists.
+        for idx, line in enumerate(rebuilt.splitlines(), start=1):
+            if line.startswith("+new"):
+                mapped = mapper.diff_line_to_file_line("a.py", idx)
+                assert mapped is not None
+
 
 class TestDeduplicateIssues:
     """Tests for _deduplicate_issues in pipeline_orchestrator."""
