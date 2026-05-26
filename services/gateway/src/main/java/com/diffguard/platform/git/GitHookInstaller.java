@@ -81,7 +81,7 @@ public class GitHookInstaller {
      * 在指定的Git仓库中安装 pre-commit 钩子。
      */
     public static void installPreCommit(Path projectDir) throws IOException {
-        Path gitDir = findGitDir(projectDir);
+        Path gitDir = findGitDir(projectDir.toAbsolutePath().normalize());
         if (gitDir == null) {
             throw new IOException("不是Git仓库：" + projectDir);
         }
@@ -106,7 +106,7 @@ public class GitHookInstaller {
      * 在指定的Git仓库中安装 pre-push 钩子。
      */
     public static void installPrePush(Path projectDir) throws IOException {
-        Path gitDir = findGitDir(projectDir);
+        Path gitDir = findGitDir(projectDir.toAbsolutePath().normalize());
         if (gitDir == null) {
             throw new IOException("不是Git仓库：" + projectDir);
         }
@@ -130,7 +130,7 @@ public class GitHookInstaller {
      * 移除 DiffGuard 钩子。
      */
     public static void uninstall(Path projectDir) throws IOException {
-        Path gitDir = findGitDir(projectDir);
+        Path gitDir = findGitDir(projectDir.toAbsolutePath().normalize());
         if (gitDir == null) return;
 
         Path hooksDir = gitDir.resolve("hooks");
@@ -138,7 +138,7 @@ public class GitHookInstaller {
             Path hook = hooksDir.resolve(hookName);
             if (Files.exists(hook)) {
                 String content = Files.readString(hook);
-                if (content.contains("DiffGuard")) {
+                if (isDiffGuardHook(content)) {
                     Files.delete(hook);
                     log.info("已移除 {} 钩子", hookName);
 
@@ -156,7 +156,13 @@ public class GitHookInstaller {
 
     private static Path findGitDir(Path projectDir) {
         Path current = projectDir;
+        Path homeDir = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize();
         while (current != null) {
+            // Avoid accidentally binding to a user's home-level dotfiles repository
+            // when probing arbitrary temp directories.
+            if (!projectDir.equals(homeDir) && current.equals(homeDir)) {
+                break;
+            }
             if (Files.isDirectory(current.resolve(".git"))) {
                 return current.resolve(".git");
             }
@@ -166,13 +172,26 @@ public class GitHookInstaller {
                 try {
                     String content = Files.readString(current.resolve(".git"));
                     if (content.startsWith("gitdir: ")) {
-                        return Path.of(content.substring(8).trim());
+                        String raw = content.substring(8).trim();
+                        Path resolved = Path.of(raw);
+                        if (!resolved.isAbsolute()) {
+                            resolved = current.resolve(resolved).normalize();
+                        }
+                        return resolved;
                     }
                 } catch (IOException ignored) {}
             }
             current = current.getParent();
         }
         return null;
+    }
+
+    private static boolean isDiffGuardHook(String content) {
+        if (content == null || content.isBlank()) {
+            return false;
+        }
+        return content.contains("diffguard.jar")
+                || content.lines().anyMatch(line -> line.stripLeading().startsWith("# DiffGuard"));
     }
 
     private static void makeExecutable(Path file) throws IOException {

@@ -1,0 +1,9 @@
+请使用 {{LANGUAGE}} 输出审查结果。
+
+审查规则：
+{{RULES}}
+
+目标文件：{{FILE_PATH}}
+
+代码差异：
+{{DIFF_CONTENT}}

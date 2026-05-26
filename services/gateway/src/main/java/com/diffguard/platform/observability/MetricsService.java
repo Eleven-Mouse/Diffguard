@@ -31,39 +31,46 @@ public class MetricsService {
     public MetricsService() {
         this.registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
 
-        this.reviewTotal = Counter.builder("diffguard_review_total")
+        this.reviewTotal = Counter.builder("diffguard.review.total")
+                .baseUnit("events")
                 .description("Total review tasks submitted")
                 .register(registry);
 
-        this.reviewSuccess = Counter.builder("diffguard_review_success")
+        this.reviewSuccess = Counter.builder("diffguard.review.success")
+                .baseUnit("events")
                 .description("Successfully completed reviews")
                 .register(registry);
 
-        this.reviewFailed = Counter.builder("diffguard_review_failed")
+        this.reviewFailed = Counter.builder("diffguard.review.failed")
+                .baseUnit("events")
                 .description("Failed reviews")
                 .register(registry);
 
-        this.issuesFound = Counter.builder("diffguard_issues_total")
+        this.issuesFound = Counter.builder("diffguard.issues.total")
+                .baseUnit("events")
                 .description("Total issues found across all reviews")
                 .register(registry);
 
-        this.criticalIssuesFound = Counter.builder("diffguard_issues_critical")
+        this.criticalIssuesFound = Counter.builder("diffguard.issues.critical")
+                .baseUnit("events")
                 .description("Critical severity issues found")
                 .register(registry);
 
-        this.llmTokensUsed = Counter.builder("diffguard_llm_tokens")
+        this.llmTokensUsed = Counter.builder("diffguard.llm.tokens")
+                .baseUnit("tokens")
                 .description("Total LLM tokens consumed")
                 .register(registry);
 
-        this.staticRuleHits = Counter.builder("diffguard_rules_static_hits")
+        this.staticRuleHits = Counter.builder("diffguard.rules.static.hits")
+                .baseUnit("events")
                 .description("Issues found by static rules (zero LLM cost)")
                 .register(registry);
 
-        this.reviewDuration = Timer.builder("diffguard_review_duration")
+        this.reviewDuration = Timer.builder("diffguard.review.duration")
                 .description("Review execution duration")
                 .register(registry);
 
-        this.llmCallDuration = Timer.builder("diffguard_llm_call_duration")
+        this.llmCallDuration = Timer.builder("diffguard.llm.call.duration")
                 .description("Single LLM API call duration")
                 .register(registry);
 
