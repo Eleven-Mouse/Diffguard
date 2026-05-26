@@ -136,12 +136,18 @@ runs:
         DIFFGUARD_USE_JAVA_TOOL_SERVER: ${{ inputs.use-java-tool-server }}
         DIFFGUARD_TOOL_SERVER_URL: ${{ inputs.tool-server-url }}
         REPO_PATH: ${{ github.workspace }}
+        DIFFGUARD_ARTIFACT_DIR: ${{ runner.temp }}/diffguard-review-results
       run: |
         echo "Running DiffGuard AI Code Review..."
+        mkdir -p "$DIFFGUARD_ARTIFACT_DIR"
         cd ${{ github.action_path }}/services/agent
         export PYTHONPATH="${{ github.action_path }}/services/agent/src:${{ github.action_path }}/services/agent"
         echo "results_file=review-output.json" >> $GITHUB_OUTPUT
         python -m diffguard_agent.github_action_runner > review-output.json 2>review-error.log || DIFFGUARD_EXIT_CODE=$?
+
+        cp -f review-output.json "$DIFFGUARD_ARTIFACT_DIR/review-output.json" 2>/dev/null || true
+        cp -f review-error.log "$DIFFGUARD_ARTIFACT_DIR/review-error.log" 2>/dev/null || true
+        cp -f "${{ github.action_path }}/tool-server.log" "$DIFFGUARD_ARTIFACT_DIR/tool-server.log" 2>/dev/null || true
 
         if [ -f review-output.json ]; then
           FINDINGS=$(python -c "import json,sys; d=json.load(open('review-output.json')); print(len(d.get('issues',[])))" 2>/dev/null || echo "0")
@@ -167,9 +173,9 @@ runs:
       with:
         name: diffguard-review-results
         path: |
-          ${{ github.action_path }}/services/agent/review-output.json
-          ${{ github.action_path }}/services/agent/review-error.log
-          ${{ github.action_path }}/tool-server.log
+          ${{ runner.temp }}/diffguard-review-results/review-output.json
+          ${{ runner.temp }}/diffguard-review-results/review-error.log
+          ${{ runner.temp }}/diffguard-review-results/tool-server.log
         retention-days: 7
         if-no-files-found: ignore
 
