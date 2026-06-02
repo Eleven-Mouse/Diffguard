@@ -1,4 +1,4 @@
-name: DiffGuard PR Review
+name: DiffGuard Review
 
 on:
   pull_request:
@@ -9,39 +9,29 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: diffguard-review-${{ github.event.pull_request.number }}
+  group: diffguard-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    if: ${{ !github.event.pull_request.draft }}
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check required secret
-        id: precheck
-        shell: bash
-        run: |
-          if [ -z "${{ secrets.DIFFGUARD_API_KEY }}" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::DIFFGUARD_API_KEY is not set. Skipping DiffGuard review."
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run DiffGuard (released action)
-        if: steps.precheck.outputs.enabled == 'true'
+      - name: DiffGuard (OpenAI)
         uses: Eleven-Mouse/Diffguard@v1.0.0
         with:
           api-key: ${{ secrets.DIFFGUARD_API_KEY }}
           provider: openai
-          model: mimo-v2.5-pro
+          model: gpt-4o
           api-base-url: ${{ secrets.DIFFGUARD_API_BASE_URL }} # 可选；不用代理可删掉
           language: zh
           comment-pr: true
+          exclude-directories: "docs,examples,dist,build,node_modules"
           enable-fp-filter: true
-          timeout-minutes: 10
+          timeout-minutes: 12
+          use-java-tool-server: false

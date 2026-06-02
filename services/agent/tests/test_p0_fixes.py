@@ -23,7 +23,7 @@ class TestDiffChunking:
         ]
 
     def test_small_diff_no_chunking(self):
-        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries, MAX_FILES_PER_CHUNK
+        from diffguard_agent.agent.pipeline_orchestrator import _chunk_diff_entries
 
         entries = self._make_entries(5)
         chunks = _chunk_diff_entries(entries)

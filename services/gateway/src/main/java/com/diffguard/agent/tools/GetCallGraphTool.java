@@ -8,6 +8,7 @@ import com.diffguard.review.codegraph.CodeGraphBuilder;
 import com.diffguard.review.codegraph.GraphNode;
 
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -63,10 +64,12 @@ public class GetCallGraphTool implements AgentTool {
 
         StringBuilder sb = new StringBuilder();
         for (GraphNode node : methodNodes) {
-            List<GraphNode> callers = codeGraph.getCallersOf(node.getId());
+            List<GraphNode> callers = codeGraph.computeImpactSet(Set.of(node.getId()), 1).stream()
+                    .filter(n -> n.getType() == GraphNode.Type.METHOD)
+                    .toList();
             sb.append("方法 ").append(node.getId()).append(" 的调用方:\n");
             for (GraphNode caller : callers) {
-                sb.append("  - ").append(caller.getName())
+                sb.append("  - ").append(caller.getId().replace("method:", ""))
                         .append(" (").append(caller.getFilePath()).append(")\n");
             }
             if (callers.isEmpty()) {
@@ -118,11 +121,13 @@ public class GetCallGraphTool implements AgentTool {
             return ToolResult.error("未找到: " + target);
         }
 
-        Set<GraphNode> impacted = codeGraph.computeImpactSet(targetIds, 3);
+        Set<GraphNode> impacted = codeGraph.computeImpactSet(targetIds, 3).stream()
+                .filter(node -> node.getType() == GraphNode.Type.METHOD)
+                .collect(Collectors.toSet());
         StringBuilder sb = new StringBuilder();
         sb.append("变更影响范围 (").append(target).append("):\n");
-        for (GraphNode node : impacted) {
-            sb.append("  - ").append(node.getType()).append(": ").append(node.getName());
+        for (GraphNode node : impacted.stream().sorted(Comparator.comparing(GraphNode::getId)).toList()) {
+            sb.append("  - ").append(node.getId().replace("method:", ""));
             if (node.getFilePath() != null) {
                 sb.append(" (").append(node.getFilePath()).append(")");
             }

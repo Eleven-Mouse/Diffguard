@@ -192,6 +192,9 @@ public class ReviewTaskMessage {
      * 获取原始 taskId（从序列化消息恢复时使用）。
      */
     public static String extractTaskId(byte[] data) {
+        if (data == null || data.length == 0) {
+            return null;
+        }
         try {
             JsonNode root = MAPPER.readTree(data);
             String taskId = textOrBlank(root.path("task_id"));

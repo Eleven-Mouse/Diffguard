@@ -16,10 +16,12 @@ dependencies = [
     "unstructured>=0.16.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "mypy>=1.11",
+    "ruff>=0.8.0",
 ]
 
 [build-system]
@@ -32,3 +34,11 @@ packages = ["src/diffguard_agent"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+files = ["src"]

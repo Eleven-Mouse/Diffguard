@@ -5,9 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-import time
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, TypeVar, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
@@ -137,7 +136,7 @@ T = TypeVar("T")
 
 
 async def call_with_retry(
-    llm: BaseChatModel,
+    llm: Any,
     func: Callable[..., T],
     max_retries: int = 3,
     base_delay: float = 2.0,
@@ -157,9 +156,9 @@ async def call_with_retry(
     for attempt in range(max_retries + 1):
         try:
             if asyncio.iscoroutinefunction(func):
-                return await func()
+                return cast(T, await func())
             else:
-                return func()
+                return cast(T, func())
 
         except Exception as e:
             last_error = e
@@ -199,7 +198,7 @@ async def call_with_retry(
 
 
 async def invoke_with_retry(
-    llm: BaseChatModel,
+    llm: Any,
     messages: list,
     *,
     max_retries: int = 3,

@@ -26,12 +26,13 @@ from diffguard_agent.agent.pipeline.stages.reviewer import ReviewerStage
 from diffguard_agent.agent.pipeline.stages.aggregation import AggregationStage
 from diffguard_agent.agent.pipeline.stages.fp_filter_stage import FalsePositiveFilterStage
 from diffguard_agent.models.schemas import (
+    DiffEntry,
     IssuePayload,
     ReviewRequest,
     ReviewResponse,
     ReviewStatus,
 )
-from diffguard_agent.tools.tool_client import JavaToolClient, create_tool_session, destroy_tool_session
+from diffguard_agent.tools.tool_client import create_tool_session, destroy_tool_session
 from diffguard_agent.config import settings
 from diffguard_agent.metrics import ReviewMetrics
 
@@ -174,7 +175,7 @@ class PipelineOrchestrator:
         llm,
         req: ReviewRequest,
         stages: list[PipelineStage],
-        chunks: list[list[object]],
+        chunks: list[list[DiffEntry]],
     ) -> ReviewResponse:
         """Run the pipeline for each chunk and merge results."""
         all_issues: list[IssuePayload] = []
@@ -354,7 +355,7 @@ class PipelineOrchestrator:
         *,
         idx: int,
         total_chunks: int,
-        chunk_entries: list[object],
+        chunk_entries: list[DiffEntry],
         llm_with_tracking,
         tool_client,
         tracker: TokenUsageTracker,
@@ -473,13 +474,13 @@ class _ChunkBudget:
         return len(self.entries)
 
 
-def _estimate_entry_tokens(entry) -> int:
+def _estimate_entry_tokens(entry: DiffEntry) -> int:
     if getattr(entry, "token_count", 0) and entry.token_count > 0:
         return int(entry.token_count)
     return max(1, len(entry.content) // AVG_CHARS_PER_TOKEN)
 
 
-def _pack_entries_into_chunks(entries: list) -> list[list]:
+def _pack_entries_into_chunks(entries: list[DiffEntry]) -> list[list[DiffEntry]]:
     """First-fit decreasing packing with hard limits and soft token target."""
     max_files = _max_files_per_chunk()
     max_chars = _max_chars_per_chunk()
@@ -534,7 +535,7 @@ def _pack_entries_into_chunks(entries: list) -> list[list]:
     return [b.entries for b in budgets]
 
 
-def _split_oversized_entry(entry) -> list:
+def _split_oversized_entry(entry: DiffEntry) -> list[DiffEntry]:
     """Split a huge single-file diff by hunks to keep hard limits."""
     max_chars = _max_chars_per_chunk()
     max_tokens = _max_tokens_per_chunk()
@@ -548,7 +549,7 @@ def _split_oversized_entry(entry) -> list:
     if not hunks:
         return [entry]
 
-    split_entries: list = []
+    split_entries: list[DiffEntry] = []
     current_hunks: list[str] = []
     current_chars = len(hunks["header"])
 
@@ -599,8 +600,8 @@ def _split_large_hunk(hunk: str, max_chars: int) -> list[str]:
     if parsed is None:
         return [hunk]
 
-    old_cursor = parsed["old_start"]
-    new_cursor = parsed["new_start"]
+    old_cursor = parsed.old_start
+    new_cursor = parsed.new_start
 
     pieces: list[str] = []
     cur_body: list[str] = []
@@ -609,7 +610,7 @@ def _split_large_hunk(hunk: str, max_chars: int) -> list[str]:
     for line in body:
         # Ensure each piece has at least one body line.
         if cur_body and cur_chars + len(line) > max_chars:
-            pieces.append(_render_split_hunk(parsed["suffix"], old_cursor, new_cursor, cur_body))
+            pieces.append(_render_split_hunk(parsed.suffix, old_cursor, new_cursor, cur_body))
             old_delta, new_delta = _count_old_new_progress(cur_body)
             old_cursor += old_delta
             new_cursor += new_delta
@@ -620,12 +621,19 @@ def _split_large_hunk(hunk: str, max_chars: int) -> list[str]:
         cur_chars += len(line)
 
     if cur_body:
-        pieces.append(_render_split_hunk(parsed["suffix"], old_cursor, new_cursor, cur_body))
+        pieces.append(_render_split_hunk(parsed.suffix, old_cursor, new_cursor, cur_body))
 
     return pieces if pieces else [hunk]
 
 
-def _parse_unified_hunk_header(header_line: str) -> dict[str, int | str] | None:
+@dataclass
+class _ParsedHunkHeader:
+    old_start: int
+    new_start: int
+    suffix: str
+
+
+def _parse_unified_hunk_header(header_line: str) -> _ParsedHunkHeader | None:
     line = header_line.rstrip("\n")
     m = re.match(
         r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
@@ -634,11 +642,11 @@ def _parse_unified_hunk_header(header_line: str) -> dict[str, int | str] | None:
     )
     if not m:
         return None
-    return {
-        "old_start": int(m.group("old_start")),
-        "new_start": int(m.group("new_start")),
-        "suffix": m.group("suffix") or "",
-    }
+    return _ParsedHunkHeader(
+        old_start=int(m.group("old_start")),
+        new_start=int(m.group("new_start")),
+        suffix=m.group("suffix") or "",
+    )
 
 
 def _count_old_new_progress(lines: list[str]) -> tuple[int, int]:
@@ -700,7 +708,7 @@ def _extract_diff_hunks(content: str) -> dict | None:
     return {"header": "".join(header), "hunks": hunks}
 
 
-def _clone_entry(entry, content: str):
+def _clone_entry(entry: DiffEntry, content: str) -> DiffEntry:
     """Clone a diff entry while preserving compatible schema fields."""
     data = entry.model_dump() if hasattr(entry, "model_dump") else {
         "file_path": entry.file_path,
@@ -712,7 +720,7 @@ def _clone_entry(entry, content: str):
     return entry.__class__(**data)
 
 
-def _build_file_diff_map(entries: list) -> dict[str, str]:
+def _build_file_diff_map(entries: list[DiffEntry]) -> dict[str, str]:
     """Build file->diff map, concatenating split segments of the same file."""
     out: dict[str, list[str]] = {}
     for e in entries:
@@ -720,7 +728,7 @@ def _build_file_diff_map(entries: list) -> dict[str, str]:
     return {k: "\n".join(v) for k, v in out.items()}
 
 
-def _build_compact_chunk_diff(entries: list) -> str:
+def _build_compact_chunk_diff(entries: list[DiffEntry]) -> str:
     """Build compact chunk context for prompt-too-long fallback retries."""
     files = [e.file_path for e in entries]
     lines = [

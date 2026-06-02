@@ -193,7 +193,14 @@ class MetricsServiceTest {
         @Test
         @DisplayName("scrape contains metric names")
         void scrapeContainsMetricNames() {
-            String output = service.scrape();
+            service.recordReviewSubmitted();
+            service.recordReviewSuccess();
+            service.recordReviewFailed();
+            service.recordIssues(1);
+            service.recordCriticalIssue();
+            service.recordTokensUsed(1);
+            service.recordStaticHit();
+            String output = service.scrape().replace('_', '.');
             assertTrue(output.contains("diffguard.review.total"));
             assertTrue(output.contains("diffguard.review.success"));
             assertTrue(output.contains("diffguard.review.failed"));

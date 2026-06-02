@@ -1,5 +1,8 @@
 """DiffGuard Agent - shared test fixtures."""
 
+"""Shared fixtures for agent tests."""
+# ruff: noqa: E402
+
 import os
 import sys
 
@@ -15,12 +18,10 @@ if _SRC_DIR not in sys.path:
 from diffguard_agent.models.schemas import (
     IssuePayload,
     ReviewRequest,
-    ReviewResponse,
     DiffEntry,
     LlmConfig,
     ReviewConfigPayload,
     ReviewMode,
-    ToolResponse,
 )
 from diffguard_agent.agent.base import AgentReviewResult
 
