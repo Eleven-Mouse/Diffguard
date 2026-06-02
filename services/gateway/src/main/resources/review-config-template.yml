@@ -1,12 +1,10 @@
 llm:
   provider: openai
-  model: gpt-4o-mini
+  model: gpt-4o
   max_tokens: 4096
   temperature: 0.3
   timeout_seconds: 300
   api_key_env: DIFFGUARD_API_KEY
-  base_url: null
-  base_url_env: DIFFGUARD_API_BASE_URL
 
 rules:
   enabled:
@@ -15,55 +13,7 @@ rules:
     - code-style
     - performance
 
-ignore:
-  files:
-    - "**/*.generated.java"
-    - "**/target/**"
-
 review:
   max_diff_files: 20
   max_tokens_per_file: 4000
   language: zh
-
-pipeline:
-  enabled: false
-
-embedding:
-  provider: tfidf
-  model: text-embedding-3-small
-  dimensions: 1536
-
-agent_service:
-  url: http://localhost:8000
-  timeout_seconds: 300
-  tool_server_port: 9090
-
-tool_service:
-  embedded: true
-  host: localhost
-  port: 9090
-  url: null
-
-orchestrator:
-  mode: legacy
-  url: http://localhost:8088
-  timeout_seconds: 360
-  poll_interval_ms: 1000
-  fallback_to_legacy: true
-
-message_queue:
-  enabled: false
-  host: localhost
-  port: 5672
-  user: guest
-  password: null
-  password_env: RABBITMQ_PASSWORD
-
-coderag_store:
-  provider: memory
-  chroma_url: http://localhost:8000
-  chroma_tenant: default_tenant
-  chroma_database: default_database
-  chroma_collection: diffguard_code_chunks
-  chroma_api_token_env: CHROMA_API_TOKEN
-  timeout_seconds: 30

@@ -1,9 +1,9 @@
-请使用 {{LANGUAGE}} 输出审查结果。
+请使用 {{LANGUAGE}} 输出审查结论。
 
 审查规则：
 {{RULES}}
 
 目标文件：{{FILE_PATH}}
 
-代码差异：
+代码变更如下：
 {{DIFF_CONTENT}}
