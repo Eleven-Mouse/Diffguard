@@ -22,8 +22,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: DiffGuard (OpenAI)
-        uses: Eleven-Mouse/Diffguard@v1.0.0
+      - name: DiffGuard
+        uses: DiffGuard/diffguard-action@v1
         with:
           api-key: ${{ secrets.DIFFGUARD_API_KEY }}
           provider: ${{ secrets.DIFFGUARD_PROVIDER }}
