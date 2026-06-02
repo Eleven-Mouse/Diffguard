@@ -172,7 +172,8 @@ class TestReviewModeEnum:
 class TestLlmConfigDefaults:
 
     def test_defaults(self):
-        cfg = LlmConfig()
+        with patch.dict(os.environ, {"DIFFGUARD_API_KEY": ""}):
+            cfg = LlmConfig()
         assert cfg.provider == "openai"
         assert cfg.model == "gpt-4o"
         assert cfg.api_key == ""

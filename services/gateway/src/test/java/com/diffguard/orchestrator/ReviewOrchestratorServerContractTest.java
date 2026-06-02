@@ -54,6 +54,34 @@ class ReviewOrchestratorServerContractTest {
     }
 
     @Test
+    @DisplayName("returns 400 INVALID_REQUEST when mode unsupported")
+    void returns400WhenModeUnsupported() throws Exception {
+        withServer((baseUrl, client) -> {
+            ObjectNode req = baseRequest();
+            req.put("mode", "UNKNOWN");
+            HttpResponse<String> resp = post(baseUrl, client, req, null);
+            assertEquals(400, resp.statusCode());
+            JsonNode body = JacksonMapper.MAPPER.readTree(resp.body());
+            assertEquals("INVALID_REQUEST", body.path("code").asText());
+            assertTrue(body.path("message").asText().contains("unsupported mode"));
+        });
+    }
+
+    @Test
+    @DisplayName("returns 400 INVALID_REQUEST when diff_entries empty")
+    void returns400WhenDiffEntriesEmpty() throws Exception {
+        withServer((baseUrl, client) -> {
+            ObjectNode req = baseRequest();
+            req.putArray("diff_entries");
+            HttpResponse<String> resp = post(baseUrl, client, req, null);
+            assertEquals(400, resp.statusCode());
+            JsonNode body = JacksonMapper.MAPPER.readTree(resp.body());
+            assertEquals("INVALID_REQUEST", body.path("code").asText());
+            assertTrue(body.path("message").asText().contains("diff_entries"));
+        });
+    }
+
+    @Test
     @DisplayName("reuses task_id for same X-Idempotency-Key and payload")
     void reusesTaskIdForSameIdempotencyKey() throws Exception {
         withServer((baseUrl, client) -> {
@@ -89,6 +117,44 @@ class ReviewOrchestratorServerContractTest {
 
             JsonNode body = JacksonMapper.MAPPER.readTree(resp2.body());
             assertEquals("IDEMPOTENCY_CONFLICT", body.path("code").asText());
+        });
+    }
+
+    @Test
+    @DisplayName("returns 404 TASK_NOT_FOUND when querying unknown task status")
+    void returns404WhenTaskStatusNotFound() throws Exception {
+        withServer((baseUrl, client) -> {
+            HttpResponse<String> resp = client.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(baseUrl + "/api/v1/orchestrator/reviews/not-exists"))
+                            .timeout(Duration.ofSeconds(10))
+                            .header("X-Trace-Id", UUID.randomUUID().toString())
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString()
+            );
+            assertEquals(404, resp.statusCode());
+            JsonNode body = JacksonMapper.MAPPER.readTree(resp.body());
+            assertEquals("TASK_NOT_FOUND", body.path("code").asText());
+        });
+    }
+
+    @Test
+    @DisplayName("returns 404 TASK_NOT_FOUND when querying unknown task result")
+    void returns404WhenTaskResultNotFound() throws Exception {
+        withServer((baseUrl, client) -> {
+            HttpResponse<String> resp = client.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(baseUrl + "/api/v1/orchestrator/reviews/not-exists/result"))
+                            .timeout(Duration.ofSeconds(10))
+                            .header("X-Trace-Id", UUID.randomUUID().toString())
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString()
+            );
+            assertEquals(404, resp.statusCode());
+            JsonNode body = JacksonMapper.MAPPER.readTree(resp.body());
+            assertEquals("TASK_NOT_FOUND", body.path("code").asText());
         });
     }
 
@@ -153,4 +219,3 @@ class ReviewOrchestratorServerContractTest {
         void run(String baseUrl, HttpClient client) throws Exception;
     }
 }
-

@@ -24,8 +24,8 @@ class ReviewConfigTest {
         @DisplayName("环境变量未设置时抛出异常")
         void envNotSetThrows() {
             ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
+            config.setApiKeyEnv("NONEXISTENT_API_KEY_FOR_TEST_1");
 
-            // 环境变量 DIFFGUARD_API_KEY 通常未设置，应抛异常
             assertThrows(IllegalStateException.class, config::resolveApiKey);
         }
 
@@ -52,6 +52,7 @@ class ReviewConfigTest {
         @DisplayName("自定义 base_url 去除末尾斜杠")
         void customBaseUrlTrailingSlashRemoved() {
             ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
+            config.setBaseUrlEnv("NONEXISTENT_BASE_URL_ENV_FOR_TEST");
             config.setBaseUrl("https://api.example.com/");
 
             assertEquals("https://api.example.com", config.resolveBaseUrl());
@@ -61,6 +62,7 @@ class ReviewConfigTest {
         @DisplayName("自定义 base_url 无末尾斜杠保持不变")
         void customBaseUrlNoTrailingSlash() {
             ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
+            config.setBaseUrlEnv("NONEXISTENT_BASE_URL_ENV_FOR_TEST");
             config.setBaseUrl("https://api.example.com");
 
             assertEquals("https://api.example.com", config.resolveBaseUrl());
@@ -70,6 +72,7 @@ class ReviewConfigTest {
         @DisplayName("openai provider 默认 URL")
         void openaiDefaultUrl() {
             ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
+            config.setBaseUrlEnv("NONEXISTENT_BASE_URL_ENV_FOR_TEST");
             config.setProvider("openai");
 
             assertEquals("https://api.openai.com/v1", config.resolveBaseUrl());
@@ -79,6 +82,7 @@ class ReviewConfigTest {
         @DisplayName("claude provider 默认 URL")
         void claudeDefaultUrl() {
             ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
+            config.setBaseUrlEnv("NONEXISTENT_BASE_URL_ENV_FOR_TEST");
             config.setProvider("claude");
 
             assertEquals("https://api.anthropic.com", config.resolveBaseUrl());
@@ -88,6 +92,7 @@ class ReviewConfigTest {
         @DisplayName("自定义 base_url 优先于 provider 默认 URL")
         void customUrlOverridesDefault() {
             ReviewConfig.LlmConfig config = new ReviewConfig.LlmConfig();
+            config.setBaseUrlEnv("NONEXISTENT_BASE_URL_ENV_FOR_TEST");
             config.setProvider("openai");
             config.setBaseUrl("https://proxy.example.com");
 

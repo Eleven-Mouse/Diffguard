@@ -52,6 +52,63 @@ class TestReviewerStageName:
         assert stage.name == "review"
 
 
+class TestReviewerLoopGuard:
+
+    async def test_repeated_same_tool_call_triggers_guard(self):
+        from diffguard_agent.agent.pipeline.stages.reviewer import (
+            _ReActLoopDetectedError,
+            _ReActLoopGuard,
+            _wrap_tool_with_loop_guard,
+        )
+
+        async def repeated_tool(query: str) -> str:
+            return f"ok:{query}"
+
+        repeated_tool.__name__ = "semantic_search"  # type: ignore[attr-defined]
+        wrapped = _wrap_tool_with_loop_guard(repeated_tool, _ReActLoopGuard(max_consecutive_repeats=3))
+
+        assert await wrapped("auth token") == "ok:auth token"
+        assert await wrapped("auth token") == "ok:auth token"
+        with pytest.raises(_ReActLoopDetectedError):
+            await wrapped("auth token")
+
+    async def test_two_step_cycle_triggers_guard(self):
+        from diffguard_agent.agent.pipeline.stages.reviewer import (
+            _ReActLoopDetectedError,
+            _ReActLoopGuard,
+            _wrap_tool_with_loop_guard,
+        )
+
+        async def search_tool(query: str) -> str:
+            return "search-ok"
+
+        async def related_tool(query: str) -> str:
+            return "related-ok"
+
+        search_tool.__name__ = "semantic_search"  # type: ignore[attr-defined]
+        related_tool.__name__ = "get_related_files"  # type: ignore[attr-defined]
+        guard = _ReActLoopGuard(max_consecutive_repeats=10)
+        wrapped_search = _wrap_tool_with_loop_guard(search_tool, guard)
+        wrapped_related = _wrap_tool_with_loop_guard(related_tool, guard)
+
+        await wrapped_search("login")
+        await wrapped_related("login")
+        await wrapped_search("login")
+        await wrapped_related("login")
+        await wrapped_search("login")
+        with pytest.raises(_ReActLoopDetectedError):
+            await wrapped_related("login")
+
+    def test_loop_guard_error_matcher_accepts_nested_cause(self):
+        from diffguard_agent.agent.pipeline.stages.reviewer import _is_loop_guard_error
+
+        inner = RuntimeError("[loop_guard] repeated identical tool action")
+        outer = RuntimeError("tool execution failed")
+        outer.__cause__ = inner
+
+        assert _is_loop_guard_error(outer) is True
+
+
 class TestAggregationStageName:
 
     def test_name_returns_aggregation(self):
@@ -386,3 +443,43 @@ class TestAggregationStageExecute:
         assert total == 1
         assert "【logic】" in section
         assert '"issue_count": 1' in section
+
+    @patch("diffguard_agent.agent.pipeline.stages.aggregation.load_prompt")
+    async def test_none_aggregated_result_falls_back_without_crash(self, mock_load_prompt):
+        from diffguard_agent.agent.pipeline.stages.aggregation import AggregationStage
+
+        mock_load_prompt.side_effect = [
+            "aggregation system prompt",
+            "aggregation user prompt with {{summary}} and {{reviewer_results}}",
+        ]
+
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=None)
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        pre_issue = IssuePayload(
+            severity="WARNING",
+            file="src/a.py",
+            line=10,
+            type="logic",
+            message="pre-aggregated issue",
+            suggestion="fix",
+        )
+
+        ctx = PipelineContext(
+            input=PipelineInput(diff_text="diff", llm=mock_llm),
+            summary=SummaryOutput(summary="summary"),
+            review=ReviewOutput(review_results={
+                "security": '{"summary": "sec review", "issues": []}',
+                "static_rules": [pre_issue],
+            }),
+        )
+
+        stage = AggregationStage()
+        result_ctx = await stage.execute(ctx)
+
+        assert len(result_ctx.aggregation.final_issues) == 1
+        assert result_ctx.aggregation.final_issues[0].message == "pre-aggregated issue"
+        assert result_ctx.aggregation.has_critical is False
+        assert "审查完成" in result_ctx.aggregation.final_summary

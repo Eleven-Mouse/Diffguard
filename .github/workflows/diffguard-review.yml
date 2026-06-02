@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: DiffGuard
-        uses: DiffGuard/diffguard-action@v1
+        uses: Eleven-Mouse/Diffguard@v1.0.0
         with:
           api-key: ${{ secrets.DIFFGUARD_API_KEY }}
           provider: ${{ secrets.DIFFGUARD_PROVIDER }}

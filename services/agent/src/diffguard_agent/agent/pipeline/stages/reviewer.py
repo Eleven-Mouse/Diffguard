@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, cast
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -80,8 +80,7 @@ class ReviewerStage(PipelineStage):
                     summary=f"Reviewer failed: {result}"
                 ).model_dump_json()
             else:
-                typed_result = cast(_TargetedReviewResult, result)
-                context.review.review_results[name] = typed_result.model_dump_json()
+                context.review.review_results[name] = result.model_dump_json()
 
         logger.info("All reviewers completed: %s", list(context.review.review_results.keys()))
         return context
@@ -122,9 +121,7 @@ class ReviewerStage(PipelineStage):
     async def _run_with_tools(
         self, llm: Any, system: str, user: str, tool_client: Any,
     ) -> _TargetedReviewResult:
-        # LangChain typing stubs currently miss these symbols in some versions.
-        # Runtime import is correct and covered by tests.
-        from langchain.agents import AgentExecutor, create_tool_calling_agent  # type: ignore[attr-defined]
+        from langchain.agents import AgentExecutor, create_tool_calling_agent
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_core.tools import StructuredTool
 
@@ -173,11 +170,10 @@ class ReviewerStage(PipelineStage):
     ) -> _TargetedReviewResult:
         from diffguard_agent.agent.llm_utils import invoke_with_retry
         structured_llm = llm.with_structured_output(_TargetedReviewResult)
-        result = await invoke_with_retry(
+        return await invoke_with_retry(
             structured_llm,
             [("system", system), ("human", user)]
         )
-        return cast(_TargetedReviewResult, result)
 
     async def _parse_fallback(self, llm: Any, output_text: str) -> _TargetedReviewResult:
         """Fallback 解析器：当 JSON 解析失败时的恢复机制"""
@@ -206,7 +202,7 @@ class ReviewerStage(PipelineStage):
             SystemMessage(content=_JSON_PARSE_SYSTEM),
             HumanMessage(content=parse_prompt)
         ])
-        return cast(_TargetedReviewResult, result)
+        return result
 
     def _extract_json_from_text(self, text: str) -> str | None:
         """从混合文本中提取 JSON"""

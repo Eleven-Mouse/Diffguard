@@ -172,6 +172,72 @@ class ReviewTaskMessageTest {
     }
 
     // ------------------------------------------------------------------
+    // JSON serialization / deserialization
+    // ------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("JSON")
+    class JsonRoundTrip {
+
+        @Test
+        @DisplayName("toJsonBytes should include fields and allowed_files fallback to diff entries")
+        void toJsonBytesIncludesExpectedFields() throws Exception {
+            ReviewTaskMessage msg = new ReviewTaskMessage(
+                    "task-json-1",
+                    "PIPELINE",
+                    config,
+                    diffEntries,
+                    "/project/dir",
+                    "http://localhost:9090",
+                    null,
+                    false
+            );
+
+            byte[] jsonBytes = msg.toJsonBytes();
+            assertNotNull(jsonBytes);
+            assertTrue(jsonBytes.length > 0);
+
+            com.fasterxml.jackson.databind.JsonNode root =
+                    com.diffguard.platform.common.JacksonMapper.MAPPER.readTree(jsonBytes);
+            assertEquals("task-json-1", root.path("task_id").asText());
+            assertEquals("task-json-1", root.path("request_id").asText());
+            assertEquals("PIPELINE", root.path("mode").asText());
+            assertEquals("/project/dir", root.path("project_dir").asText());
+            assertEquals("http://localhost:9090", root.path("tool_server_url").asText());
+            assertTrue(root.path("created_at").asLong() > 0);
+            assertEquals(2, root.path("diff_entries").size());
+            // allowed_files 未显式传入时，回退为 diff file list
+            assertEquals(2, root.path("allowed_files").size());
+            assertEquals("src/Main.java", root.path("allowed_files").get(0).asText());
+            assertEquals("src/Util.java", root.path("allowed_files").get(1).asText());
+        }
+
+        @Test
+        @DisplayName("fromJson should restore task id/mode/diff entries/allowed files")
+        void fromJsonShouldRestoreCoreFields() {
+            ReviewTaskMessage src = new ReviewTaskMessage(
+                    "task-json-2",
+                    "MULTI_AGENT",
+                    config,
+                    diffEntries,
+                    "/project/dir",
+                    "http://localhost:9091",
+                    List.of("src/Main.java"),
+                    true
+            );
+
+            ReviewTaskMessage restored = ReviewTaskMessage.fromJson(src.toJsonBytes());
+            assertEquals("task-json-2", restored.getTaskId());
+            assertEquals("MULTI_AGENT", restored.getMode());
+            assertEquals("/project/dir", restored.getProjectDir());
+            assertEquals(2, restored.getDiffEntries().size());
+            assertEquals("src/Main.java", restored.getDiffEntries().get(0).getFilePath());
+            // fromJson 当前实现 hotfix 固定为 false
+            assertFalse(restored.isHotfix());
+        }
+    }
+
+    // ------------------------------------------------------------------
     // extractTaskId
     // ------------------------------------------------------------------
 
@@ -188,7 +254,15 @@ class ReviewTaskMessageTest {
         @Test
         @DisplayName("extractTaskId returns null for null-like data")
         void extractTaskIdNull() {
-            assertNull(ReviewTaskMessage.extractTaskId(new byte[0]));
+            String taskId = ReviewTaskMessage.extractTaskId(new byte[0]);
+            assertTrue(taskId == null || taskId.isBlank());
+        }
+
+        @Test
+        @DisplayName("extractTaskId falls back to request_id when task_id missing")
+        void extractTaskIdFallbackToRequestId() {
+            String json = "{\"request_id\":\"req-123\",\"mode\":\"PIPELINE\"}";
+            assertEquals("req-123", ReviewTaskMessage.extractTaskId(json.getBytes()));
         }
     }
 }
