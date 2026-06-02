@@ -26,15 +26,19 @@ public class ProjectASTAnalyzer {
     private static final Logger log = LoggerFactory.getLogger(ProjectASTAnalyzer.class);
 
     private final ASTAnalyzer analyzer = new ASTAnalyzer();
+    // 存储每个文件的 AST 分析结果
     private final Map<String, ASTAnalysisResult> fileResults = new ConcurrentHashMap<>();
 
-    // 索引：类名 -> 文件路径（用于跨文件解析）
+    // 索引1：类名 -> 文件路径（用于跨文件解析，例如通过类名快速定位文件）
     private final Map<String, String> classNameToPath = new ConcurrentHashMap<>();
-    // 索引：类名 -> 该类的所有方法
+
+    // 索引2：类名 -> 该类的所有方法（用于快速查询某个类有哪些方法）
     private final Map<String, List<MethodInfo>> classMethods = new ConcurrentHashMap<>();
-    // 索引：接口名 -> 实现类名列表
+
+    // 索引3：接口名 -> 实现类名列表（用于查找接口的所有实现类）
     private final Map<String, List<String>> interfaceImplementations = new ConcurrentHashMap<>();
-    // 索引：类名 -> 父类名
+
+    // 索引4：类名 -> 父类名（用于构建继承链，支持向上查找父类）
     private final Map<String, String> inheritanceMap = new ConcurrentHashMap<>();
 
     /**
@@ -166,26 +170,30 @@ public class ProjectASTAnalyzer {
      * 解析调用边：给定一个 calleeScope 和 calleeMethod，尝试找到目标文件。
      * <p>
      * 例如：scope="orderDAO", method="save" → 查找 OrderDAO.java
+     * <p>
+     * 这是跨文件调用解析的核心逻辑，通过多种启发式规则匹配类名
      */
     public Optional<String> resolveCallTarget(String calleeScope, String calleeMethod) {
         if (calleeScope == null || calleeScope.isEmpty()) {
             return Optional.empty();
         }
 
-        // 直接匹配类名
+        // 策略1：直接匹配类名（例如 UserService.save() 中的 UserService）
         String targetPath = classNameToPath.get(calleeScope);
         if (targetPath != null) {
             return Optional.of(targetPath);
         }
 
-        // 尝试首字母大写（字段名转类名：orderDAO → OrderDAO）
+        // 策略2：首字母大写匹配（字段名转类名：orderDAO → OrderDAO）
+        // 这是 Java 中常见的命名约定：字段名小驼峰，类名大驼峰
         String capitalizedName = Character.toUpperCase(calleeScope.charAt(0)) + calleeScope.substring(1);
         targetPath = classNameToPath.get(capitalizedName);
         if (targetPath != null) {
             return Optional.of(targetPath);
         }
 
-        // 尝试移除常见后缀（service → ServiceService? 不太可能，但 impl → XxxImpl 有可能）
+        // 策略3：尝试添加常见后缀（例如 user → UserService、UserDAO 等）
+        // 这处理了字段名省略后缀的情况，如 user.save() 实际调用 UserService.save()
         for (String suffix : List.of("Impl", "Service", "DAO", "Repository", "Controller")) {
             if (calleeScope.endsWith(suffix.toLowerCase())) {
                 continue;

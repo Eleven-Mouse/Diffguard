@@ -42,6 +42,7 @@ public class ASTAnalyzer {
      * @return AST 分析结果，解析失败时 parseSucceeded=false
      */
     public ASTAnalysisResult analyze(String filePath, String fileContent) {
+        // 第一步：验证输入内容的有效性
         if (fileContent == null) {
             return ASTAnalysisResult.failure(filePath, "null", "空内容");
         }
@@ -49,10 +50,13 @@ public class ASTAnalyzer {
             return ASTAnalysisResult.failure(filePath, computeHash(fileContent), "空内容");
         }
 
+        // 计算文件内容的哈希值，用于版本追踪和缓存
         String contentHash = computeHash(fileContent);
         try {
+            // 第二步：使用 JavaParser 解析源代码为 AST（抽象语法树）
             ParseResult<CompilationUnit> parseResult = parser.parse(fileContent);
 
+            // 检查解析是否成功，失败时收集错误信息（最多3条）
             if (!parseResult.isSuccessful()) {
                 String errors = parseResult.getProblems().stream()
                         .map(p -> p.getMessage())
@@ -63,30 +67,36 @@ public class ASTAnalyzer {
                 return ASTAnalysisResult.failure(filePath, contentHash, errors);
             }
 
+            // 获取编译单元（CompilationUnit 是 AST 的根节点，代表一个 Java 文件）
             CompilationUnit cu = parseResult.getResult().orElse(null);
             if (cu == null) {
                 return ASTAnalysisResult.failure(filePath, contentHash, "解析结果为 null");
             }
 
+            // 第三步：从 AST 中提取结构化信息
             ASTAnalysisResult.Builder builder = new ASTAnalysisResult.Builder(filePath, contentHash);
 
-            // 提取 imports
+            // 3.1 提取 import 语句（用于跨文件依赖分析）
             List<String> imports = cu.getImports().stream()
                     .map(imp -> imp.getNameAsString())
                     .toList();
             builder.imports(imports);
 
-            // 提取类、方法、调用图、控制流
+            // 3.2 提取类型定义（class、interface、enum、record）
             cu.findAll(ClassOrInterfaceDeclaration.class).forEach(cd -> extractClassInfo(cd, builder));
             cu.findAll(EnumDeclaration.class).forEach(ed -> extractEnumInfo(ed, builder));
             cu.findAll(RecordDeclaration.class).forEach(rd -> extractRecordInfo(rd, builder));
 
+            // 3.3 提取方法定义和方法调用关系（构建调用图）
             extractMethodsAndCalls(cu, builder);
+
+            // 3.4 提取控制流节点（if/for/while/try-catch 等）
             extractControlFlow(cu, builder);
 
             return builder.build();
 
         } catch (Exception e) {
+            // 所有异常在内部消化，返回失败结果而不向外传播
             log.debug("AST 分析异常 {}: {}", filePath, e.getMessage());
             return ASTAnalysisResult.failure(filePath, contentHash, e.getMessage());
         }
@@ -153,9 +163,11 @@ public class ASTAnalyzer {
     }
 
     private void extractMethodsAndCalls(CompilationUnit cu, ASTAnalysisResult.Builder builder) {
+        // 遍历所有方法声明节点
         cu.findAll(MethodDeclaration.class).forEach(md -> {
             if (!md.getRange().isPresent()) return;
 
+            // 提取方法的基本信息：名称、返回类型、参数
             String methodName = md.getNameAsString();
             String returnType = md.getType().asString();
             List<String> paramTypes = md.getParameters().stream()
@@ -165,12 +177,16 @@ public class ASTAnalyzer {
                     .map(p -> p.getNameAsString())
                     .toList();
             var range = md.getRange().get();
+
+            // 提取访问修饰符和方法修饰符（static/final/synchronized/abstract）
             String visibility = md.getAccessSpecifier().asString();
             Set<String> modifiers = new TreeSet<>();
             if (md.isStatic()) modifiers.add("static");
             if (md.isFinal()) modifiers.add("final");
             if (md.isSynchronized()) modifiers.add("synchronized");
             if (md.isAbstract()) modifiers.add("abstract");
+
+            // 提取注解信息（如 @Override、@Deprecated 等）
             List<String> annotations = md.getAnnotations().stream()
                     .map(a -> a.getNameAsString())
                     .toList();
@@ -178,16 +194,18 @@ public class ASTAnalyzer {
             builder.method(new MethodInfo(methodName, returnType, paramTypes, paramNames,
                     range.begin.line, range.end.line, visibility, modifiers, annotations));
 
-            // Resolve enclosing class name by walking up parent nodes
+            // 向上遍历 AST 节点，找到方法所属的类名
             String enclosingClassName = resolveEnclosingClass(md);
 
-            // 收集该方法内的调用边（原始 + 增强调用边）
+            // 提取方法内的所有方法调用，构建调用图
             md.findAll(MethodCallExpr.class).forEach(call -> {
                 call.getRange().ifPresent(callRange -> {
                     String callee = call.getNameAsString();
+                    // 原始调用边：只记录方法名
                     builder.callEdge(new CallEdge(methodName, callee, callRange.begin.line));
 
-                    // 构建带类上下文的调用边
+                    // 增强调用边：记录调用者类名、被调用者的作用域（如 userService.save()）
+                    // calleeScope 用于跨文件调用解析，例如 "userService" 可能对应 UserService 类
                     String calleeScope = call.getScope()
                             .map(s -> s.toString())
                             .orElse("");
@@ -196,10 +214,10 @@ public class ASTAnalyzer {
                 });
             });
 
-            // 提取字段访问
+            // 提取字段访问（读取和写入）
             extractFieldAccess(md, builder);
 
-            // 提取数据流
+            // 提取数据流信息（变量声明和赋值）
             extractDataFlow(md, methodName, builder);
         });
     }
