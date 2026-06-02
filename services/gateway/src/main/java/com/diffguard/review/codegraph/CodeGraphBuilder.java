@@ -36,11 +36,14 @@ public class CodeGraphBuilder {
 
     /**
      * 从已有的 ProjectASTAnalyzer 结果构建图谱。
+     * <p>
+     * 采用多 Pass 构建策略，确保节点创建完成后再创建边，避免引用不存在的节点
      */
     public static CodeGraph buildFromAnalyzer(ProjectASTAnalyzer analyzer) {
         CodeGraph graph = new CodeGraph();
 
-        // Pass 1: 创建所有节点
+        // Pass 1: 创建文件节点和类/接口节点
+        // 为什么先创建这些？因为后续的方法节点和边都需要引用它们
         for (var entry : analyzer.getAllResults().entrySet()) {
             String filePath = entry.getKey();
             ASTAnalysisResult result = entry.getValue();
@@ -50,6 +53,7 @@ public class CodeGraphBuilder {
         }
 
         // Pass 2: 创建方法节点
+        // 方法节点需要关联到类节点，所以必须在 Pass 1 之后
         for (var entry : analyzer.getAllResults().entrySet()) {
             String filePath = entry.getKey();
             ASTAnalysisResult result = entry.getValue();
@@ -58,18 +62,20 @@ public class CodeGraphBuilder {
             buildMethodNodes(graph, filePath, result);
         }
 
-        // Pass 3: 创建关系边
+        // Pass 3: 创建关系边（继承、实现、调用、导入）
+        // 边连接已存在的节点，所以必须在节点创建完成后
         for (var entry : analyzer.getAllResults().entrySet()) {
             String filePath = entry.getKey();
             ASTAnalysisResult result = entry.getValue();
             if (!result.isParseSucceeded()) continue;
 
-            buildInheritanceEdges(graph, filePath, result);
-            buildCallEdges(graph, filePath, result);
-            buildImportEdges(graph, filePath, result);
+            buildInheritanceEdges(graph, filePath, result);  // 类继承和接口实现关系
+            buildCallEdges(graph, filePath, result);         // 方法调用关系（文件内）
+            buildImportEdges(graph, filePath, result);       // 文件导入关系
         }
 
         // Pass 4: 跨文件调用边
+        // 利用 ProjectASTAnalyzer 的跨文件解析能力，补充文件间的方法调用关系
         buildCrossFileCallEdges(graph, analyzer);
 
         log.info("代码图谱构建完成：{} 节点，{} 边", graph.nodeCount(), graph.edgeCount());
@@ -110,12 +116,20 @@ public class CodeGraphBuilder {
         }
     }
 
-    /** Find the most specific (smallest line range) class that contains the method. */
+    /**
+     * 找到包含该方法的最具体的类（行范围最小的类）。
+     * <p>
+     * 为什么需要这个方法？因为 Java 支持内部类，一个方法可能被多个类的行范围包含。
+     * 例如：外部类 Outer (1-100行) 包含内部类 Inner (20-40行)，
+     * 如果方法在 25-30 行，应该归属于 Inner 而不是 Outer。
+     */
     private static ClassInfo findMostSpecificClass(MethodInfo method, List<ClassInfo> classes) {
         ClassInfo best = null;
         for (ClassInfo cls : classes) {
+            // 检查方法是否在类的行范围内
             if (method.getStartLine() >= cls.getStartLine()
                     && method.getEndLine() <= cls.getEndLine()) {
+                // 选择行范围最小的类（最内层的类）
                 if (best == null || (cls.getEndLine() - cls.getStartLine())
                         < (best.getEndLine() - best.getStartLine())) {
                     best = cls;

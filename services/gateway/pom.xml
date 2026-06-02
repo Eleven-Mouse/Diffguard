@@ -20,6 +20,8 @@
         <jackson.version>2.17.0</jackson.version>
         <javaparser.version>3.26.3</javaparser.version>
         <resilience4j.version>2.2.0</resilience4j.version>
+        <coverage.min.instruction>0.50</coverage.min.instruction>
+        <coverage.min.branch>0.30</coverage.min.branch>
     </properties>
 
     <dependencies>
@@ -173,6 +175,38 @@
                         <id>report</id>
                         <phase>test</phase>
                         <goals><goal>report</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals><goal>check</goal></goals>
+                        <configuration>
+                            <rules>
+                                <!-- 第一阶段红线：覆盖核心入口和编排链路，后续可逐步抬高 -->
+                                <rule>
+                                    <element>CLASS</element>
+                                    <includes>
+                                        <include>com.diffguard.cli.DiffGuardMain</include>
+                                        <include>com.diffguard.toolserver.ToolServerController</include>
+                                        <include>com.diffguard.orchestrator.ReviewOrchestratorServer</include>
+                                        <include>com.diffguard.platform.messaging.ReviewTaskMessage</include>
+                                        <include>com.diffguard.platform.messaging.ReviewTaskPublisher</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>INSTRUCTION</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.min.instruction}</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.min.branch}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

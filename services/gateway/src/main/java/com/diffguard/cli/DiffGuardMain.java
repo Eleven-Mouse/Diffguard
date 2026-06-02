@@ -39,8 +39,8 @@ public class DiffGuardMain implements Runnable {
      */
     public static int execute(String[] args) {
         DiffGuardMain main = new DiffGuardMain();
-        new CommandLine(main).execute(args);
-        return main.getExitCode();
+        int picocliExitCode = new CommandLine(main).execute(args);
+        return main.getExitCode() != 0 ? main.getExitCode() : picocliExitCode;
     }
 
     public static void main(String[] args) {
