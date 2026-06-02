@@ -26,8 +26,8 @@ jobs:
         uses: Eleven-Mouse/Diffguard@v1.0.0
         with:
           api-key: ${{ secrets.DIFFGUARD_API_KEY }}
-          provider: openai
-          model: gpt-4o
+          provider: ${{ secrets.DIFFGUARD_PROVIDER }}
+          model: ${{ secrets.DIFFGUARD_MODEL }}
           api-base-url: ${{ secrets.DIFFGUARD_API_BASE_URL }} # 可选；不用代理可删掉
           language: zh
           comment-pr: true
