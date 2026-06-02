@@ -1,0 +1,19 @@
+llm:
+  provider: openai
+  model: gpt-4o
+  max_tokens: 4096
+  temperature: 0.3
+  timeout_seconds: 300
+  api_key_env: DIFFGUARD_API_KEY
+
+rules:
+  enabled:
+    - security
+    - bug-risk
+    - code-style
+    - performance
+
+review:
+  max_diff_files: 20
+  max_tokens_per_file: 4000
+  language: zh
