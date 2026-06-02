@@ -58,7 +58,7 @@ class MetricsServiceTest {
             service.recordReviewSubmitted();
             service.recordReviewSubmitted();
 
-            double count = service.getRegistry().counter("diffguard.review.total").count();
+            double count = service.getRegistry().counter("diffguard_review_total").count();
             assertEquals(3.0, count, 0.001);
         }
 
@@ -68,7 +68,7 @@ class MetricsServiceTest {
             service.recordReviewSuccess();
             service.recordReviewSuccess();
 
-            double count = service.getRegistry().counter("diffguard.review.success").count();
+            double count = service.getRegistry().counter("diffguard_review_success").count();
             assertEquals(2.0, count, 0.001);
         }
 
@@ -77,7 +77,7 @@ class MetricsServiceTest {
         void recordReviewFailed() {
             service.recordReviewFailed();
 
-            double count = service.getRegistry().counter("diffguard.review.failed").count();
+            double count = service.getRegistry().counter("diffguard_review_failed").count();
             assertEquals(1.0, count, 0.001);
         }
 
@@ -86,7 +86,7 @@ class MetricsServiceTest {
         void recordIssues() {
             service.recordIssues(5);
 
-            double count = service.getRegistry().counter("diffguard.issues.total").count();
+            double count = service.getRegistry().counter("diffguard_issues_total").count();
             assertEquals(5.0, count, 0.001);
         }
 
@@ -95,7 +95,7 @@ class MetricsServiceTest {
         void recordIssuesZero() {
             service.recordIssues(0);
 
-            double count = service.getRegistry().counter("diffguard.issues.total").count();
+            double count = service.getRegistry().counter("diffguard_issues_total").count();
             assertEquals(0.0, count, 0.001);
         }
 
@@ -106,7 +106,7 @@ class MetricsServiceTest {
             service.recordCriticalIssue();
             service.recordCriticalIssue();
 
-            double count = service.getRegistry().counter("diffguard.issues.critical").count();
+            double count = service.getRegistry().counter("diffguard_issues_critical").count();
             assertEquals(3.0, count, 0.001);
         }
 
@@ -116,7 +116,7 @@ class MetricsServiceTest {
             service.recordTokensUsed(100);
             service.recordTokensUsed(200);
 
-            double count = service.getRegistry().counter("diffguard.llm.tokens").count();
+            double count = service.getRegistry().counter("diffguard_llm_tokens").count();
             assertEquals(300.0, count, 0.001);
         }
 
@@ -125,7 +125,7 @@ class MetricsServiceTest {
         void recordStaticHit() {
             service.recordStaticHit();
 
-            double count = service.getRegistry().counter("diffguard.rules.static.hits").count();
+            double count = service.getRegistry().counter("diffguard_rules_static_hits").count();
             assertEquals(1.0, count, 0.001);
         }
     }
@@ -145,7 +145,7 @@ class MetricsServiceTest {
             assertNotNull(sample);
             service.stopReviewTimer(sample);
 
-            Timer timer = service.getRegistry().timer("diffguard.review.duration");
+            Timer timer = service.getRegistry().timer("diffguard_review_duration");
             assertEquals(1, timer.count());
             assertTrue(timer.totalTime(java.util.concurrent.TimeUnit.NANOSECONDS) >= 0.0);
         }
@@ -157,7 +157,7 @@ class MetricsServiceTest {
             assertNotNull(sample);
             service.stopLlmTimer(sample);
 
-            Timer timer = service.getRegistry().timer("diffguard.llm.call.duration");
+            Timer timer = service.getRegistry().timer("diffguard_llm_call_duration");
             assertEquals(1, timer.count());
             assertTrue(timer.totalTime(java.util.concurrent.TimeUnit.NANOSECONDS) >= 0.0);
         }
@@ -170,7 +170,7 @@ class MetricsServiceTest {
             service.stopReviewTimer(s1);
             service.stopReviewTimer(s2);
 
-            Timer timer = service.getRegistry().timer("diffguard.review.duration");
+            Timer timer = service.getRegistry().timer("diffguard_review_duration");
             assertEquals(2, timer.count());
         }
     }
@@ -201,13 +201,13 @@ class MetricsServiceTest {
             service.recordTokensUsed(1);
             service.recordStaticHit();
             String output = service.scrape().replace('_', '.');
-            assertTrue(output.contains("diffguard.review.total"));
-            assertTrue(output.contains("diffguard.review.success"));
-            assertTrue(output.contains("diffguard.review.failed"));
-            assertTrue(output.contains("diffguard.issues.total"));
-            assertTrue(output.contains("diffguard.issues.critical"));
-            assertTrue(output.contains("diffguard.llm.tokens"));
-            assertTrue(output.contains("diffguard.rules.static.hits"));
+            assertTrue(output.contains("diffguard_review_total"));
+            assertTrue(output.contains("diffguard_review_success"));
+            assertTrue(output.contains("diffguard_review_failed"));
+            assertTrue(output.contains("diffguard_issues_total"));
+            assertTrue(output.contains("diffguard_issues_critical"));
+            assertTrue(output.contains("diffguard_llm_tokens"));
+            assertTrue(output.contains("diffguard_rules_static_hits"));
         }
 
         @Test

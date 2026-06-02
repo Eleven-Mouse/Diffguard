@@ -97,6 +97,52 @@ class _AggregatedReview(BaseModel):
     test_suggestions: list[str] = Field(default_factory=list)
 
 
+def _fallback_summary(total_llm_issues: int, pre_aggregated_count: int) -> str:
+    total = total_llm_issues + pre_aggregated_count
+    if total <= 0:
+        return "审查完成，未发现需要报告的问题。"
+    return f"审查完成，共识别 {total} 个问题。"
+
+
+def _normalize_aggregated(
+    raw: object,
+    *,
+    total_llm_issues: int,
+    pre_aggregated_count: int,
+) -> _AggregatedReview:
+    """Normalize LLM aggregation output to a safe _AggregatedReview."""
+    if isinstance(raw, _AggregatedReview):
+        return raw
+
+    if raw is None:
+        logger.warning("Aggregation LLM returned None, using fallback result")
+        return _AggregatedReview(
+            summary=_fallback_summary(total_llm_issues, pre_aggregated_count),
+        )
+
+    # Backward compatibility for tests/mocks returning attribute objects
+    if not isinstance(raw, dict) and hasattr(raw, "issues"):
+        raw = {
+            "has_critical": getattr(raw, "has_critical", False),
+            "summary": getattr(raw, "summary", ""),
+            "issues": getattr(raw, "issues", []),
+            "highlights": getattr(raw, "highlights", []),
+            "test_suggestions": getattr(raw, "test_suggestions", []),
+        }
+
+    try:
+        normalized = _AggregatedReview.model_validate(raw)
+        if not normalized.summary:
+            normalized.summary = _fallback_summary(total_llm_issues, pre_aggregated_count)
+        return normalized
+    except Exception:
+        logger.warning("Aggregation LLM returned invalid payload (%s), using fallback",
+                       type(raw).__name__)
+        return _AggregatedReview(
+            summary=_fallback_summary(total_llm_issues, pre_aggregated_count),
+        )
+
+
 class AggregationStage(PipelineStage):
     """Merges reviewer outputs, deduplicates, maps line numbers, and produces final verdict."""
 
@@ -138,6 +184,11 @@ class AggregationStage(PipelineStage):
             structured_llm,
             [("system", system), ("human", user)]
         )
+        aggregated = _normalize_aggregated(
+            aggregated,
+            total_llm_issues=total_issues,
+            pre_aggregated_count=len(pre_aggregated),
+        )
 
         # Map diff-context line numbers → actual file line numbers for each issue
         final_issues: list[IssuePayload] = list(pre_aggregated)
@@ -148,7 +199,7 @@ class AggregationStage(PipelineStage):
         context.aggregation.final_issues = final_issues
         context.aggregation.final_summary = aggregated.summary
         context.aggregation.has_critical = aggregated.has_critical or any(
-            i.severity == "CRITICAL" for i in pre_aggregated
+            i.severity.upper() == "CRITICAL" for i in final_issues
         )
         context.aggregation.highlights = aggregated.highlights
         context.aggregation.test_suggestions = aggregated.test_suggestions
