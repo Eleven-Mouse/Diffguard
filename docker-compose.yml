@@ -50,6 +50,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - DIFFGUARD_API_KEY=${DIFFGUARD_API_KEY:-}
       - JAVA_TOOL_SERVER_URL=http://diffguard-gateway:9090
       - DIFFGUARD_TOOL_SECRET=${DIFFGUARD_TOOL_SECRET:-}
       - RABBITMQ_HOST=rabbitmq

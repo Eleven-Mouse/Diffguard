@@ -45,6 +45,14 @@ class SummaryStage(PipelineStage):
             [("system", system), ("human", user)]
         )
 
+        if result is None:
+            logger.warning("Summary LLM returned None, using deterministic fallback")
+            result = _DiffSummary(
+                summary="变更摘要不可用，已将全部变更交给各审查器。",
+                changed_files=list(context.input.file_diffs),
+                file_focus={},
+            )
+
         context.summary.summary = result.summary
         context.summary.changed_files = result.changed_files
         context.summary.change_types = result.change_types

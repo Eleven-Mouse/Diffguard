@@ -471,7 +471,11 @@ class TestAggregationStageExecute:
             input=PipelineInput(diff_text="diff", llm=mock_llm),
             summary=SummaryOutput(summary="summary"),
             review=ReviewOutput(review_results={
-                "security": '{"summary": "sec review", "issues": []}',
+                "security": (
+                    '{"summary":"sec review","issues":[{"severity":"CRITICAL",'
+                    '"file":"src/auth.py","line":7,"type":"auth",'
+                    '"message":"reviewer issue","suggestion":"fix auth"}]}'
+                ),
                 "static_rules": [pre_issue],
             }),
         )
@@ -479,7 +483,74 @@ class TestAggregationStageExecute:
         stage = AggregationStage()
         result_ctx = await stage.execute(ctx)
 
-        assert len(result_ctx.aggregation.final_issues) == 1
+        assert len(result_ctx.aggregation.final_issues) == 2
         assert result_ctx.aggregation.final_issues[0].message == "pre-aggregated issue"
-        assert result_ctx.aggregation.has_critical is False
+        assert any(issue.message == "reviewer issue" for issue in result_ctx.aggregation.final_issues)
+        assert result_ctx.aggregation.has_critical is True
         assert "审查完成" in result_ctx.aggregation.final_summary
+
+class TestAggregationPostProcessing:
+
+    def test_deduplicates_nearby_reports_of_the_same_root_cause(self):
+        from diffguard_agent.agent.pipeline.stages.aggregation import _deduplicate_and_calibrate
+
+        issues = [
+            IssuePayload(
+                severity="CRITICAL", file="app.py", line=10,
+                type="SQL注入", message="customer_id 被拼接到 SQL 中", confidence=0.9,
+            ),
+            IssuePayload(
+                severity="WARNING", file="app.py", line=11,
+                type="脆弱实现-SQL拼接", message="customer_id 未参数化", confidence=0.8,
+            ),
+            IssuePayload(
+                severity="CRITICAL", file="app.py", line=11,
+                type="命令注入", message="shell=True 拼接用户输入", confidence=0.9,
+            ),
+        ]
+
+        result = _deduplicate_and_calibrate(issues)
+
+        assert len(result) == 2
+        assert {issue.type for issue in result} == {"SQL注入", "命令注入"}
+
+    def test_calibrates_maintenance_findings_without_downgrading_exploits(self):
+        from diffguard_agent.agent.pipeline.stages.aggregation import _deduplicate_and_calibrate
+
+        issues = [
+            IssuePayload(severity="CRITICAL", file="settings.py", line=2,
+                         type="资源泄漏", message="文件句柄未关闭"),
+            IssuePayload(severity="CRITICAL", file="settings.py", line=8,
+                         type="嵌套过深", message="四层 if 嵌套"),
+            IssuePayload(severity="WARNING", file="app.py", line=3,
+                         type="SQL注入", message="用户输入直接拼接 SQL"),
+        ]
+
+        result = _deduplicate_and_calibrate(issues)
+        severity_by_type = {issue.type: issue.severity for issue in result}
+
+        assert severity_by_type["资源泄漏"] == "WARNING"
+        assert severity_by_type["嵌套过深"] == "INFO"
+        assert severity_by_type["SQL注入"] == "CRITICAL"
+    def test_calibrates_mojibake_security_finding(self):
+        from diffguard_agent.agent.pipeline.stages.aggregation import _deduplicate_and_calibrate
+
+        mojibake_type = "敏感数据泄露".encode("utf-8").decode("latin-1")
+        result = _deduplicate_and_calibrate([
+            IssuePayload(severity="WARNING", file="app.py", line=5,
+                         type=mojibake_type, message="管理员 Token 被返回"),
+        ])
+
+        assert result[0].severity == "CRITICAL"
+    def test_deduplicates_hardcoded_credential_wording_variants(self):
+        from diffguard_agent.agent.pipeline.stages.aggregation import _deduplicate_and_calibrate
+
+        result = _deduplicate_and_calibrate([
+            IssuePayload(severity="CRITICAL", file="app.py", line=1,
+                         type="硬编码密钥/令牌", message="ADMIN_TOKEN 在源码中"),
+            IssuePayload(severity="WARNING", file="app.py", line=1,
+                         type="硬编码敏感凭据", message="ADMIN_TOKEN 未外部化"),
+        ])
+
+        assert len(result) == 1
+        assert result[0].severity == "CRITICAL"
