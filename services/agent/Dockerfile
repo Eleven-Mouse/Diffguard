@@ -25,4 +25,4 @@ USER diffguard
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')" || exit 1
 
-CMD ["uvicorn", "diffguard_agent.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/.venv/bin/uvicorn", "diffguard_agent.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "/app/src"]

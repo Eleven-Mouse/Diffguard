@@ -20,6 +20,22 @@ CRITICAL_WEIGHT = 3
 WARNING_WEIGHT = 2
 INFO_WEIGHT = 1
 
+_ROOT_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("sql-injection", ("sql注入", "sql injection", "sql拼接", "sql 拼接")),
+    ("command-injection", ("命令注入", "command injection", "shell=true", "shell = true", "命令拼接")),
+    ("hardcoded-secret", ("硬编码", "敏感凭据", "硬编码 token", "硬编码token", "hardcoded secret", "hardcoded credential")),
+    ("secret-exposure", ("敏感信息泄露", "敏感数据泄露", "token 泄露", "token泄露", "secret exposure")),
+    ("path-traversal", ("路径穿越", "path traversal")),
+    ("null-dereference", ("空指针", "空值解引用", "null pointer", "null dereference")),
+    ("resource-leak", ("资源泄漏", "资源未关闭", "文件句柄", "resource leak")),
+    ("broad-exception", ("异常处理过于宽泛", "吞掉异常", "except exception", "broad exception")),
+    ("complexity", ("嵌套过深", "圈复杂度", "复杂度过高", "nested if", "complexity")),
+)
+
+_INFO_PATTERNS = ("嵌套过深", "圈复杂度", "复杂度过高", "可读性", "语义不清", "健壮性", "脆弱实现")
+_WARNING_PATTERNS = ("资源泄漏", "资源未关闭", "文件句柄", "吞掉异常", "异常处理过于宽泛", "空指针", "空值解引用", "缺少输入校验", "缺少参数校验")
+_CRITICAL_PATTERNS = ("注入", "injection", "远程代码执行", "rce", "越权", "认证绕过", "权限提升", "数据丢失", "数据损坏", "资金", "硬编码密钥", "硬编码凭据", "hardcoded secret", "hardcoded credential", "敏感信息泄露", "敏感数据泄露", "token 泄露")
+
 
 def _severity_weight(severity: str) -> int:
     s = severity.upper()
@@ -29,6 +45,74 @@ def _severity_weight(severity: str) -> int:
         return WARNING_WEIGHT
     return INFO_WEIGHT
 
+
+def _text_for_matching(text: str) -> str:
+    """Also match UTF-8 text that a compatible provider decoded as Latin-1."""
+    if not text:
+        return ""
+    try:
+        repaired = text.encode("latin-1").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        repaired = text
+    return f"{text} {repaired}".lower()
+
+
+def _issue_text(issue: IssuePayload) -> str:
+    return " ".join(_text_for_matching(value) for value in (issue.type, issue.message, issue.suggestion))
+
+
+def _issue_root(issue: IssuePayload) -> str | None:
+    text = _issue_text(issue)
+    for root, patterns in _ROOT_PATTERNS:
+        if any(pattern in text for pattern in patterns):
+            return root
+    return None
+
+
+def _calibrated_severity(issue: IssuePayload) -> str:
+    """Apply one final, evidence-based severity scale after aggregation."""
+    text = _issue_text(issue)
+    if any(pattern in text for pattern in _CRITICAL_PATTERNS):
+        return "CRITICAL"
+    if any(pattern in text for pattern in _INFO_PATTERNS):
+        return "INFO"
+    if any(pattern in text for pattern in _WARNING_PATTERNS):
+        return "WARNING"
+    return issue.severity.upper() if issue.severity.upper() in {"CRITICAL", "WARNING", "INFO"} else "INFO"
+
+
+def _same_root_issue(left: IssuePayload, right: IssuePayload) -> bool:
+    if (left.file or "").strip() != (right.file or "").strip():
+        return False
+    root = _issue_root(left)
+    if root is None or root != _issue_root(right):
+        return False
+    if left.line is None or right.line is None:
+        return True
+    return abs(left.line - right.line) <= 2
+
+
+def _deduplicate_and_calibrate(issues: list[IssuePayload]) -> list[IssuePayload]:
+    """Collapse nearby reports of the same root cause and normalize severity."""
+    result: list[IssuePayload] = []
+    for issue in issues:
+        candidate = issue.model_copy(update={"severity": _calibrated_severity(issue)})
+        duplicate_index = next(
+            (index for index, existing in enumerate(result) if _same_root_issue(existing, candidate)),
+            None,
+        )
+        if duplicate_index is None:
+            result.append(candidate)
+            continue
+
+        existing = result[duplicate_index]
+        existing_rank = _severity_weight(existing.severity)
+        candidate_rank = _severity_weight(candidate.severity)
+        if candidate_rank > existing_rank or (
+            candidate_rank == existing_rank and candidate.confidence > existing.confidence
+        ):
+            result[duplicate_index] = candidate
+    return result
 
 def _build_reviewer_section(review_results: dict[str, str]) -> tuple[str, int]:
     """Build compact reviewer section with deduplication.
@@ -88,6 +172,17 @@ def _guess_reviewer(issue: dict) -> str:
         return "logic"
     return "quality"
 
+
+def _recover_reviewer_issues(review_results: dict[str, str]) -> list[IssuePayload]:
+    """Keep reviewer findings when structured aggregation is unavailable."""
+    recovered: list[IssuePayload] = []
+    for name, result_json in review_results.items():
+        try:
+            data = json.loads(result_json)
+            recovered.extend(IssuePayload.model_validate(issue) for issue in data.get("issues", []))
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.warning("Failed to recover reviewer result '%s': %s", name, e)
+    return recovered
 
 class _AggregatedReview(BaseModel):
     has_critical: bool = False
@@ -189,6 +284,12 @@ class AggregationStage(PipelineStage):
             total_llm_issues=total_issues,
             pre_aggregated_count=len(pre_aggregated),
         )
+        if not aggregated.issues:
+            recovered = _recover_reviewer_issues(json_results)
+            if recovered:
+                logger.warning("Aggregation produced no issues; preserving %d reviewer findings", len(recovered))
+                aggregated.issues = recovered
+                aggregated.has_critical = any(issue.severity.upper() == "CRITICAL" for issue in recovered)
 
         # Map diff-context line numbers → actual file line numbers for each issue
         final_issues: list[IssuePayload] = list(pre_aggregated)
@@ -196,9 +297,10 @@ class AggregationStage(PipelineStage):
             mapped = _map_issue_line_numbers(issue, line_mapper, context.input.diff_text)
             final_issues.append(mapped)
 
+        final_issues = _deduplicate_and_calibrate(final_issues)
         context.aggregation.final_issues = final_issues
         context.aggregation.final_summary = aggregated.summary
-        context.aggregation.has_critical = aggregated.has_critical or any(
+        context.aggregation.has_critical = any(
             i.severity.upper() == "CRITICAL" for i in final_issues
         )
         context.aggregation.highlights = aggregated.highlights

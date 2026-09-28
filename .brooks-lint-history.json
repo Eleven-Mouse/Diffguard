@@ -1,0 +1,24 @@
+[
+    {
+        "date":  "2026-06-13",
+        "mode":  "Health Dashboard",
+        "score":  93,
+        "findings":  {
+                         "critical":  2,
+                         "warning":  3,
+                         "suggestion":  1
+                     },
+        "scope":  "entire project (no local diff; Code Quality skipped)"
+    },
+    {
+        "date":  "2026-06-13",
+        "mode":  "Test Quality Review",
+        "score":  85,
+        "findings":  {
+                         "critical":  1,
+                         "warning":  3,
+                         "suggestion":  1
+                     },
+        "scope":  "all test files in services/gateway/src/test/java and services/agent/tests"
+    }
+]
