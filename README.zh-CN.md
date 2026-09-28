@@ -1,86 +1,92 @@
-<h1 align="center">DiffGuard</h1>
+<div align="center">
 
-<p align="center">
-  <strong>AI 驱动的多 Pipeline 代码审查 — 安全、逻辑、质量，一个 Action 搞定。</strong>
-</p>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:6366f1,50:8b5cf6,100:ec4899&height=220&section=header&text=DiffGuard&fontSize=72&fontColor=ffffff&fontAlignY=35&desc=AI%20%E9%A9%B1%E5%8A%A8%E7%9A%84%E5%A4%9A%E6%B5%81%E6%B0%B4%E7%BA%BF%E4%BB%A3%E7%A0%81%E5%AE%A1%E6%9F%A5&descSize=20&descAlignY=55&descAlign=center&animation=fadeIn" width="100%" alt="DiffGuard banner" />
 
-<p align="center">
-  <a href="./README.md">English</a> | 中文
-</p>
+<!-- typewriter tagline -->
+<a href="https://github.com/Eleven-Mouse/Diffguard">
+  <img src="https://readme-typing-svg.demolab.com/?font=JetBrains+Mono&weight=600&size=22&duration=3000&pause=1000&color=8B5CF6&center=true&vCenter=true&random=false&width=900&lines=Security+%2B+Logic+%2B+Quality+--+One+Action;ReAct+Agents+That+Read+Your+Codebase;Zero+Infrastructure+--+Just+a+GitHub+Action;Catch+Issues+Before+Your+Reviewers+Do" alt="DiffGuard tagline" />
+</a>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Java-21-orange?logo=eclipse-temurin&logoColor=white" alt="Java 21" />
-  <img src="https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/LangChain-0.3-green?logo=langchain&logoColor=white" alt="LangChain" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg" alt="PRs Welcome" />
-  <img src="https://img.shields.io/badge/LLM-Claude%20%7C%20OpenAI-ff69b4" alt="LLM Providers" />
-  <!-- release-badge:start -->
-  <a href="./releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Release-v1.0.0-2ea44f" alt="Release v1.0.0" /></a>
-  <!-- release-badge:end -->
-</p>
+[English](./README.md) | 中文
+
+**4 阶段流水线 · 3 位并行领域审查员 · 6 个工具调用 · 28 条误报规则 · 0 基础设施**
+
+[🚀 快速开始](#-快速开始) · [✨ 核心特性](#-核心特性) · [🏛 系统架构](#-系统架构) · [⚙️ 配置说明](#️-配置说明) · [🚢 部署](#-部署) · [🧰 开发](#-开发) · [🧑‍💻 参与贡献](#-参与贡献)
+
+</div>
 
 ---
 
-## DiffGuard 是什么？
+## 🤔 为什么选择 DiffGuard？
 
-DiffGuard 是一个 AI 代码审查引擎，通过**多阶段 Pipeline** 对 Pull Request 进行分析，内建并行领域审查器（安全、逻辑、质量）。它可以作为 **GitHub Action** 零基础设施运行，也可以作为独立的 **CLI / Docker 服务** 进行高级部署。
+| | 传统 Linter | 通用 LLM 机器人 | **DiffGuard** |
+|---|:---:|:---:|:---:|
+| 理解*你的*代码库上下文 | ❌ | ⚠️ 浅层 | ✅ **AST + 调用图 + RAG** |
+| 并行领域专项审查器 | ❌ | ❌ | ✅ **安全 / 逻辑 / 质量** |
+| 误报过滤 | ❌ 噪音大 | ❌ 噪音大 | ✅ **正则 + LLM 两阶段** |
+| 零成本静态预扫描 | ✅ | ❌ | ✅ **密钥 / SQL 注入 / `eval` 正则** |
+| 扛得住超大 PR | ✅ | ❌ Token 爆炸 | ✅ **Token 感知 FFD 分块** |
+| 生产级弹性 | 不适用 | ❌ | ✅ **熔断 + 重试 + 限流** |
 
-与仅基于规则的 Linter 不同，DiffGuard 使用 LLM 驱动的深度分析，并支持可选的**工具调用 Agent**——可以读取源文件、遍历调用图、执行语义代码搜索——让审查者拥有与人类审查者相同的上下文。
-
----
-
-## 核心特性
-
-### 多阶段审查 Pipeline
-4 阶段编排 Pipeline：**摘要 → 并行审查器 → 聚合 → 误报过滤器**。每个阶段可组合，支持通过 YAML 配置。
-
-### 并行领域审查器
-三个专项审查器并发执行：
-- **安全（Security）** — 注入攻击、认证授权、数据泄露、加密、XSS、SSRF
-- **逻辑（Logic）** — 空值安全、并发、资源管理、数据一致性
-- **质量（Quality）** — 复杂度、错误处理、可维护性、最佳实践
-
-### 工具调用 ReAct Agent
-启用 Java Tool Server 后，审查器变为 **LangChain ReAct Agent**，拥有 6 个工具：
-- `get_file_content` — 读取项目源文件
-- `get_diff_context` — 查询 Diff 摘要或单文件内容
-- `get_method_definition` — 通过 AST 提取方法签名
-- `get_call_graph` — 遍历调用者/被调用者/影响范围
-- `get_related_files` — 查找依赖和关联文件
-- `semantic_search` — 向量代码搜索（TF-IDF 或 OpenAI Embeddings）
-
-### 误报过滤器
-两阶段过滤：**确定性正则规则**（零 LLM 成本）+ 可选的 **LLM 验证**。内置 28 条先例规则，覆盖 Spring、MyBatis、React、JPA 等常见框架。
-
-### 静态规则引擎（零 LLM 成本）
-预审查规则，扫描新增行：SQL 注入模式、硬编码密钥（AWS Key、GitHub Token）、危险函数调用（`Runtime.exec`、`eval`）、过深层嵌套。
-
-### Token 感知 Diff 分块
-大型 PR 自动拆分为多个分块，采用首次适应递减装箱算法和 Hunk 级别拆分。可配置上限：每块最多 10 个文件、60K 字符、12K Token。跨分块问题自动去重。
-
-### 多模型支持
-- **Claude** — Anthropic API 原生支持
-- **OpenAI** — GPT-4o、GPT-5 及兼容端点
-- **代理** — 自动检测 OpenAI 兼容代理并回退
-
-### GitHub Action（复合 Action）
-开箱即用的 GitHub Action，支持 PR 行内评论、严重级别图标和审查摘要。输出 `findings-count` 用于下游工作流门禁。可选启用 Java Tool Server 进行深度代码分析。
-
-### 弹性与可观测性
-- 熔断器（Resilience4j）保护 LLM 和 Agent 调用 — 50% 失败率阈值，30s 开启状态
-- 速率限制（10 req/s 令牌桶）
-- 指数退避重试 + 抖动（最多 3 次）
-- Prometheus 指标：审查数、问题数、Token 用量、耗时、静态规则命中
-- 审查缓存（Caffeine + 磁盘，24 小时 TTL）
+> 与仅基于规则的 Linter 不同，DiffGuard 使用 LLM 驱动的深度分析，并支持可选的**工具调用 ReAct Agent**——可以读取源文件、遍历调用图、执行语义代码搜索——让审查者拥有与人类审查者相同的上下文。
 
 ---
 
-## 系统架构
+## ✨ 核心特性
+
+<div align="center">
+
+| 🛡️ **安全** | 🧠 **逻辑** | 🧹 **质量** |
+|:---:|:---:|:---:|
+| 注入攻击 · 认证授权 · 数据泄露 | 空值安全 · 并发 | 复杂度 · 错误处理 |
+| 加密 · XSS · SSRF | 资源管理 · 数据一致性 | 可维护性 · 最佳实践 |
+
+</div>
+
+### 🔀 多阶段审查 Pipeline
+4 阶段编排 Pipeline——**摘要 → 并行审查器 → 聚合 → 误报过滤器**——完全可组合，通过 YAML DSL 配置。
+
+### 🤖 工具调用 ReAct Agent
+启用 Java Tool Server 后，审查器变为 **LangChain ReAct Agent**，拥有 6 个上下文工具：
+
+| 工具 | 为审查器提供的能力 |
+|---|---|
+| `get_file_content` | 读取任意项目源文件 |
+| `get_diff_context` | 查询 Diff 摘要或单文件内容 |
+| `get_method_definition` | 通过 AST 提取方法签名 |
+| `get_call_graph` | 遍历调用者 / 被调用者 / 影响范围 |
+| `get_related_files` | 查找依赖和关联文件 |
+| `semantic_search` | 向量代码搜索（TF-IDF 或 OpenAI Embeddings） |
+
+### 🧯 误报过滤器
+两阶段过滤：**确定性正则规则**（零 LLM 成本）→ 可选的 **LLM 验证**。内置 **28 条先例规则**，覆盖 Spring、MyBatis、React、JPA 等常见框架。
+
+### 📡 静态规则引擎（零 LLM 成本）
+预审查规则扫描新增行：SQL 注入模式、硬编码密钥（AWS Key、GitHub Token）、危险函数调用（`Runtime.exec`、`eval`）、过深层嵌套。
+
+### ✂️ Token 感知 Diff 分块
+大型 PR 自动拆分为多个分块，采用**首次适应递减装箱算法**和 Hunk 级别拆分（每块最多 10 个文件 / 60K 字符 / 12K Token）。跨分块问题自动去重。
+
+### 🌐 多模型支持
+**Claude**（Anthropic API 原生支持）· **OpenAI**（GPT-4o、GPT-5 及兼容端点）· **代理**自动检测与回退。
+
+### 🛟 弹性与可观测性
+- ⚡ 熔断器（Resilience4j）保护 LLM 和 Agent 调用 — 50% 失败率阈值，30s 开启状态
+- 🚦 速率限制 — 10 req/s 令牌桶
+- 🔁 指数退避重试 + 抖动（最多 3 次）
+- 📈 Prometheus 指标 — 审查数、问题数、Token 用量、耗时、静态规则命中
+- 💾 审查缓存 — Caffeine + 磁盘，24 小时 TTL
+
+### 🎣 GitHub Action（复合 Action）
+开箱即用，支持 PR 行内评论、严重级别图标和审查摘要。输出 `findings-count` 用于下游工作流门禁。
+
+---
+
+## 🏛 系统架构
 
 ```mermaid
 graph TB
-    subgraph Trigger["触发源"]
+    subgraph Trigger["⚡ 触发源"]
         PR["GitHub PR 事件"]
         CLI["CLI review --pr"]
     end
@@ -145,9 +151,205 @@ graph TB
     PO -->|"问题 + 评论"| AR
 ```
 
+### 🔄 审查流程
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PR as GitHub PR
+    participant Runner as Action Runner
+    participant GH as GitHub API
+    participant Pipeline as PipelineOrchestrator
+    participant Sec as 🔒 安全审查器
+    participant Logic as 🧠 逻辑审查器
+    participant Quality as 🧹 质量审查器
+    participant FP as 🧯 误报过滤器
+    participant ToolSrv as Java Tool Server
+
+    PR->>Runner: PR 打开 / 同步
+    Runner->>GH: 获取 PR Diff + 元数据 + 历史评论
+    Runner->>Pipeline: ReviewRequest（Diff、配置）
+
+    Pipeline->>Pipeline: 按需分块 Diff
+    Pipeline->>Pipeline: 摘要阶段 — 分析 Diff，路由文件
+
+    par 并行领域审查
+        Pipeline->>Sec: 安全相关文件
+        Pipeline->>Logic: 逻辑相关文件
+        Pipeline->>Quality: 质量相关文件
+    end
+
+    Note over Sec,Quality: 启用 Tool Server：ReAct Agent<br/>未启用：直接 LLM 调用
+
+    Sec-.->ToolSrv: get_file_content / call_graph / ...
+    Logic-.->ToolSrv: get_method_definition / related_files / ...
+    Quality-.->ToolSrv: semantic_search / diff_context / ...
+
+    Sec-->>FP: 安全问题
+    Logic-->>FP: 逻辑问题
+    Quality-->>FP: 质量问题
+
+    FP->>FP: 正则规则 → 可选 LLM 验证
+    FP->>Runner: 过滤后的问题
+    Runner->>GH: 发布 PR 行内评论
+    Runner->>Runner: 输出 findings-count、results-file
+```
+
 ---
 
-## 项目结构
+## 🚀 快速开始
+
+### 🥇 方式一 — GitHub Action（推荐）
+
+在你的仓库中创建 `.github/workflows/diffguard-review.yml`：
+
+```yaml
+name: DiffGuard Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Eleven-Mouse/Diffguard@v1.0.0
+        with:
+          api-key: ${{ secrets.DIFFGUARD_API_KEY }}
+          provider: claude
+          model: claude-sonnet-4-20250514
+          language: zh
+          comment-pr: true
+          enable-fp-filter: true
+```
+
+将你的 API Key 添加为仓库 Secret（`DIFFGUARD_API_KEY`）。完成——从此每个 PR 都会自动审查。🎉
+
+### 🥈 方式二 — CLI（本地）
+
+前提条件：Java 21、Maven 3.9+
+
+```bash
+# 克隆并构建
+git clone https://github.com/Eleven-Mouse/DiffGuard.git
+cd DiffGuard/services/gateway
+mvn -DskipTests package
+
+# 运行审查
+export GITHUB_TOKEN=ghp_your_token
+export DIFFGUARD_API_KEY=sk-ant-your-key
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline
+
+# 启用 Java Tool Server（深度 AST / 代码图谱分析）
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline --force
+
+# 安装 / 卸载 Git Hook（pre-commit + pre-push 自动审查）
+java -jar target/diffguard-1.0.0.jar install
+java -jar target/diffguard-1.0.0.jar uninstall
+
+# 独立服务
+java -jar target/diffguard-1.0.0.jar tool-server --port 9090
+java -jar target/diffguard-1.0.0.jar orchestrator-server --port 8088
+```
+
+> 💡 Git Hook 仅支持 PR 模式。请提前设置 `DIFFGUARD_PR=owner/repo#number`，未设置时 Hook 会跳过审查。
+
+### 🥉 方式三 — Docker Compose
+
+```bash
+git clone https://github.com/Eleven-Mouse/DiffGuard.git
+cd DiffGuard
+
+# 配置
+cp services/gateway/.env.example services/gateway/.env
+# 编辑 .env 填入你的 API Key
+
+# 启动全栈
+docker compose up -d
+```
+
+启动的服务：
+
+| 服务 | 端口 | 角色 |
+|---|---|---|
+| 🐰 RabbitMQ | 5672 / 15672 | 异步任务调度 |
+| ☕ Gateway | 9090（Tool Server）· 9091（Metrics） | AST · 代码图谱 · RAG |
+| 🐍 Agent | 8000 | FastAPI 审查流水线 |
+
+---
+
+## ⚙️ 配置说明
+
+<details open>
+<summary><b>📋 GitHub Action 输入参数</b></summary>
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `api-key` | *（必填）* | LLM API Key（Anthropic 或 OpenAI） |
+| `provider` | `claude` | LLM 提供商：`claude` 或 `openai` |
+| `model` | `claude-sonnet-4-20250514` | 模型名称 |
+| `api-base-url` | *（空）* | 自定义 API 端点（代理） |
+| `language` | `zh` | 输出语言：`zh` 或 `en` |
+| `comment-pr` | `true` | 是否在 PR 上发布行内评论 |
+| `exclude-directories` | *（空）* | 逗号分隔的排除目录 |
+| `enable-fp-filter` | `true` | 启用误报过滤 |
+| `timeout-minutes` | `10` | 审查超时时间 |
+| `use-java-tool-server` | `false` | 启用工具调用 Agent |
+| `tool-server-url` | `http://127.0.0.1:9090` | Tool Server 地址 |
+
+</details>
+
+<details>
+<summary><b>☕ Java Gateway 环境变量</b></summary>
+
+| 变量 | 说明 |
+|---|---|
+| `DIFFGUARD_API_KEY` | LLM API Key |
+| `DIFFGUARD_API_BASE_URL` | 自定义 LLM API 地址 |
+| `DIFFGUARD_AGENT_URL` | Python Agent 服务地址 |
+| `DIFFGUARD_TOOL_SERVER_URL` | Tool Server 地址（覆盖 host+port） |
+| `DIFFGUARD_TOOL_SERVER_HOST` | Tool Server 主机（默认 `localhost`） |
+| `DIFFGUARD_TOOL_SERVER_PORT` | Tool Server 端口（默认 `9090`） |
+| `DIFFGUARD_TOOL_SECRET` | Tool Server 共享密钥 |
+| `DIFFGUARD_ORCHESTRATOR_URL` | Orchestrator Server 地址 |
+| `GITHUB_TOKEN` / `GH_TOKEN` / `DIFFGUARD_GITHUB_TOKEN` | GitHub API Token（任选其一） |
+| `RABBITMQ_HOST` / `PORT` / `USER` / `PASSWORD` | RabbitMQ 连接配置 |
+
+</details>
+
+<details>
+<summary><b>🐍 Python Agent 环境变量</b></summary>
+
+| 变量 | 说明 |
+|---|---|
+| `DIFFGUARD_PROVIDER` | `claude` 或 `openai` |
+| `DIFFGUARD_MODEL` | 模型名称 |
+| `DIFFGUARD_API_KEY` | LLM API Key |
+| `DIFFGUARD_API_BASE_URL` | 自定义 API 端点 |
+| `DIFFGUARD_LANGUAGE` | `zh` 或 `en` |
+| `DIFFGUARD_COMMENT_PR` | `true` / `false` |
+| `DIFFGUARD_ENABLE_FP_FILTER` | 启用误报过滤 |
+| `DIFFGUARD_TIMEOUT_MINUTES` | 审查超时时间 |
+| `DIFFGUARD_USE_JAVA_TOOL_SERVER` | 启用工具调用 |
+| `DIFFGUARD_TOOL_SERVER_URL` | Tool Server 地址 |
+| `DIFFGUARD_EXCLUDE_DIRS` | 逗号分隔的排除目录 |
+| `GITHUB_TOKEN` | GitHub API Token |
+| `GITHUB_REPOSITORY` | `owner/repo` 格式 |
+| `PR_NUMBER` | 待审查的 PR 编号 |
+
+</details>
+
+---
+
+## 🗂 项目结构
+
+<details>
+<summary><b>展开完整目录树</b></summary>
 
 ```
 DiffGuard/
@@ -209,12 +411,6 @@ DiffGuard/
 │           │           ├── fp_filter_stage.py # 阶段 4：误报过滤
 │           │           └── static_rules.py    # 零成本正则预审查
 │           ├── llm/prompts/pipeline/   # 领域专用 Prompt 模板
-│           │   ├── security-system.txt, security-user.txt
-│           │   ├── logic-system.txt, logic-user.txt
-│           │   ├── quality-system.txt, quality-user.txt
-│           │   ├── aggregation-system.txt, aggregation-user.txt
-│           │   ├── diff-summary-system.txt, diff-summary-user.txt
-│           │   └── react-user.txt
 │           ├── models/schemas.py       # Pydantic 请求/响应模型
 │           ├── tools/                  # LangChain 工具工厂 → Java Tool Server
 │           ├── utils/                  # Diff 拆分工具
@@ -226,210 +422,14 @@ DiffGuard/
     └── release.yml                     # 基于标签的发布流水线
 ```
 
----
-
-## 快速开始
-
-### 方式一：GitHub Action（推荐）
-
-在你的仓库中创建 `.github/workflows/diffguard-review.yml`：
-
-```yaml
-name: DiffGuard Review
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Eleven-Mouse/Diffguard@v1.0.0
-        with:
-          api-key: ${{ secrets.DIFFGUARD_API_KEY }}
-          provider: claude
-          model: claude-sonnet-4-20250514
-          language: zh
-          comment-pr: true
-          enable-fp-filter: true
-```
-
-将你的 API Key 添加为仓库 Secret（`DIFFGUARD_API_KEY`）。
-
-### 方式二：CLI（本地）
-
-前提条件：Java 21、Maven 3.9+
-
-```bash
-# 克隆并构建
-git clone https://github.com/Eleven-Mouse/DiffGuard.git
-cd DiffGuard/services/gateway
-mvn -DskipTests package
-
-# 运行审查
-export GITHUB_TOKEN=ghp_your_token
-export DIFFGUARD_API_KEY=sk-ant-your-key
-java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline
-
-# 启用 Java Tool Server（深度 AST/代码图谱分析）
-java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline --force
-
-# 安装 Git Hook（pre-commit + pre-push，自动审查）
-java -jar target/diffguard-1.0.0.jar install
-
-# 卸载 Hook
-java -jar target/diffguard-1.0.0.jar uninstall
-
-# 启动独立 Tool Server
-java -jar target/diffguard-1.0.0.jar tool-server --port 9090
-
-# 启动独立 Orchestrator Server
-java -jar target/diffguard-1.0.0.jar orchestrator-server --port 8088
-```
-
-> Git Hook 仅支持 PR 模式。请提前设置 `DIFFGUARD_PR=owner/repo#number`，未设置时 Hook 会跳过审查。
-
-### 方式三：Docker Compose
-
-```bash
-git clone https://github.com/Eleven-Mouse/DiffGuard.git
-cd DiffGuard
-
-# 配置
-cp services/gateway/.env.example services/gateway/.env
-# 编辑 .env 填入你的 API Key
-
-# 启动所有服务
-docker compose up -d
-```
-
-启动的服务：
-- **RabbitMQ** — 端口 5672/15672
-- **Gateway**（Tool Server 端口 9090，Metrics 端口 9091）
-- **Agent** — 端口 8000
+</details>
 
 ---
 
-## 配置说明
+## 🚢 部署
 
-### GitHub Action 输入参数
-
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `api-key` | *（必填）* | LLM API Key（Anthropic 或 OpenAI） |
-| `provider` | `claude` | LLM 提供商：`claude` 或 `openai` |
-| `model` | `claude-sonnet-4-20250514` | 模型名称 |
-| `api-base-url` | *（空）* | 自定义 API 端点（代理） |
-| `language` | `zh` | 输出语言：`zh` 或 `en` |
-| `comment-pr` | `true` | 是否在 PR 上发布行内评论 |
-| `exclude-directories` | *（空）* | 逗号分隔的排除目录 |
-| `enable-fp-filter` | `true` | 启用误报过滤 |
-| `timeout-minutes` | `10` | 审查超时时间 |
-| `use-java-tool-server` | `false` | 启用工具调用 Agent |
-| `tool-server-url` | `http://127.0.0.1:9090` | Tool Server 地址 |
-
-### 环境变量
-
-#### Java Gateway
-
-| 变量 | 说明 |
-|---|---|
-| `DIFFGUARD_API_KEY` | LLM API Key |
-| `DIFFGUARD_API_BASE_URL` | 自定义 LLM API 地址 |
-| `DIFFGUARD_AGENT_URL` | Python Agent 服务地址 |
-| `DIFFGUARD_TOOL_SERVER_URL` | Tool Server 地址（覆盖 host+port） |
-| `DIFFGUARD_TOOL_SERVER_HOST` | Tool Server 主机（默认 `localhost`） |
-| `DIFFGUARD_TOOL_SERVER_PORT` | Tool Server 端口（默认 `9090`） |
-| `DIFFGUARD_TOOL_SECRET` | Tool Server 共享密钥 |
-| `DIFFGUARD_ORCHESTRATOR_URL` | Orchestrator Server 地址 |
-| `GITHUB_TOKEN` / `GH_TOKEN` / `DIFFGUARD_GITHUB_TOKEN` | GitHub API Token（任选其一） |
-| `RABBITMQ_HOST` / `PORT` / `USER` / `PASSWORD` | RabbitMQ 连接配置 |
-
-#### Python Agent
-
-| 变量 | 说明 |
-|---|---|
-| `DIFFGUARD_PROVIDER` | `claude` 或 `openai` |
-| `DIFFGUARD_MODEL` | 模型名称 |
-| `DIFFGUARD_API_KEY` | LLM API Key |
-| `DIFFGUARD_API_BASE_URL` | 自定义 API 端点 |
-| `DIFFGUARD_LANGUAGE` | `zh` 或 `en` |
-| `DIFFGUARD_COMMENT_PR` | `true` / `false` |
-| `DIFFGUARD_ENABLE_FP_FILTER` | 启用误报过滤 |
-| `DIFFGUARD_TIMEOUT_MINUTES` | 审查超时时间 |
-| `DIFFGUARD_USE_JAVA_TOOL_SERVER` | 启用工具调用 |
-| `DIFFGUARD_TOOL_SERVER_URL` | Tool Server 地址 |
-| `DIFFGUARD_EXCLUDE_DIRS` | 逗号分隔的排除目录 |
-| `GITHUB_TOKEN` | GitHub API Token |
-| `GITHUB_REPOSITORY` | `owner/repo` 格式 |
-| `PR_NUMBER` | 待审查的 PR 编号 |
-
----
-
-## 审查流程
-
-```mermaid
-sequenceDiagram
-    participant PR as GitHub PR
-    participant Action as GitHub Action
-    participant Runner as github_action_runner
-    participant GH as GitHub API
-    participant Pipeline as PipelineOrchestrator
-    participant Summary as 摘要阶段
-    participant Sec as 安全审查器
-    participant Logic as 逻辑审查器
-    participant Quality as 质量审查器
-    participant Agg as 聚合阶段
-    participant FP as 误报过滤器
-    participant ToolSrv as Java Tool Server
-
-    PR->>Action: PR 打开 / 同步
-    Action->>Runner: 使用环境变量运行
-    Runner->>GH: 获取 PR Diff + 元数据
-    Runner->>GH: 获取历史评论
-    Runner->>Pipeline: ReviewRequest（Diff、配置）
-
-    Pipeline->>Pipeline: 按需分块 Diff
-    Pipeline->>Summary: 分析 Diff，路由文件
-
-    par 并行领域审查
-        Summary->>Sec: 安全相关文件
-        Summary->>Logic: 逻辑相关文件
-        Summary->>Quality: 质量相关文件
-    end
-
-    Note over Sec,Quality: 启用 Tool Server 时：ReAct Agent<br/>未启用：直接 LLM 调用
-
-    Sec-.->ToolSrv: get_file_content / call_graph / ...
-    Logic-.->ToolSrv: get_method_definition / related_files / ...
-    Quality-.->ToolSrv: semantic_search / diff_context / ...
-
-    Sec->>Agg: 安全问题
-    Logic->>Agg: 逻辑问题
-    Quality->>Agg: 质量问题
-
-    Agg->>Agg: 合并、去重、映射行号
-    Agg->>FP: 所有问题
-
-    FP->>FP: 正则规则（阶段 1）
-    FP->>FP: 可选 LLM 验证（阶段 2）
-    FP->>Pipeline: 过滤后的问题
-
-    Pipeline->>Runner: ReviewResponse
-    Runner->>GH: 发布 PR 行内评论
-    Runner->>Action: findings-count、results-file
-```
-
----
-
-## 部署
-
-### Docker Compose（生产环境）
+<details open>
+<summary><b>🐳 Docker Compose（生产环境）</b></summary>
 
 ```bash
 docker compose up -d
@@ -443,7 +443,10 @@ docker compose up -d
 - 所有服务均配置健康检查
 - RabbitMQ 数据持久化命名卷
 
-### 独立服务
+</details>
+
+<details>
+<summary><b>📦 独立服务</b></summary>
 
 ```bash
 # 仅启动 Tool Server
@@ -457,43 +460,19 @@ cd services/agent
 python -m diffguard_agent.main
 ```
 
----
-
-## 开发
-
-### 构建与测试（Java）
-
-```bash
-cd services/gateway
-mvn verify          # 构建 + 测试
-mvn test            # 仅测试
-mvn -DskipTests package  # 跳过测试
-```
-
-### 构建与测试（Python）
-
-```bash
-cd services/agent
-uv sync --dev       # 安装含开发依赖
-pytest              # 运行测试
-ruff check .        # 代码检查（可选）
-```
-
-### CI
-
-项目提供手动触发的 CI 工作流：
-- **Java**：`mvn -B verify`，上传 Surefire 报告
-- **Python**：`uv sync --dev` → `ruff check` → `pytest`
+</details>
 
 ---
 
-## 技术栈
+## 🛠 技术栈
 
-| 层 | 技术 |
+<div align="center">
+
+| 🧱 层 | ⚙️ 技术 |
 |---|---|
-| **Gateway** | Java 21、Maven、Javalin（HTTP）、picocli（CLI） |
-| **Agent** | Python 3.12、FastAPI、LangChain、Pydantic、httpx |
-| **LLM** | Claude（Anthropic API）、OpenAI（Chat Completions） |
+| **Gateway** | Java 21 · Maven · Javalin（HTTP）· picocli（CLI） |
+| **Agent** | Python 3.12 · FastAPI · LangChain · Pydantic · httpx |
+| **LLM** | Claude（Anthropic API）· OpenAI（Chat Completions） |
 | **AST** | JavaParser（Java 源码分析） |
 | **代码图谱** | 自研图引擎（节点：FILE/CLASS/METHOD，边：CALLS/IMPLEMENTS/EXTENDS） |
 | **代码 RAG** | TF-IDF / OpenAI Embeddings + ChromaDB |
@@ -501,26 +480,35 @@ ruff check .        # 代码检查（可选）
 | **消息队列** | RabbitMQ（异步任务调度） |
 | **弹性** | Resilience4j（熔断器、速率限制、重试） |
 | **可观测性** | Micrometer + Prometheus |
-| **容器** | Docker、Docker Compose |
+| **容器** | Docker · Docker Compose |
 | **CI/CD** | GitHub Actions |
 
----
- 
-
-## 参与贡献
-
-欢迎贡献！请随时提交 Pull Request。
-
-1. Fork 本仓库
-2. 创建功能分支（`git checkout -b feature/amazing-feature`）
-3. 提交你的修改
-4. 推送到分支（`git push origin feature/amazing-feature`）
-5. 发起 Pull Request
-
-提交前请确保测试通过（Java：`mvn verify`，Python：`pytest`）。
+</div>
 
 ---
 
-## 许可证
+## 🧑‍💻 参与贡献
+
+欢迎贡献！🎉
+
+1. 🍴 Fork 本仓库
+2. 🌿 创建功能分支（`git checkout -b feature/amazing-feature`）
+3. ✅ 提交你的修改
+4. ⬆️ 推送到分支（`git push origin feature/amazing-feature`）
+5. 🔃 发起 Pull Request
+
+> 提交前请确保测试通过 — Java：`mvn verify`，Python：`pytest`。
+
+---
+
+## 📄 许可证
 
 本项目基于 MIT 许可证开源 — 详见 [LICENSE](./LICENSE) 文件。
+
+---
+
+<div align="center">
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:ec4899,50:8b5cf6,100:6366f1&height=120&section=footer&text=DiffGuard%20%E2%80%94%20%E5%AE%89%E5%BF%83%E5%90%88%E5%B9%B6%E6%AF%8F%E4%B8%80%E8%A1%8C%E4%BB%A3%E7%A0%81&fontSize=22&fontColor=ffffff&animation=fadeIn" width="100%" alt="footer" />
+
+</div>

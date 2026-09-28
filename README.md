@@ -1,86 +1,99 @@
-<h1 align="center">DiffGuard</h1>
+<div align="center">
 
-<p align="center">
-  <strong>AI-Powered Multi-Pipeline Code Review — Security, Logic, Quality, One Action.</strong>
-</p>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:6366f1,50:8b5cf6,100:ec4899&height=220&section=header&text=DiffGuard&fontSize=72&fontColor=ffffff&fontAlignY=35&desc=AI-Powered%20Multi-Pipeline%20Code%20Review&descSize=20&descAlignY=55&descAlign=center&animation=fadeIn" width="100%" alt="DiffGuard banner" />
 
-<p align="center">
-  <a href="./README.zh-CN.md">中文</a> | English
-</p>
+<!-- typewriter tagline -->
+<a href="https://github.com/Eleven-Mouse/Diffguard">
+  <img src="https://readme-typing-svg.demolab.com/?font=JetBrains+Mono&weight=600&size=22&duration=3000&pause=1000&color=8B5CF6&center=true&vCenter=true&random=false&width=900&lines=Security+%2B+Logic+%2B+Quality+--+One+Action;ReAct+Agents+That+Read+Your+Codebase;Zero+Infrastructure+--+Just+a+GitHub+Action;Catch+Issues+Before+Your+Reviewers+Do" alt="DiffGuard tagline" />
+</a>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Java-21-orange?logo=eclipse-temurin&logoColor=white" alt="Java 21" />
-  <img src="https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/LangChain-0.3-green?logo=langchain&logoColor=white" alt="LangChain" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg" alt="PRs Welcome" />
-  <img src="https://img.shields.io/badge/LLM-Claude%20%7C%20OpenAI-ff69b4" alt="LLM Providers" />
-  <!-- release-badge:start -->
-  <a href="./releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Release-v1.0.0-2ea44f" alt="Release v1.0.0" /></a>
-  <!-- release-badge:end -->
-</p>
+[![Java](https://img.shields.io/badge/Java-21-orange?logo=eclipse-temurin&logoColor=white)](#tech-stack)
+[![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)](#tech-stack)
+[![LangChain](https://img.shields.io/badge/LangChain-0.3-green?logo=langchain&logoColor=white)](#tech-stack)
+[![LLM](https://img.shields.io/badge/LLM-Claude%20%7C%20OpenAI-ff69b4)](#multi-model-support)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
+[![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](#contributing)
+<!-- release-badge:start -->
+[![Release](https://img.shields.io/badge/Release-v1.0.0-2ea44f)](./releases/tag/v1.0.0)
+<!-- release-badge:end -->
 
----
+[中文](./README.zh-CN.md) | English
 
-## What is DiffGuard?
+**4 阶段流水线 · 3 位并行领域审查员 · 6 个工具调用 · 28 条误报规则 · 0 基础设施**
 
-DiffGuard is an AI code review engine that analyzes pull requests through a **multi-stage pipeline** with parallel domain reviewers (security, logic, quality). It runs as a **GitHub Action** with zero infrastructure requirements, or as a standalone **CLI / Docker service** for advanced deployments.
+[🚀 Quick Start](#-quick-start) · [✨ Features](#-key-features) · [🏛 Architecture](#-architecture) · [⚙️ Configuration](#️-configuration) · [🚢 Deployment](#-deployment) · [🧰 Development](#-development) · [🧑‍💻 Contributing](#-contributing)
 
-Unlike rule-only linters, DiffGuard uses LLM-powered deep analysis with optional **tool-calling agents** that can read source files, traverse call graphs, and perform semantic code search — giving reviewers the same context a human reviewer would have.
+</div>
 
 ---
 
-## Key Features
+## 🤔 Why DiffGuard?
 
-### Multi-Stage Review Pipeline
-4-stage orchestrated pipeline: **Summary → Parallel Reviewers → Aggregation → False-Positive Filter**. Each stage is composable and configurable via YAML.
+| | Traditional Linters | Generic LLM Bots | **DiffGuard** |
+|---|:---:|:---:|:---:|
+| Understands *your* codebase context | ❌ | ⚠️ shallow | ✅ **AST + Call Graph + RAG** |
+| Parallel domain-specialized reviewers | ❌ | ❌ | ✅ **Security / Logic / Quality** |
+| False-positive filtering | ❌ noisy | ❌ noisy | ✅ **Regex + LLM two-stage** |
+| Zero-cost static pre-scan | ✅ | ❌ | ✅ **Secrets / SQLi / `eval` regex** |
+| Survives huge PRs | ✅ | ❌ token blowup | ✅ **Token-aware FFD chunking** |
+| Production resilience | n/a | ❌ | ✅ **Circuit breaker + retry + rate limit** |
 
-### Parallel Domain Reviewers
-Three specialized reviewers run concurrently:
-- **Security** — injection, auth, data exposure, crypto, XSS, SSRF
-- **Logic** — null safety, concurrency, resource management, data consistency
-- **Quality** — complexity, error handling, maintainability, best practices
-
-### Tool-Calling ReAct Agents
-When Java Tool Server is enabled, reviewers become **LangChain ReAct agents** with 6 tools:
-- `get_file_content` — read project source files
-- `get_diff_context` — query diff summary or per-file content
-- `get_method_definition` — extract method signatures via AST
-- `get_call_graph` — traverse caller/callee/impact relationships
-- `get_related_files` — find dependent and related files
-- `semantic_search` — vector-based code search (TF-IDF or OpenAI embeddings)
-
-### False-Positive Filter
-Two-stage filter: **deterministic regex rules** (zero LLM cost) followed by optional **LLM verification**. 28 built-in precedent rules covering Spring, MyBatis, React, JPA, and more.
-
-### Static Rule Engine (Zero LLM Cost)
-Pre-review rules that scan added lines for: SQL injection patterns, hardcoded secrets (AWS keys, GitHub tokens), dangerous function calls (`Runtime.exec`, `eval`), excessive nesting depth.
-
-### Token-Aware Diff Chunking
-Large PRs are automatically split into chunks using first-fit-decreasing packing with hunk-level splitting. Configurable limits: max 10 files, 60K chars, 12K tokens per chunk. Issues are deduplicated across chunks.
-
-### Multi-Model Support
-- **Claude** — via Anthropic API (native)
-- **OpenAI** — GPT-4o, GPT-5, and compatible endpoints
-- **Proxies** — automatic detection and fallback for OpenAI-compatible proxies
-
-### GitHub Action (Composite Action)
-Drop-in GitHub Action with PR inline comments, severity icons, and review summaries. Outputs `findings-count` for downstream workflow gates. Optional Java Tool Server for deep code analysis.
-
-### Resilience & Observability
-- Circuit breaker (Resilience4j) for LLM and Agent calls — 50% failure rate threshold, 30s open state
-- Rate limiter (10 req/s token bucket)
-- Retry with exponential backoff and jitter (3 max retries)
-- Prometheus metrics: review count, issue count, token usage, duration, static rule hits
-- Review caching (Caffeine + disk, 24h TTL)
+> Unlike rule-only linters, DiffGuard uses LLM-powered deep analysis with optional **tool-calling ReAct agents** that read source files, traverse call graphs, and perform semantic code search — giving reviewers the same context a human reviewer would have.
 
 ---
 
-## Architecture
+## ✨ Key Features
+
+<div align="center">
+
+| 🛡️ **Security** | 🧠 **Logic** | 🧹 **Quality** |
+|:---:|:---:|:---:|
+| Injection · Auth · Data exposure | Null safety · Concurrency | Complexity · Error handling |
+| Crypto · XSS · SSRF | Resource mgmt · Data consistency | Maintainability · Best practices |
+
+</div>
+
+### 🔀 Multi-Stage Review Pipeline
+A 4-stage orchestrated pipeline — **Summary → Parallel Reviewers → Aggregation → False-Positive Filter** — fully composable and configurable via YAML DSL.
+
+### 🤖 Tool-Calling ReAct Agents
+When the Java Tool Server is enabled, reviewers become **LangChain ReAct agents** with 6 context tools:
+
+| Tool | What it gives the reviewer |
+|---|---|
+| `get_file_content` | Read any project source file |
+| `get_diff_context` | Diff summary or per-file content |
+| `get_method_definition` | Method signatures via AST |
+| `get_call_graph` | Caller / callee / impact traversal |
+| `get_related_files` | Dependent & related files |
+| `semantic_search` | Vector code search (TF-IDF or OpenAI embeddings) |
+
+### 🧯 False-Positive Filter
+Two-stage: **deterministic regex rules** (zero LLM cost) → optional **LLM verification**. **28 built-in precedent rules** covering Spring, MyBatis, React, JPA, and more.
+
+### 📡 Static Rule Engine (Zero LLM Cost)
+Pre-review rules scan added lines for SQL injection patterns, hardcoded secrets (AWS keys, GitHub tokens), dangerous calls (`Runtime.exec`, `eval`), and excessive nesting depth.
+
+### ✂️ Token-Aware Diff Chunking
+Large PRs auto-split via **first-fit-decreasing packing** with hunk-level splitting (max 10 files / 60K chars / 12K tokens per chunk). Issues are deduplicated across chunks.
+
+### 🌐 Multi-Model Support
+**Claude** (native Anthropic API) · **OpenAI** (GPT-4o, GPT-5 & compatible endpoints) · **Proxies** with automatic detection and fallback.
+
+### 🛟 Resilience & Observability
+- ⚡ Circuit breaker (Resilience4j) — 50% failure-rate threshold, 30s open state
+- 🚦 Rate limiter — 10 req/s token bucket
+- 🔁 Retry with exponential backoff + jitter (3 max attempts)
+- 📈 Prometheus metrics — reviews, issues, token usage, duration, static rule hits
+- 💾 Review caching — Caffeine + disk, 24h TTL
+
+---
+
+## 🏛 Architecture
 
 ```mermaid
 graph TB
-    subgraph Trigger["Trigger"]
+    subgraph Trigger["⚡ Trigger"]
         PR["GitHub PR Event"]
         CLI["CLI review --pr"]
     end
@@ -145,9 +158,205 @@ graph TB
     PO -->|"issues + comments"| AR
 ```
 
+### 🔄 Review Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PR as GitHub PR
+    participant Runner as Action Runner
+    participant GH as GitHub API
+    participant Pipeline as PipelineOrchestrator
+    participant Sec as 🔒 Security
+    participant Logic as 🧠 Logic
+    participant Quality as 🧹 Quality
+    participant FP as 🧯 FP Filter
+    participant ToolSrv as Java Tool Server
+
+    PR->>Runner: PR opened / synchronized
+    Runner->>GH: Fetch PR diff + metadata + history
+    Runner->>Pipeline: ReviewRequest (diff, config)
+
+    Pipeline->>Pipeline: Chunk diff if needed
+    Pipeline->>Pipeline: Summary stage — analyze & route files
+
+    par Parallel Domain Review
+        Pipeline->>Sec: Security-relevant files
+        Pipeline->>Logic: Logic-relevant files
+        Pipeline->>Quality: Quality-relevant files
+    end
+
+    Note over Sec,Quality: Tool Server on → ReAct agents<br/>Tool Server off → direct LLM call
+
+    Sec-.->ToolSrv: get_file_content / call_graph / …
+    Logic-.->ToolSrv: get_method_definition / related_files / …
+    Quality-.->ToolSrv: semantic_search / diff_context / …
+
+    Sec-->>FP: Security issues
+    Logic-->>FP: Logic issues
+    Quality-->>FP: Quality issues
+
+    FP->>FP: Regex rules → optional LLM verification
+    FP->>Runner: Filtered issues
+    Runner->>GH: Post inline PR comments
+    Runner->>Runner: outputs: findings-count, results-file
+```
+
 ---
 
-## Project Structure
+## 🚀 Quick Start
+
+### 🥇 Option 1 — GitHub Action (Recommended)
+
+Drop this into `.github/workflows/diffguard-review.yml`:
+
+```yaml
+name: DiffGuard Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Eleven-Mouse/Diffguard@v1.0.0
+        with:
+          api-key: ${{ secrets.DIFFGUARD_API_KEY }}
+          provider: claude
+          model: claude-sonnet-4-20250514
+          language: en
+          comment-pr: true
+          enable-fp-filter: true
+```
+
+Then add your API key as the repository secret `DIFFGUARD_API_KEY`. Done — every PR now gets reviewed. 🎉
+
+### 🥈 Option 2 — CLI (Local)
+
+Prerequisites: Java 21, Maven 3.9+
+
+```bash
+# Clone and build
+git clone https://github.com/Eleven-Mouse/DiffGuard.git
+cd DiffGuard/services/gateway
+mvn -DskipTests package
+
+# Run a review
+export GITHUB_TOKEN=ghp_your_token
+export DIFFGUARD_API_KEY=sk-ant-your-key
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline
+
+# With Java Tool Server enabled (deep AST / code-graph analysis)
+java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline --force
+
+# Install / uninstall Git hooks (pre-commit + pre-push auto-review)
+java -jar target/diffguard-1.0.0.jar install
+java -jar target/diffguard-1.0.0.jar uninstall
+
+# Standalone servers
+java -jar target/diffguard-1.0.0.jar tool-server --port 9090
+java -jar target/diffguard-1.0.0.jar orchestrator-server --port 8088
+```
+
+> 💡 Git Hook only supports PR mode. Set `DIFFGUARD_PR=owner/repo#number` beforehand; the hook skips review when unset.
+
+### 🥉 Option 3 — Docker Compose
+
+```bash
+git clone https://github.com/Eleven-Mouse/DiffGuard.git
+cd DiffGuard
+
+# Configure
+cp services/gateway/.env.example services/gateway/.env
+# Edit .env with your API keys
+
+# Start the full stack
+docker compose up -d
+```
+
+What you get:
+
+| Service | Ports | Role |
+|---|---|---|
+| 🐰 RabbitMQ | 5672 / 15672 | Async task dispatch |
+| ☕ Gateway | 9090 (Tool Server) · 9091 (Metrics) | AST · CodeGraph · RAG |
+| 🐍 Agent | 8000 | FastAPI review pipeline |
+
+---
+
+## ⚙️ Configuration
+
+<details open>
+<summary><b>📋 GitHub Action Inputs</b></summary>
+
+| Input | Default | Description |
+|---|---|---|
+| `api-key` | *(required)* | LLM API key (Anthropic or OpenAI) |
+| `provider` | `claude` | `claude` or `openai` |
+| `model` | `claude-sonnet-4-20250514` | Model name |
+| `api-base-url` | *(empty)* | Custom API endpoint (for proxies) |
+| `language` | `zh` | Output language: `zh` or `en` |
+| `comment-pr` | `true` | Post inline PR comments |
+| `exclude-directories` | *(empty)* | Comma-separated dirs to exclude |
+| `enable-fp-filter` | `true` | Enable false-positive filtering |
+| `timeout-minutes` | `10` | Review timeout |
+| `use-java-tool-server` | `false` | Enable tool-calling agents |
+| `tool-server-url` | `http://127.0.0.1:9090` | Tool Server URL |
+
+</details>
+
+<details>
+<summary><b>☕ Java Gateway Environment Variables</b></summary>
+
+| Variable | Description |
+|---|---|
+| `DIFFGUARD_API_KEY` | LLM API key |
+| `DIFFGUARD_API_BASE_URL` | Custom LLM API base URL |
+| `DIFFGUARD_AGENT_URL` | Python Agent service URL |
+| `DIFFGUARD_TOOL_SERVER_URL` | Tool Server URL (overrides host+port) |
+| `DIFFGUARD_TOOL_SERVER_HOST` | Tool Server host (default: `localhost`) |
+| `DIFFGUARD_TOOL_SERVER_PORT` | Tool Server port (default: `9090`) |
+| `DIFFGUARD_TOOL_SECRET` | Shared secret for Tool Server auth |
+| `DIFFGUARD_ORCHESTRATOR_URL` | Orchestrator Server URL |
+| `GITHUB_TOKEN` / `GH_TOKEN` / `DIFFGUARD_GITHUB_TOKEN` | GitHub API token (any one) |
+| `RABBITMQ_HOST` / `PORT` / `USER` / `PASSWORD` | RabbitMQ connection |
+
+</details>
+
+<details>
+<summary><b>🐍 Python Agent Environment Variables</b></summary>
+
+| Variable | Description |
+|---|---|
+| `DIFFGUARD_PROVIDER` | `claude` or `openai` |
+| `DIFFGUARD_MODEL` | Model name |
+| `DIFFGUARD_API_KEY` | LLM API key |
+| `DIFFGUARD_API_BASE_URL` | Custom API endpoint |
+| `DIFFGUARD_LANGUAGE` | `zh` or `en` |
+| `DIFFGUARD_COMMENT_PR` | `true` / `false` |
+| `DIFFGUARD_ENABLE_FP_FILTER` | Enable FP filter |
+| `DIFFGUARD_TIMEOUT_MINUTES` | Review timeout |
+| `DIFFGUARD_USE_JAVA_TOOL_SERVER` | Enable tool calls |
+| `DIFFGUARD_TOOL_SERVER_URL` | Tool Server URL |
+| `DIFFGUARD_EXCLUDE_DIRS` | Comma-separated excluded dirs |
+| `GITHUB_TOKEN` | GitHub API token |
+| `GITHUB_REPOSITORY` | `owner/repo` format |
+| `PR_NUMBER` | PR number to review |
+
+</details>
+
+---
+
+## 🗂 Project Structure
+
+<details>
+<summary><b>Expand full directory tree</b></summary>
 
 ```
 DiffGuard/
@@ -155,11 +364,11 @@ DiffGuard/
 ├── docker-compose.yml                  # Full stack: Gateway + Agent + RabbitMQ
 ├── services/
 │   ├── gateway/                        # Java 21 Gateway (Maven)
-│   │   ├── pom.xml                     # Dependencies: Javalin, JavaParser, Resilience4j, ...
+│   │   ├── pom.xml                     # Javalin, JavaParser, Resilience4j, ...
 │   │   ├── Dockerfile                  # eclipse-temurin:21-jre
 │   │   ├── .env.example
 │   │   └── src/main/java/com/diffguard/
-│   │       ├── cli/                    # CLI entry: review, install, uninstall, tool-server, orchestrator-server
+│   │       ├── cli/                    # CLI: review, install, uninstall, tool-server, orchestrator-server
 │   │       ├── review/                 # Review orchestration, caching, engine factory
 │   │       │   ├── ast/                # AST analysis (JavaParser), cache, SPI
 │   │       │   ├── codegraph/          # Code knowledge graph (nodes + edges)
@@ -209,12 +418,6 @@ DiffGuard/
 │           │           ├── fp_filter_stage.py # Stage 4: false-positive filter
 │           │           └── static_rules.py    # Zero-cost regex pre-review
 │           ├── llm/prompts/pipeline/   # Domain-specific prompt templates
-│           │   ├── security-system.txt, security-user.txt
-│           │   ├── logic-system.txt, logic-user.txt
-│           │   ├── quality-system.txt, quality-user.txt
-│           │   ├── aggregation-system.txt, aggregation-user.txt
-│           │   ├── diff-summary-system.txt, diff-summary-user.txt
-│           │   └── react-user.txt
 │           ├── models/schemas.py       # Pydantic request/response models
 │           ├── tools/                  # LangChain tool factories → Java Tool Server
 │           ├── utils/                  # Diff splitting utilities
@@ -226,210 +429,14 @@ DiffGuard/
     └── release.yml                     # Tag-based release pipeline
 ```
 
----
-
-## Quick Start
-
-### Option 1: GitHub Action (Recommended)
-
-Create `.github/workflows/diffguard-review.yml` in your repository:
-
-```yaml
-name: DiffGuard Review
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Eleven-Mouse/Diffguard@v1.0.0
-        with:
-          api-key: ${{ secrets.DIFFGUARD_API_KEY }}
-          provider: claude
-          model: claude-sonnet-4-20250514
-          language: en
-          comment-pr: true
-          enable-fp-filter: true
-```
-
-Add your API key as a repository secret (`DIFFGUARD_API_KEY`).
-
-### Option 2: CLI (Local)
-
-Prerequisites: Java 21, Maven 3.9+
-
-```bash
-# Clone and build
-git clone https://github.com/Eleven-Mouse/DiffGuard.git
-cd DiffGuard/services/gateway
-mvn -DskipTests package
-
-# Run review
-export GITHUB_TOKEN=ghp_your_token
-export DIFFGUARD_API_KEY=sk-ant-your-key
-java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline
-
-# With Java Tool Server enabled (for deep AST/code graph analysis)
-java -jar target/diffguard-1.0.0.jar review --pr owner/repo#123 --pipeline --force
-
-# Install Git Hook (pre-commit + pre-push, auto-review)
-java -jar target/diffguard-1.0.0.jar install
-
-# Uninstall Hook
-java -jar target/diffguard-1.0.0.jar uninstall
-
-# Start standalone Tool Server
-java -jar target/diffguard-1.0.0.jar tool-server --port 9090
-
-# Start standalone Orchestrator Server
-java -jar target/diffguard-1.0.0.jar orchestrator-server --port 8088
-```
-
-> Git Hook only supports PR mode. Set `DIFFGUARD_PR=owner/repo#number` beforehand; the hook will skip review if unset.
-
-### Option 3: Docker Compose
-
-```bash
-git clone https://github.com/Eleven-Mouse/DiffGuard.git
-cd DiffGuard
-
-# Configure
-cp services/gateway/.env.example services/gateway/.env
-# Edit .env with your API keys
-
-# Start all services
-docker compose up -d
-```
-
-This starts:
-- **RabbitMQ** on ports 5672/15672
-- **Gateway** (Tool Server on 9090, Metrics on 9091)
-- **Agent** on port 8000
+</details>
 
 ---
 
-## Configuration
+## 🚢 Deployment
 
-### GitHub Action Inputs
-
-| Input | Default | Description |
-|---|---|---|
-| `api-key` | *(required)* | LLM API key (Anthropic or OpenAI) |
-| `provider` | `claude` | LLM provider: `claude` or `openai` |
-| `model` | `claude-sonnet-4-20250514` | Model name |
-| `api-base-url` | *(empty)* | Custom API endpoint (for proxies) |
-| `language` | `zh` | Output language: `zh` or `en` |
-| `comment-pr` | `true` | Post inline PR comments |
-| `exclude-directories` | *(empty)* | Comma-separated dirs to exclude |
-| `enable-fp-filter` | `true` | Enable false-positive filtering |
-| `timeout-minutes` | `10` | Review timeout |
-| `use-java-tool-server` | `false` | Enable tool-calling agents |
-| `tool-server-url` | `http://127.0.0.1:9090` | Tool Server URL |
-
-### Environment Variables
-
-#### Java Gateway
-
-| Variable | Description |
-|---|---|
-| `DIFFGUARD_API_KEY` | LLM API key |
-| `DIFFGUARD_API_BASE_URL` | Custom LLM API base URL |
-| `DIFFGUARD_AGENT_URL` | Python Agent service URL |
-| `DIFFGUARD_TOOL_SERVER_URL` | Tool Server URL (overrides host+port) |
-| `DIFFGUARD_TOOL_SERVER_HOST` | Tool Server host (default: `localhost`) |
-| `DIFFGUARD_TOOL_SERVER_PORT` | Tool Server port (default: `9090`) |
-| `DIFFGUARD_TOOL_SECRET` | Shared secret for Tool Server auth |
-| `DIFFGUARD_ORCHESTRATOR_URL` | Orchestrator Server URL |
-| `GITHUB_TOKEN` / `GH_TOKEN` / `DIFFGUARD_GITHUB_TOKEN` | GitHub API token (any one) |
-| `RABBITMQ_HOST` / `PORT` / `USER` / `PASSWORD` | RabbitMQ connection |
-
-#### Python Agent
-
-| Variable | Description |
-|---|---|
-| `DIFFGUARD_PROVIDER` | `claude` or `openai` |
-| `DIFFGUARD_MODEL` | Model name |
-| `DIFFGUARD_API_KEY` | LLM API key |
-| `DIFFGUARD_API_BASE_URL` | Custom API endpoint |
-| `DIFFGUARD_LANGUAGE` | `zh` or `en` |
-| `DIFFGUARD_COMMENT_PR` | `true` / `false` |
-| `DIFFGUARD_ENABLE_FP_FILTER` | Enable FP filter |
-| `DIFFGUARD_TIMEOUT_MINUTES` | Review timeout |
-| `DIFFGUARD_USE_JAVA_TOOL_SERVER` | Enable tool calls |
-| `DIFFGUARD_TOOL_SERVER_URL` | Tool Server URL |
-| `DIFFGUARD_EXCLUDE_DIRS` | Comma-separated excluded dirs |
-| `GITHUB_TOKEN` | GitHub API token |
-| `GITHUB_REPOSITORY` | `owner/repo` format |
-| `PR_NUMBER` | PR number to review |
-
----
-
-## Review Workflow
-
-```mermaid
-sequenceDiagram
-    participant PR as GitHub PR
-    participant Action as GitHub Action
-    participant Runner as github_action_runner
-    participant GH as GitHub API
-    participant Pipeline as PipelineOrchestrator
-    participant Summary as Summary Stage
-    participant Sec as Security Reviewer
-    participant Logic as Logic Reviewer
-    participant Quality as Quality Reviewer
-    participant Agg as Aggregation Stage
-    participant FP as FP Filter
-    participant ToolSrv as Java Tool Server
-
-    PR->>Action: PR opened / synchronized
-    Action->>Runner: Run with env vars
-    Runner->>GH: Fetch PR diff + metadata
-    Runner->>GH: Fetch historical comments
-    Runner->>Pipeline: ReviewRequest (diff, config)
-
-    Pipeline->>Pipeline: Chunk diff if needed
-    Pipeline->>Summary: Analyze diff, route files
-
-    par Parallel Domain Review
-        Summary->>Sec: Security-relevant files
-        Summary->>Logic: Logic-relevant files
-        Summary->>Quality: Quality-relevant files
-    end
-
-    Note over Sec,Quality: With Tool Server: ReAct agents<br/>Without: Direct LLM call
-
-    Sec-.->ToolSrv: get_file_content / call_graph / ...
-    Logic-.->ToolSrv: get_method_definition / related_files / ...
-    Quality-.->ToolSrv: semantic_search / diff_context / ...
-
-    Sec->>Agg: Security issues
-    Logic->>Agg: Logic issues
-    Quality->>Agg: Quality issues
-
-    Agg->>Agg: Merge, deduplicate, map line numbers
-    Agg->>FP: All issues
-
-    FP->>FP: Regex rules (Stage 1)
-    FP->>FP: Optional LLM verification (Stage 2)
-    FP->>Pipeline: Filtered issues
-
-    Pipeline->>Runner: ReviewResponse
-    Runner->>GH: Post inline PR comments
-    Runner->>Action: findings-count, results-file
-```
-
----
-
-## Deployment
-
-### Docker Compose (Production)
+<details open>
+<summary><b>🐳 Docker Compose (Production)</b></summary>
 
 ```bash
 docker compose up -d
@@ -443,7 +450,10 @@ The `docker-compose.yml` provides:
 - Health checks on all services
 - Named volume for RabbitMQ data persistence
 
-### Standalone Services
+</details>
+
+<details>
+<summary><b>📦 Standalone Services</b></summary>
 
 ```bash
 # Start Tool Server only
@@ -457,11 +467,14 @@ cd services/agent
 python -m diffguard_agent.main
 ```
 
+</details>
+
 ---
 
-## Development
+## 🧰 Development
 
-### Build & Test (Java)
+<details open>
+<summary><b>☕ Build & Test (Java)</b></summary>
 
 ```bash
 cd services/gateway
@@ -470,7 +483,10 @@ mvn test            # Test only
 mvn -DskipTests package  # Skip tests
 ```
 
-### Build & Test (Python)
+</details>
+
+<details>
+<summary><b>🐍 Build & Test (Python)</b></summary>
 
 ```bash
 cd services/agent
@@ -479,47 +495,64 @@ pytest              # Run tests
 ruff check .        # Lint (optional)
 ```
 
-### CI
+</details>
+
+<details>
+<summary><b>🤖 CI</b></summary>
 
 The project provides CI workflows for manual verification:
 - **Java**: `mvn -B verify` with Surefire report upload
 - **Python**: `uv sync --dev` → `ruff check` → `pytest`
 
+</details>
+
 ---
 
-## Tech Stack
+## 🛠 Tech Stack
 
-| Layer | Technology |
+<div align="center">
+
+| 🧱 Layer | ⚙️ Technology |
 |---|---|
-| **Gateway** | Java 21, Maven, Javalin (HTTP), picocli (CLI) |
-| **Agent** | Python 3.12, FastAPI, LangChain, Pydantic, httpx |
-| **LLM** | Claude (Anthropic API), OpenAI (Chat Completions) |
-| **AST** | JavaParser (Java source analysis) |
-| **Code Graph** | Custom graph engine (nodes: FILE/CLASS/METHOD, edges: CALLS/IMPLEMENTS/EXTENDS) |
+| **Gateway** | Java 21 · Maven · Javalin · picocli |
+| **Agent** | Python 3.12 · FastAPI · LangChain · Pydantic · httpx |
+| **LLM** | Claude (Anthropic API) · OpenAI (Chat Completions) |
+| **AST** | JavaParser |
+| **Code Graph** | Custom engine (FILE/CLASS/METHOD nodes · CALLS/IMPLEMENTS/EXTENDS edges) |
 | **Code RAG** | TF-IDF / OpenAI Embeddings + ChromaDB |
-| **Caching** | Caffeine (in-memory) + disk persistence |
-| **Messaging** | RabbitMQ (async task dispatch) |
-| **Resilience** | Resilience4j (circuit breaker, rate limiter, retry) |
+| **Caching** | Caffeine + disk persistence |
+| **Messaging** | RabbitMQ |
+| **Resilience** | Resilience4j (circuit breaker · rate limiter · retry) |
 | **Observability** | Micrometer + Prometheus |
-| **Container** | Docker, Docker Compose |
+| **Container** | Docker · Docker Compose |
 | **CI/CD** | GitHub Actions |
 
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-Please ensure tests pass (`mvn verify` for Java, `pytest` for Python) before submitting.
+</div>
 
 ---
 
-## License
+## 🧑‍💻 Contributing
+
+Contributions are welcome! 🎉
+
+1. 🍴 Fork the repository
+2. 🌿 Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. ✅ Commit your changes
+4. ⬆️ Push to the branch (`git push origin feature/amazing-feature`)
+5. 🔃 Open a Pull Request
+
+> Please ensure tests pass before submitting — `mvn verify` for Java, `pytest` for Python.
+
+---
+
+## 📄 License
 
 This project is licensed under the MIT License — see the [LICENSE](./LICENSE) file for details.
+
+---
+
+<div align="center">
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:ec4899,50:8b5cf6,100:6366f1&height=120&section=footer&text=DiffGuard%20—%20Ship%20with%20confidence&fontSize=22&fontColor=ffffff&animation=fadeIn" width="100%" alt="footer" />
+
+</div>
